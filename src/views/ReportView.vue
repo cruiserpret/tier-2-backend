@@ -74,6 +74,9 @@
     </div>
 
     <div class="report-footer">
+      <button class="branch-btn" @click="$router.push({ path: '/branch', query: { tick: 8 } })">
+  Branch at tick 8 →
+</button>
       <button class="new-btn" @click="$router.push('/')">Run another simulation →</button>
     </div>
   </div>
