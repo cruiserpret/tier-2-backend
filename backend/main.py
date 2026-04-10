@@ -23,3 +23,20 @@ if __name__ == "__main__":
     print("Starting Assembly backend...")
     port = int(os.environ.get("PORT", 5001))
     app.run(host="0.0.0.0", port=port, debug=config.DEBUG)
+
+@app.route("/", methods=["GET"])
+def index():
+    return {
+        "name": "Assembly API",
+        "status": "live",
+        "version": "1.0.0",
+        "endpoints": [
+            "POST /api/simulation/start",
+            "GET /api/simulation/<id>/debate",
+            "GET /api/report/<id>",
+            "GET /api/sentiment/history/<id>",
+            "POST /api/inject",
+            "POST /api/branch",
+            "GET /api/agent/<id>/memory"
+        ]
+    }, 200
