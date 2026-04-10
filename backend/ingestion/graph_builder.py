@@ -86,6 +86,8 @@ async def build_graph(chunks: list[dict]) -> nx.DiGraph:
         
         # Add relationship edges
         for rel in extraction.get("relationships", []):
+            if not rel.get("from") or not rel.get("to") or not rel.get("relation"):
+                continue
             add_edge(G,
                 from_node=rel["from"],
                 to_node=rel["to"],
