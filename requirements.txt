@@ -7,4 +7,3 @@ pymupdf
 python-dotenv
 tavily-python
 pydantic
-sentence-transformers
