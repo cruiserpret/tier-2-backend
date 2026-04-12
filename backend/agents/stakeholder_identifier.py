@@ -23,16 +23,14 @@ STAKEHOLDER_CATEGORIES = {
 
 MAX_CATEGORY_SHARE = 0.30  # No single category can exceed 30% of agents
 MIN_AGENTS = 10
-
 async def classify_and_position_entities(
     topic: str,
     entities: list[dict],
     graph_context: str
 ) -> list[dict]:
     """
-    Classify entities into stakeholder categories AND determine
-    their real position on the topic from graph data.
-    No stance is predefined — LLM reads the graph to find real positions.
+    Classify entities into stakeholder categories and determine
+    their stance based on INTERESTS, not current public positions.
     """
 
     entity_list = "\n".join([
@@ -40,28 +38,30 @@ async def classify_and_position_entities(
         for e in entities[:35]
     ])
 
-    system = """You are an expert at identifying stakeholders and their real-world positions.
-Given entities from a knowledge graph about a topic, classify each real stakeholder
-and determine their ACTUAL known position based on the graph evidence.
-Never assume a position — derive it from the graph context provided.
+    system = """You are an expert at identifying stakeholder interests and how they drive positions.
+Your job is NOT to report what entities currently say publicly.
+Your job is to analyze what their FUNDAMENTAL INTERESTS are and what stance those interests logically produce.
+A company may publicly support regulation while privately opposing it — analyze interests, not PR statements.
 Respond in valid JSON only."""
 
-    proposition = topic if topic.endswith("?") else f"{topic}?"
-    prompt = f"""Proposition being debated: {proposition}
-
-IMPORTANT: stance must always be relative to the proposition itself.
-- "for" = this entity SUPPORTS the proposition
-- "against" = this entity OPPOSES the proposition
-- "neutral" = this entity has no clear position
+    prompt = f"""Proposition: {topic}
 
 Entities from knowledge graph:
 {entity_list}
 
-Real-world knowledge graph context (use this to determine actual positions):
+Knowledge graph context:
 {graph_context}
 
-For each entity that is a real stakeholder, classify it and determine its actual position
-on the topic based ONLY on what the knowledge graph tells you.
+For each real stakeholder, analyze their fundamental interests and derive their logical stance.
+
+Think through each stakeholder like this:
+1. What does this entity fundamentally want? (profit, power, safety, freedom, etc.)
+2. How does this proposition affect those interests?
+3. What stance do those interests logically push them toward?
+
+IMPORTANT: Do NOT default everyone to the same stance. Real debates have genuine disagreement.
+For any regulation topic — some entities genuinely benefit from regulation, others genuinely lose.
+Derive that from interests, not from what today's news says they support.
 
 Respond in this exact JSON format:
 {{
@@ -69,23 +69,23 @@ Respond in this exact JSON format:
         {{
             "name": "entity name exactly as given",
             "category": "tech_company/government/civil_society/academic/labor_union/consumer/media/investor/affected_community/international_body",
-            "real_position": "their actual known position on this specific topic based on graph evidence in 1-2 sentences",
+            "fundamental_interests": "what this entity fundamentally wants in 1 sentence",
+            "interest_analysis": "how this proposition affects their interests in 1-2 sentences",
+            "real_position": "their logical position derived from interests, NOT their public PR stance",
             "stance": "for/against/neutral",
-            "stake": "why this entity has a genuine interest in this topic outcome",
+            "stake": "why this outcome matters to them",
             "relevance_score": 0.85
         }}
     ]
 }}
 
 Rules:
-- Only include real organizations, institutions, governments, or known groups
-- Skip abstract concepts, vague terms, or events
-- Derive stance from graph evidence — never assume based on category
-- relevance_score is 0.0-1.0 based on how central this entity is to the topic
-- Maximum 20 stakeholders
-- A tech company could be FOR regulation if the graph shows evidence of that
-- stance must reflect their position ON THE PROPOSITION, not their general sentiment about the subject matter
-- Example: TikTok would be "against" a TikTok ban. U.S. Government would be "for" a TikTok ban."""
+- Stance comes from INTEREST ANALYSIS, never from public statements or news sentiment
+- Ensure genuine diversity — not everyone can have the same stance
+- A tech company might be AGAINST regulation (threatens profits) OR FOR it (legitimizes industry, hurts competitors)
+- Derive which one from their specific situation in the graph context
+- Maximum 15 stakeholders
+- Only include entities with a genuine stake"""
 
     try:
         result = await call_llm_json(prompt, system)
@@ -94,7 +94,7 @@ Rules:
     except Exception as e:
         print(f"[StakeholderIdentifier] Classification error: {e}")
         return []
-
+    
 def enforce_diversity(stakeholders: list[dict], num_agents: int) -> list[dict]:
     """
     Ensure no single category dominates.
