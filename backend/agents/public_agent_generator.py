@@ -36,7 +36,8 @@ async def extract_opinion_patterns(
     ])
 
     system = """You are analyzing public discourse to identify recurring opinion patterns.
-Extract distinct viewpoint clusters that represent how different types of people think about this topic.
+Extract distinct viewpoint clusters that represent how different types of real people think about this topic.
+These must be everyday people with lived experience — NOT executives, academics, or policy officials.
 Respond in valid JSON only."""
 
     prompt = f"""Topic: {topic}
@@ -48,34 +49,73 @@ Claims and opinions found:
 Key themes:
 {entities_context}
 
-Identify 4-6 distinct opinion patterns from this public discourse.
-Each pattern should represent a real demographic segment with a specific viewpoint.
+Identify 6-8 distinct opinion patterns from this public discourse.
+Each pattern must represent a SPECIFIC real demographic segment with a specific viewpoint.
+
+CRITICAL RULES:
+1. Demographic must be hyper-specific — not "workers" but "32-year-old freelance graphic designer in Chicago who lost 40% of income"
+2. You MUST include patterns across for, against, AND neutral stances — no stance should have more than 50% of patterns
+3. Emotional driver must be personal and visceral — fear, anger, hope, relief — not abstract policy concerns
+4. Sample argument must sound like a real Reddit/Quora comment — personal, specific, emotional — NOT a policy brief
+5. Ground every pattern in the actual discourse content above
 
 Respond in this exact JSON format:
 {{
     "patterns": [
         {{
-            "demographic": "who holds this view (e.g. 'remote software engineers', 'working parents', 'middle managers')",
-            "core_belief": "their central argument in 1 sentence",
-            "emotional_driver": "what emotionally drives this position (e.g. 'fear of lost flexibility', 'concern about productivity')",
+            "demographic": "hyper-specific description of who holds this view with age, profession, location context",
+            "core_belief": "their central argument in 1 personal sentence — first person voice",
+            "emotional_driver": "the specific personal fear, anger, hope or relief driving this position",
+            "emotional_intensity": "high/medium/low — how emotionally charged their arguments are",
             "stance": "for/against/neutral",
             "prevalence": "high/medium/low based on how common this view appears in the discourse",
-            "sample_argument": "a realistic argument this person would make, grounded in the discourse above"
+            "sample_argument": "a realistic Reddit-style comment this specific person would write — personal, emotional, specific to their situation"
         }}
     ]
-}}
-
-Rules:
-- Each pattern must be genuinely distinct
-- Ground each pattern in the actual discourse content above
-- Ensure diversity — include for, against, and neutral patterns
-- Demographic must be specific, not vague (not "people" but "remote tech workers")"""
+}}"""
 
     try:
         result = await call_llm_json(prompt, system)
         parsed = json.loads(result)
         patterns = parsed.get("patterns", [])
-        print(f"[PublicAgentGenerator] Extracted {len(patterns)} opinion patterns")
+
+        # ── Ideological balance enforcement ──────────────────────────
+        # Check distribution and flag if imbalanced
+        for_count = sum(1 for p in patterns if p.get("stance") == "for")
+        against_count = sum(1 for p in patterns if p.get("stance") == "against")
+        neutral_count = sum(1 for p in patterns if p.get("stance") == "neutral")
+        total = len(patterns)
+
+        print(f"[PublicAgentGenerator] Extracted {total} patterns: {for_count} for / {against_count} against / {neutral_count} neutral")
+
+        # If any stance has more than 50% of patterns, request rebalancing
+        if total > 0 and (for_count / total > 0.55 or against_count / total > 0.55):
+            print(f"[PublicAgentGenerator] Imbalance detected — requesting missing perspectives")
+            missing = []
+            if for_count == 0: missing.append("for")
+            if against_count == 0: missing.append("against")
+            if neutral_count == 0: missing.append("neutral")
+
+            if missing:
+                balance_prompt = f"""The following stances are missing from the opinion patterns for topic: "{topic}"
+Missing stances: {', '.join(missing)}
+
+Generate 1-2 additional opinion patterns for each missing stance.
+These must be grounded in real public discourse about this topic.
+Same format as before — hyper-specific demographic, personal emotional driver, Reddit-style sample argument.
+
+Respond with just the additional patterns in this format:
+{{"patterns": [...]}}"""
+
+                try:
+                    balance_result = await call_llm_json(balance_prompt, system)
+                    balance_parsed = json.loads(balance_result)
+                    additional = balance_parsed.get("patterns", [])
+                    patterns.extend(additional)
+                    print(f"[PublicAgentGenerator] Added {len(additional)} balancing patterns")
+                except Exception as e:
+                    print(f"[PublicAgentGenerator] Balance correction error: {e}")
+
         return patterns
     except Exception as e:
         print(f"[PublicAgentGenerator] Pattern extraction error: {e}")
@@ -93,6 +133,7 @@ async def generate_public_agent(
     """
     stance = pattern.get("stance", "neutral")
     score_range = SCORE_RANGE.get(stance, (4.0, 6.0))
+    emotional_intensity = pattern.get("emotional_intensity", "medium")
 
     existing_names_str = ", ".join(existing_names) if existing_names else "none"
 
@@ -105,8 +146,9 @@ async def generate_public_agent(
     ])
 
     system = """You are generating a realistic everyday person for a debate simulation.
-This is NOT a CEO or executive — this is a regular person with lived experience.
-Their opinions come from personal experience, not corporate strategy.
+This is NOT a CEO, academic, or policy official.
+This is a regular person whose opinion comes entirely from lived personal experience.
+Their arguments must sound like real forum posts — specific, emotional, personal.
 Respond in valid JSON only."""
 
     prompt = f"""Generate a realistic public persona for this debate.
@@ -116,33 +158,35 @@ Topic: {topic}
 This person represents: {pattern['demographic']}
 Their core belief: {pattern['core_belief']}
 Their emotional driver: {pattern['emotional_driver']}
+Emotional intensity: {emotional_intensity}
 Their stance: {stance}
-Sample argument they would make: {pattern['sample_argument']}
+How they actually talk about this: {pattern['sample_argument']}
 
-Relevant public discourse context:
+Relevant context:
 {evidence_context}
 
 Names already used: {existing_names_str}
 
-Generate a specific, realistic person from this demographic.
+Generate a SPECIFIC, REAL-FEELING person from this demographic.
 
 Respond in this exact JSON format:
 {{
     "name": "realistic full name",
     "age": 34,
-    "profession": "specific job title",
+    "profession": "specific job title — not executive or academic",
     "location": "city, state/country",
-    "persona": "2-3 sentences about their background and why they hold this position based on lived experience",
-    "initial_opinion": "their specific opinion in 2 sentences — personal, emotional, grounded in lived experience NOT corporate speak",
-    "key_beliefs": ["personal belief 1", "personal belief 2"],
-    "known_entities": ["relevant topic or entity they know about"]
+    "persona": "2-3 sentences — their specific life situation and the personal experience that formed their opinion. Name a specific event or moment that shaped their view.",
+    "initial_opinion": "their opinion in 2 sentences — first person, emotional, specific to their life situation. Must sound like a real person talking, NOT a policy statement.",
+    "key_beliefs": ["personal belief from lived experience 1", "personal belief from lived experience 2"],
+    "known_entities": ["relevant topic or entity they personally encountered"]
 }}
 
 Rules:
-- This is a regular person, not a public figure or executive
-- Their opinion comes from personal experience, not policy analysis
-- Name must be unique — not in: {existing_names_str}
-- Make them feel real and specific, not generic"""
+- Regular person only — no executives, academics, politicians, or policy officials
+- Opinion must come from personal experience, not analysis
+- initial_opinion must be emotional and specific — include a personal detail
+- Name must not be in: {existing_names_str}
+- Location must be realistic and specific"""
 
     try:
         result = await call_llm_json(prompt, system)
@@ -152,6 +196,15 @@ Rules:
 
         import random
         score = round(random.uniform(score_range[0], score_range[1]), 1)
+
+        # Emotional intensity affects persuasion resistance
+        # High emotion = more resistant to logic, lower resistance to emotional arguments
+        intensity_resistance = {
+            "high": 0.45,
+            "medium": 0.35,
+            "low": 0.25,
+        }
+        persuasion_resistance = intensity_resistance.get(emotional_intensity, 0.35)
 
         return {
             "id": f"agent_{uuid.uuid4().hex[:8]}",
@@ -163,16 +216,19 @@ Rules:
             "stakeholder_name": pattern["demographic"],
             "stakeholder_category": "affected_community",
             "agent_type": "public",
+            "graph_type": "public",
             "stance": stance,
             "opinion": persona.get("initial_opinion", ""),
             "score": score,
             "opinion_delta": 0.0,
             "key_beliefs": persona.get("key_beliefs", []),
-            "persuasion_resistance": 0.35,
+            "persuasion_resistance": persuasion_resistance,
             "influence_weight": 0.40,
             "known_entities": persona.get("known_entities", []),
             "confirmation_bias": 0.45,
+            "emotional_intensity": emotional_intensity,
             "attacks_received": 0,
+            "last_argument": "",
             "memory": []
         }
 

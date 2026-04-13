@@ -62,18 +62,30 @@ def build_institutional_queries(topic: str) -> list[str]:
 
 def build_public_queries(topic: str) -> list[str]:
     """
-    Queries targeting actual public discourse — personal experiences,
-    emotional reactions, lived impact. NOT articles about public opinion.
-    Designed to find the voices of directly affected people.
+    Queries targeting actual lived experience and emotional public discourse.
+    Designed to surface real voices from forums, not articles about public opinion.
+
+    Targets Reddit, Quora, and personal story content specifically.
+    More queries, more specific — to give pattern extraction richer signal.
     """
     base = topic.rstrip("?").strip()
     return [
-        f"{base} reddit",
-        f"{base} personal experience story",
-        f"{base} affected workers artists creators",
-        f"how {base} affected my life",
-        f"{base} forum discussion debate opinions",
-        f"{base} community response backlash support",
+        # Reddit — actual threads not articles about Reddit
+        f'site:reddit.com "{base}"',
+        f'site:reddit.com {base} personal experience',
+        f'site:reddit.com {base} affected my life',
+
+        # Quora — personal answer format
+        f'site:quora.com {base}',
+        f'site:quora.com how has {base} affected you',
+
+        # Forum and community voice
+        f'{base} "I lost" OR "I gained" OR "it affected me" personal story',
+        f'{base} workers creators families impact lived experience',
+
+        # Emotional signal — people venting or celebrating
+        f'{base} "I feel" OR "I think" OR "in my experience" opinion',
+        f'{base} community response people affected',
     ]
 
 def process_institutional_results(
@@ -111,6 +123,7 @@ def process_public_results(
     Process public sentiment results.
     Uses smaller chunks and preserves emotional language.
     Tags chunks with sentiment strength for graph weighting.
+    Prioritises Reddit and Quora content with higher sentiment weight.
     """
     from backend.utils.text_utils import detect_sentiment_strength
 
@@ -121,31 +134,41 @@ def process_public_results(
         for r in result_set:
             content = clean_text(
                 r.get("raw_content") or r.get("content", ""),
-                preserve_emotion=True  # keep emotional signal
+                preserve_emotion=True
             )
             if not content:
                 continue
 
-            # Use smaller chunks for public discourse
-            for chunk in chunk_text(content, mode="public"):
-                key = f"{r.get('url', '')}_{chunk[:50]}"
+            source_url = r.get("url", "")
 
-                # Skip if already in institutional or public
+            # Boost sentiment weight for Reddit and Quora — these are real voices
+            source_boost = 1.0
+            if "reddit.com" in source_url:
+                source_boost = 1.5
+            elif "quora.com" in source_url:
+                source_boost = 1.3
+
+            for chunk in chunk_text(content, mode="public"):
+                key = f"{source_url}_{chunk[:50]}"
+
                 if key in seen_pub or key in seen_inst:
                     continue
 
                 seen_pub.add(key)
-                sentiment_strength = detect_sentiment_strength(chunk)
+                sentiment_strength = detect_sentiment_strength(chunk) * source_boost
 
                 chunks.append({
                     "text": chunk,
-                    "source": r.get("url", ""),
+                    "source": source_url,
                     "title": r.get("title", ""),
                     "type": "public_sentiment",
                     "chunk_type": "public",
-                    "sentiment_strength": sentiment_strength
+                    "sentiment_strength": min(sentiment_strength, 1.0),
+                    "is_forum": "reddit.com" in source_url or "quora.com" in source_url
                 })
 
+    # Sort by sentiment strength — richer signal first
+    chunks.sort(key=lambda c: c.get("sentiment_strength", 0), reverse=True)
     return chunks
 
 async def ingest(
@@ -165,8 +188,9 @@ async def ingest(
     pub_queries = build_public_queries(topic)
 
     # All searches fire in parallel
+    # Public queries get more results per search to improve pattern extraction signal
     inst_tasks = [search_web(q, num_results=8) for q in inst_queries]
-    pub_tasks = [search_web(q, num_results=8) for q in pub_queries]
+    pub_tasks = [search_web(q, num_results=10) for q in pub_queries]
     pdf_tasks = [parse_pdf(path) for path in pdf_paths]
 
     all_results = await asyncio.gather(*inst_tasks, *pub_tasks, *pdf_tasks)
@@ -186,13 +210,15 @@ async def ingest(
     for pdf_chunk_list in pdf_results:
         inst_chunks.extend(pdf_chunk_list)
 
-    # Process public — with emotion preservation and sentiment scoring
+    # Process public — with emotion preservation, sentiment scoring, forum boosting
     pub_chunks = process_public_results(pub_raw, seen_inst)
 
     print(f"[Ingestor] {len(inst_chunks)} institutional chunks | {len(pub_chunks)} public chunks for: {topic}")
 
-    # Log sentiment distribution
+    # Log quality breakdown
+    forum_chunks = sum(1 for c in pub_chunks if c.get("is_forum", False))
     high_sentiment = sum(1 for c in pub_chunks if c.get("sentiment_strength", 0) > 0.3)
-    print(f"[Ingestor] Public chunks with strong sentiment signal: {high_sentiment}/{len(pub_chunks)}")
+    print(f"[Ingestor] Forum chunks (Reddit/Quora): {forum_chunks}/{len(pub_chunks)}")
+    print(f"[Ingestor] High sentiment signal chunks: {high_sentiment}/{len(pub_chunks)}")
 
     return inst_chunks, pub_chunks
