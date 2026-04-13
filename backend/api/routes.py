@@ -33,12 +33,14 @@ def run_async(coro):
     return loop.run_until_complete(coro)
 
 # ── 1. Start simulation ───────────────────────────────────────────
+import threading
+
 @api.route("/api/simulation/start", methods=["POST"])
 def start_simulation():
     try:
         body = request.get_json()
         topic = body.get("topic")
-        num_agents = body.get("num_agents", 20)
+        num_agents = body.get("num_agents", 10)
         num_rounds = body.get("num_rounds", 3)
         pdf_paths = body.get("uploads", [])
 
@@ -46,54 +48,119 @@ def start_simulation():
             return jsonify({"error": "topic is required"}), 400
 
         simulation_id = f"sim_{uuid.uuid4().hex[:8]}"
-        print(f"\n[API] Starting simulation {simulation_id} on: {topic}")
 
-        # Step 1 — Ingest real world data
-        chunks = run_async(ingest(topic, pdf_paths))
-
-        # Step 2 — Build knowledge graph
-        G = run_async(build_graph(chunks))
-        graph_summary = get_graph_summary(G)
-
-        # Step 3 — Identify real stakeholders from graph and generate agents 
-        stakeholders = run_async(identify_stakeholders(topic, G, num_agents))
-        agents = run_async(generate_personas(topic, G, num_agents, stakeholders))
-
-        # Step 4 — Run the debate
-        debate_result = run_async(run_debate(topic, agents, G, num_rounds))
-
-        # Step 5 — Generate God's Eye View report
-        report = run_async(generate_report(
-            topic=topic,
-            simulation_id=simulation_id,
-            rounds=debate_result["rounds"],
-            final_agents=debate_result["final_agents"],
-            G=G
-        ))
-
-        # Store everything
+        # Store immediately as "running"
         simulations[simulation_id] = {
             "simulation_id": simulation_id,
             "topic": topic,
-            "status": "completed",
-            "agents_created": len(agents),
-            "graph_summary": graph_summary,
-            "rounds": debate_result["rounds"],
-            "final_agents": debate_result["final_agents"],
-            "report": report
+            "status": "running",
+            "agents_created": 0,
+            "graph_summary": {},
+            "rounds": [],
+            "final_agents": [],
+            "report": {}
         }
+
+        # Return immediately
+        def run_simulation():
+            try:
+                print(f"\n[API] Starting simulation {simulation_id} on: {topic}")
+
+                # Step 1 — Classify topic
+                from backend.agents.topic_classifier import classify_topic
+                classification = run_async(classify_topic(topic))
+
+                inst_count = max(3, round(num_agents * classification["institutional_ratio"]))
+                pub_count = max(2, num_agents - inst_count)
+
+                print(f"[API] Agent split: {inst_count} institutional, {pub_count} public")
+
+                # Step 2 — Ingest both sources in parallel
+                inst_chunks, pub_chunks = run_async(ingest(topic, pdf_paths))
+
+                # Step 3 — Build two separate graphs
+                G_inst = run_async(build_graph(inst_chunks))
+                G_pub = run_async(build_graph(pub_chunks)) if pub_chunks else G_inst
+                graph_summary = get_graph_summary(G_inst)
+
+                # Step 4 — Generate institutional agents
+                from backend.agents.stakeholder_identifier import identify_stakeholders
+                stakeholders = run_async(identify_stakeholders(topic, G_inst, inst_count))
+                actual_inst_count = len(stakeholders)
+                inst_agents = run_async(generate_personas(topic, G_inst, actual_inst_count, stakeholders))
+
+                # Step 5 — Generate public agents
+                from backend.agents.public_agent_generator import generate_public_agents
+                pub_agents = run_async(generate_public_agents(topic, G_pub, pub_count))
+
+                # Step 6 — Tag agents with their graph type
+                for a in inst_agents:
+                    a["graph_type"] = "institutional"
+                for a in pub_agents:
+                    a["graph_type"] = "public"
+
+                # Step 7 — Merge all agents
+                all_agents = inst_agents + pub_agents
+                print(f"[API] Total agents: {len(all_agents)} ({len(inst_agents)} institutional, {len(pub_agents)} public)")
+
+                # Step 8 — Run debate
+                # Pass both graphs so agents query their own
+                debate_result = run_async(run_debate(topic, all_agents, G_inst, num_rounds, G_pub))
+
+                # Step 9 — Generate report
+                report = run_async(generate_report(
+                    topic=topic,
+                    simulation_id=simulation_id,
+                    rounds=debate_result["rounds"],
+                    final_agents=debate_result["final_agents"],
+                    G=G_inst
+                ))
+
+                simulations[simulation_id].update({
+                    "status": "completed",
+                    "agents_created": len(all_agents),
+                    "graph_summary": graph_summary,
+                    "rounds": debate_result["rounds"],
+                    "final_agents": debate_result["final_agents"],
+                    "report": report,
+                    "topic_classification": classification["label"]
+                })
+                print(f"[API] Simulation {simulation_id} completed")
+
+            except Exception as e:
+                import traceback
+                print(f"[API] Simulation {simulation_id} failed: {e}")
+                traceback.print_exc()
+                simulations[simulation_id]["status"] = "failed"
+                simulations[simulation_id]["error"] = str(e)
+
+        thread = threading.Thread(target=run_simulation)
+        thread.daemon = True
+        thread.start()
 
         return jsonify({
             "simulation_id": simulation_id,
-            "status": "completed",
-            "agents_created": len(agents),
-            "graph_summary": graph_summary
-        }), 200
+            "status": "running",
+            "message": "Simulation started. Poll /api/simulation/{id}/status for updates."
+        }), 202
 
     except Exception as e:
         print(f"[API] Error: {e}")
         return jsonify({"error": str(e)}), 500
+    
 
+@api.route("/api/simulation/<simulation_id>/status", methods=["GET"])
+def get_simulation_status(simulation_id):
+    sim = simulations.get(simulation_id)
+    if not sim:
+        return jsonify({"error": "simulation not found"}), 404
+
+    return jsonify({
+        "simulation_id": simulation_id,
+        "status": sim["status"],
+        "agents_created": sim.get("agents_created", 0),
+        "error": sim.get("error", None)
+    }), 200
 
 # ── 2. Get debate rounds ──────────────────────────────────────────
 @api.route("/api/simulation/<simulation_id>/debate", methods=["GET"])

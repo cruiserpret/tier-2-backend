@@ -12,6 +12,71 @@ BASE_MU = 0.3
 CONFIDENCE_THRESHOLD = 3.0
 MAX_EVIDENCE_MULTIPLIER = 1.5
 
+# ── Confirmation Bias Parameters ──────────────────────────────────
+# How much contradicting evidence is discounted per category
+# 0 = no bias (accepts all evidence), 1 = full bias (ignores contradicting evidence)
+CONFIRMATION_BIAS_BY_CATEGORY = {
+    "government":         0.65,
+    "international_body": 0.60,
+    "tech_company":       0.55,
+    "labor_union":        0.50,
+    "investor":           0.40,
+    "civil_society":      0.45,
+    "media":              0.35,
+    "affected_community": 0.40,
+    "academic":           0.20,
+    "consumer":           0.15,
+}
+
+# ── Backfire Effect Parameters ────────────────────────────────────
+BACKFIRE_THRESHOLD = 2        # attacks before resistance starts increasing
+BACKFIRE_RESISTANCE_BOOST = 0.05  # resistance increase per attack above threshold
+MAX_RESISTANCE = 0.95         # resistance can never exceed this
+
+def get_confirmation_bias(agent: dict) -> float:
+    category = agent.get("stakeholder_category", "civil_society")
+    return CONFIRMATION_BIAS_BY_CATEGORY.get(category, 0.35)
+
+def apply_confirmation_bias(
+    evidence_multiplier: float,
+    agent: dict,
+    weighted_avg: float
+) -> float:
+    """
+    Discount evidence multiplier when opponents are pushing against agent's position.
+    Grounded in Chuang et al. NAACL 2024 — LLMs need confirmation bias injection
+    to produce realistic opinion fragmentation.
+    """
+    agent_score = agent.get("score", 5.0)
+    bias = get_confirmation_bias(agent)
+
+    # Is the weighted average pushing against the agent's position?
+    contradicting = (agent_score > 5.0 and weighted_avg < agent_score) or \
+                    (agent_score < 5.0 and weighted_avg > agent_score)
+
+    if contradicting:
+        # Discount the evidence multiplier by confirmation bias
+        discounted = evidence_multiplier * (1.0 - bias)
+        return round(max(discounted, 1.0), 3)
+
+    return evidence_multiplier
+
+def apply_backfire_effect(agent: dict) -> float:
+    """
+    If agent has been repeatedly attacked without shifting,
+    increase their resistance — they dig in harder.
+    Grounded in Nyhan & Reifler 2010 backfire effect research.
+    """
+    attacks_received = agent.get("attacks_received", 0)
+
+    if attacks_received <= BACKFIRE_THRESHOLD:
+        return agent.get("persuasion_resistance", 0.5)
+
+    extra_attacks = attacks_received - BACKFIRE_THRESHOLD
+    boost = extra_attacks * BACKFIRE_RESISTANCE_BOOST
+    new_resistance = agent.get("persuasion_resistance", 0.5) + boost
+    return round(min(new_resistance, MAX_RESISTANCE), 3)
+
 def calculate_evidence_multiplier(evidence: list[dict]) -> float:
     if not evidence:
         return 1.0
@@ -46,10 +111,13 @@ async def run_single_agent_round(
     agent: dict,
     all_agents: list[dict],
     topic: str,
-    G: nx.DiGraph,
+    G_inst: nx.DiGraph,
+    G_pub: nx.DiGraph,
     round_num: int
 ) -> dict:
     # Step 1 — Pull evidence from knowledge graph
+    # Each agent queries their own graph — no cross-contamination
+    G = G_pub if agent.get("graph_type") == "public" else G_inst
     keywords = agent.get("key_beliefs", []) + agent.get("known_entities", [])
     evidence = query_graph(G, keywords, top_n=5)
 
@@ -71,13 +139,15 @@ async def run_single_agent_round(
         if abs(agent["score"] - opp["score"]) < CONFIDENCE_THRESHOLD
     ]
 
-    # Step 4 — Weighted average Deffuant update
-    evidence_multiplier = calculate_evidence_multiplier(evidence)
+    # Step 4 — Calculate base evidence multiplier
+    base_evidence_multiplier = calculate_evidence_multiplier(evidence)
     old_score = agent["score"]
 
     if within_threshold:
+        # Fix 4 — Influence-weighted Deffuant
+        # High influence agents pull others harder — not everyone has equal pull
         weights = [
-            1.0 / (abs(agent["score"] - opp["score"]) + 0.1)
+            (1.0 / (abs(agent["score"] - opp["score"]) + 0.1)) * opp.get("influence_weight", 0.5)
             for opp in within_threshold
         ]
         total_weight = sum(weights)
@@ -85,29 +155,56 @@ async def run_single_agent_round(
             opp["score"] * w for opp, w in zip(within_threshold, weights)
         ) / total_weight
 
+        # Fix 2 — Confirmation bias
+        # Discount evidence when opponents are pushing against agent's worldview
+        biased_multiplier = apply_confirmation_bias(
+            base_evidence_multiplier, agent, weighted_avg
+        )
+
+        # Fix 3 — Backfire effect
+        # Repeated attacks without shifting increases resistance
+        effective_resistance = apply_backfire_effect(agent)
+
         new_score, delta = deffuant_update(
             opinion_i=old_score,
             opinion_j=weighted_avg,
-            resistance_i=agent.get("persuasion_resistance", 0.5),
-            evidence_multiplier=evidence_multiplier
+            resistance_i=effective_resistance,
+            evidence_multiplier=biased_multiplier
         )
 
-        influential_opponent = min(
+        influential_opponent = max(
             within_threshold,
-            key=lambda o: abs(agent["score"] - o["score"])
+            key=lambda o: o.get("influence_weight", 0.5)
         )
         min_gap = abs(agent["score"] - influential_opponent["score"])
+
+        # Track attacks for backfire effect
+        # Agent is being "attacked" if weighted avg is against their position
+        being_attacked = (old_score > 5.0 and weighted_avg < old_score) or \
+                         (old_score < 5.0 and weighted_avg > old_score)
+
     else:
         new_score = old_score
         delta = 0.0
         influential_opponent = None
         min_gap = float('inf')
+        biased_multiplier = base_evidence_multiplier
+        effective_resistance = agent.get("persuasion_resistance", 0.5)
+        being_attacked = False
 
-    # Step 5 — Derive stance and shift BEFORE calling LLM
+    # Step 5 — Derive stance and shift
     new_stance = derive_stance(new_score)
-    shifted = delta > 0.05  # was 0.3 — too high for high-resistance agents
+    stance_changed = new_stance != agent.get("stance", "neutral")
+    shifted = stance_changed or (delta > 0.10)
 
-    # Step 6 — LLM generates argument text reflecting math-decided outcome
+    # Update attack counter for backfire effect tracking
+    attacks_received = agent.get("attacks_received", 0)
+    if being_attacked and not shifted:
+        attacks_received += 1
+    elif shifted:
+        attacks_received = 0  # reset if they actually shifted
+
+    # Step 6 — LLM generates argument text
     system = """You are simulating a realistic human debater grounded in real evidence.
 Your opinion shift has already been mathematically calculated.
 Your job is to generate realistic argument text that reflects this outcome.
@@ -118,7 +215,8 @@ Respond in valid JSON only."""
 
     prompt = f"""You are {agent['name']}, representing {agent.get('stakeholder_name', 'yourself')}.
 Background: {agent['persona']}
-Persuasion resistance: {agent.get('persuasion_resistance', 0.5)} (0=easily convinced, 1=never)
+Persuasion resistance: {effective_resistance} (0=easily convinced, 1=never)
+Confirmation bias: {get_confirmation_bias(agent)} (how much you discount opposing evidence)
 
 Topic: {topic}
 Round: {round_num}
@@ -138,6 +236,7 @@ Mathematical outcome (already decided):
 - Your new score: {new_score}/10
 - Opinion shifted: {shifted}
 - {shift_direction}
+- You {"are being repeatedly challenged and digging in harder" if attacks_received > BACKFIRE_THRESHOLD else "are engaging with the debate openly"}
 
 Generate argument text that reflects this outcome naturally.
 
@@ -164,8 +263,11 @@ Respond in this exact JSON format:
         updated_agent["shift_reason"] = response.get("shift_reason", "")
         updated_agent["key_evidence_used"] = response.get("key_evidence_used", [])
         updated_agent["responding_to"] = response.get("responding_to", "")
-        updated_agent["evidence_multiplier"] = evidence_multiplier
+        updated_agent["evidence_multiplier"] = biased_multiplier
         updated_agent["deffuant_gap"] = round(min_gap, 2) if influential_opponent else None
+        updated_agent["attacks_received"] = attacks_received
+        updated_agent["effective_resistance"] = effective_resistance
+        updated_agent["confirmation_bias"] = get_confirmation_bias(agent)
 
         return updated_agent
 
@@ -176,12 +278,13 @@ Respond in this exact JSON format:
 async def run_debate_round(
     agents: list[dict],
     topic: str,
-    G: nx.DiGraph,
+    G_inst: nx.DiGraph,
+    G_pub: nx.DiGraph,
     round_num: int
 ) -> list[dict]:
     print(f"[DebateEngine] Running round {round_num} with {len(agents)} agents...")
     tasks = [
-        run_single_agent_round(agent, agents, topic, G, round_num)
+        run_single_agent_round(agent, agents, topic, G_inst, G_pub, round_num)
         for agent in agents
     ]
     updated_agents = await asyncio.gather(*tasks)
@@ -190,9 +293,13 @@ async def run_debate_round(
 async def run_debate(
     topic: str,
     agents: list[dict],
-    G: nx.DiGraph,
-    num_rounds: int = 3
+    G_inst: nx.DiGraph,
+    num_rounds: int = 3,
+    G_pub: nx.DiGraph = None
 ) -> dict:
+    if G_pub is None:
+        G_pub = G_inst  # fallback — use same graph if no public graph
+
     print(f"[DebateEngine] Starting debate on: {topic}")
     print(f"[DebateEngine] {len(agents)} agents, {num_rounds} rounds")
     print(f"[DebateEngine] Deffuant params: mu={BASE_MU}, threshold={CONFIDENCE_THRESHOLD}")
@@ -201,7 +308,10 @@ async def run_debate(
     current_agents = agents.copy()
 
     for round_num in range(1, num_rounds + 1):
-        updated_agents = await run_debate_round(current_agents, topic, G, round_num)
+        updated_agents = await run_debate_round(
+            current_agents, topic, G_inst, G_pub, round_num
+        )
+        # rest stays exactly the same
 
         round_result = {
             "round": round_num,
@@ -218,6 +328,9 @@ async def run_debate(
                     "stakeholder_category": a.get("stakeholder_category"),
                     "deffuant_gap": a.get("deffuant_gap"),
                     "evidence_multiplier": a.get("evidence_multiplier"),
+                    "attacks_received": a.get("attacks_received", 0),
+                    "effective_resistance": a.get("effective_resistance"),
+                    "confirmation_bias": a.get("confirmation_bias"),
                 }
                 for a in updated_agents
             ]

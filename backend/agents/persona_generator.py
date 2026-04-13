@@ -11,11 +11,11 @@ import networkx as nx
 # Force stance diversity across agents
 STANCE_MAP = {0: "strongly against", 1: "strongly for", 2: "neutral"}
 SCORE_RANGE = {
-    "strongly against": (1.5, 3.5),
-    "strongly for": (7.5, 9.5),
-    "neutral": (4.0, 6.0),
-    "for": (5.5, 8.0),      # was 6.5-9.0
-    "against": (2.0, 5.5),  # was 1.5-4.0
+    "strongly against": (1.0, 2.5),
+    "against":          (1.5, 3.5),   # was (2.0, 5.5)
+    "neutral":          (4.0, 6.0),
+    "for":              (6.5, 8.5),   # was (5.5, 8.0)
+    "strongly for":     (7.5, 9.5),
 }
 
 async def generate_single_persona(
@@ -106,8 +106,10 @@ Rules:
 - This is a hard rule — generating a duplicate name will break the simulation"""
 
     try:
+        import re
         result = await call_llm_json(prompt, system)
-        persona = json.loads(result)
+        result_clean = re.sub(r'[\x00-\x1f\x7f]', ' ', result)
+        persona = json.loads(result_clean)
 
         import random
         score = round(random.uniform(score_min, score_max), 1)

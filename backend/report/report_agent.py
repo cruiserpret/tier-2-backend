@@ -85,15 +85,21 @@ async def summarize_all_rounds(rounds: list[dict]) -> list[dict]:
 
 def calculate_verdict(final_agents: list[dict], rounds: list[dict]) -> dict:
     """
-    Mathematically derive verdict confidence from Deffuant simulation data.
-    
-    confidence = (stance_concentration × 0.5) + (shift_rate × 0.3) + (delta_score × 0.2)
+    Mathematically derive verdict confidence.
+
+    confidence = (stance_concentration × 0.4) +
+                 (shift_convergence × 0.3) +
+                 (score_separation × 0.3)
+
+    shift_convergence — did agents move TOWARD the dominant stance
+    score_separation  — how far the dominant group's avg score is from neutral (5.0)
+    These two fix the 25-35% problem — low deltas no longer tank confidence.
     """
     total = len(final_agents)
     if total == 0:
         return {"confidence": 0, "dominant_stance": "neutral", "verdict_strength": "inconclusive"}
 
-    # Stance concentration
+    # Stance counts
     stance_counts = {"for": 0, "against": 0, "neutral": 0}
     for a in final_agents:
         s = a.get("stance", "neutral")
@@ -103,57 +109,60 @@ def calculate_verdict(final_agents: list[dict], rounds: list[dict]) -> dict:
     dominant_count = stance_counts[dominant_stance]
     stance_concentration = dominant_count / total
 
-    # Shift rate across all rounds
-    total_shifts = sum(
-        sum(1 for a in r["agents"] if a.get("opinion_delta", 0) > 0.3)
-        for r in rounds
-    )
-    total_agent_rounds = total * len(rounds)
-    shift_rate = total_shifts / total_agent_rounds if total_agent_rounds > 0 else 0
+    # Score separation — how far dominant group is from neutral (5.0)
+    # A group averaging 8.0 is more "decided" than one averaging 6.0
+    dominant_agents = [a for a in final_agents if a.get("stance") == dominant_stance]
+    if dominant_agents:
+        avg_dominant_score = sum(a["score"] for a in dominant_agents) / len(dominant_agents)
+        score_separation = min(abs(avg_dominant_score - 5.0) / 5.0, 1.0)
+    else:
+        score_separation = 0.0
 
-    # Average delta score
-    all_deltas = [
-        a.get("opinion_delta", 0)
-        for r in rounds
-        for a in r["agents"]
-    ]
-    avg_delta = sum(all_deltas) / len(all_deltas) if all_deltas else 0
-    delta_score = min(avg_delta / 3.0, 1.0)
+    # Shift convergence — agents who shifted toward dominant stance
+    # Use 0.10 threshold to match our shifted definition in debate engine
+    total_convergent_shifts = 0
+    total_agent_rounds = total * len(rounds) if rounds else 1
+
+    for r in rounds:
+        for a in r["agents"]:
+            delta = a.get("opinion_delta", 0)
+            stance = a.get("stance", "neutral")
+            if delta > 0.10 and stance == dominant_stance:
+                total_convergent_shifts += 1
+
+    shift_convergence = min(total_convergent_shifts / total_agent_rounds, 1.0)
 
     # Final confidence
     confidence = (
-        stance_concentration * 0.5 +
-        shift_rate * 0.3 +
-        delta_score * 0.2
+        stance_concentration * 0.4 +
+        shift_convergence * 0.3 +
+        score_separation * 0.3
     )
     confidence_pct = round(confidence * 100, 1)
 
-    # Verdict strength label
-    if confidence_pct >= 70:
+    # Strength label
+    if confidence_pct >= 65:
         strength = "strong"
-    elif confidence_pct >= 45:
+    elif confidence_pct >= 40:
         strength = "moderate"
     else:
         strength = "contested"
 
-    # Minority position
-    minority_stance = min(
-        {k: v for k, v in stance_counts.items() if k != dominant_stance},
-        key=lambda k: stance_counts[k]
-    )
-    minority_count = stance_counts[minority_stance]
+    # Minority
+    minority_stances = {k: v for k, v in stance_counts.items() if k != dominant_stance}
+    minority_stance = max(minority_stances, key=minority_stances.get)
 
     return {
         "dominant_stance": dominant_stance,
         "dominant_count": dominant_count,
         "minority_stance": minority_stance,
-        "minority_count": minority_count,
+        "minority_count": stance_counts[minority_stance],
         "neutral_count": stance_counts["neutral"],
         "confidence_pct": confidence_pct,
         "verdict_strength": strength,
         "stance_concentration": round(stance_concentration, 3),
-        "shift_rate": round(shift_rate, 3),
-        "avg_delta": round(avg_delta, 3),
+        "shift_convergence": round(shift_convergence, 3),
+        "score_separation": round(score_separation, 3),
     }
 
 # ── Main Report Generator ─────────────────────────────────────────

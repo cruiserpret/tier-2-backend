@@ -7,7 +7,6 @@ from backend.utils.llm_client import call_llm_json
 from backend.utils.graph_utils import get_most_influential, get_nodes_by_type
 import networkx as nx
 
-# Category defaults — only resistance and influence, never stance
 STAKEHOLDER_CATEGORIES = {
     "tech_company":       {"persuasion_resistance": 0.55, "influence_weight": 0.90},
     "government":         {"persuasion_resistance": 0.65, "influence_weight": 0.95},
@@ -21,30 +20,86 @@ STAKEHOLDER_CATEGORIES = {
     "international_body": {"persuasion_resistance": 0.60, "influence_weight": 0.85},
 }
 
-MAX_CATEGORY_SHARE = 0.30  # No single category can exceed 30% of agents
-MIN_AGENTS = 10
+CATEGORY_NORMALIZER = {
+    "tech_leader": "tech_company",
+    "tech_executive": "tech_company",
+    "tech_entrepreneur": "tech_company",
+    "tech_industry": "tech_company",
+    "technology": "tech_company",
+    "corporation": "tech_company",
+    "business": "tech_company",
+    "company": "tech_company",
+    "ngo": "civil_society",
+    "nonprofit": "civil_society",
+    "advocacy": "civil_society",
+    "university": "academic",
+    "research": "academic",
+    "think_tank": "academic",
+    "defense_technology": "government",
+    "military": "government",
+    "defense": "government",
+    "nation": "government",
+    "country": "government",
+    "finance": "investor",
+    "fund": "investor",
+    "bank": "investor",
+    "venture_capital": "investor",
+    "vc": "investor",
+    "press": "media",
+    "news": "media",
+    "journalist": "media",
+    "union": "labor_union",
+    "workers": "labor_union",
+    "people": "affected_community",
+    "community": "affected_community",
+    "citizens": "consumer",
+    "public": "consumer",
+    "un": "international_body",
+    "nato": "international_body",
+    "who": "international_body",
+    "wto": "international_body",
+}
+
+MAX_CATEGORY_SHARE = 0.30
+MIN_AGENTS = 5
+
+def normalize_category(raw: str) -> str:
+    clean = raw.lower().strip().replace(" ", "_").replace("-", "_")
+    if clean in STAKEHOLDER_CATEGORIES:
+        return clean
+    if clean in CATEGORY_NORMALIZER:
+        return CATEGORY_NORMALIZER[clean]
+    for key in STAKEHOLDER_CATEGORIES:
+        if key in clean or clean in key:
+            return key
+    return "civil_society"
+
 async def classify_and_position_entities(
     topic: str,
     entities: list[dict],
     graph_context: str
 ) -> list[dict]:
-    """
-    Classify entities into stakeholder categories and determine
-    their stance based on INTERESTS, not current public positions.
-    """
-
     entity_list = "\n".join([
         f"- {e['name']} (influence: {e.get('influence_score', 0):.3f}, citations: {e.get('citations', 1)})"
         for e in entities[:35]
     ])
 
-    system = """You are an expert at identifying stakeholder interests and how they drive positions.
-Your job is NOT to report what entities currently say publicly.
-Your job is to analyze what their FUNDAMENTAL INTERESTS are and what stance those interests logically produce.
-A company may publicly support regulation while privately opposing it — analyze interests, not PR statements.
+    system = """You are an expert at identifying stakeholders and their real-world positions.
+Derive stance from INTERESTS, not public statements or news sentiment.
 Respond in valid JSON only."""
 
-    prompt = f"""Proposition: {topic}
+
+
+    proposition = topic if "?" in topic else f"{topic}?"
+    prompt = f"""Proposition being debated: {proposition}
+
+CRITICAL: stance must always be relative to the proposition itself.
+- "for" = this entity SUPPORTS what the proposition is suggesting
+- "against" = this entity OPPOSES what the proposition is suggesting  
+- "neutral" = this entity has genuinely mixed or unclear position
+
+Think carefully about what the proposition is actually asking before assigning stance.
+Derive stance from the entity's fundamental interests relative to THIS specific proposition.
 
 Entities from knowledge graph:
 {entity_list}
@@ -54,14 +109,12 @@ Knowledge graph context:
 
 For each real stakeholder, analyze their fundamental interests and derive their logical stance.
 
-Think through each stakeholder like this:
-1. What does this entity fundamentally want? (profit, power, safety, freedom, etc.)
+Think through each stakeholder:
+1. What do they fundamentally want?
 2. How does this proposition affect those interests?
-3. What stance do those interests logically push them toward?
+3. What stance do those interests logically produce?
 
-IMPORTANT: Do NOT default everyone to the same stance. Real debates have genuine disagreement.
-For any regulation topic — some entities genuinely benefit from regulation, others genuinely lose.
-Derive that from interests, not from what today's news says they support.
+IMPORTANT: Ensure genuine diversity — not everyone can have the same stance.
 
 Respond in this exact JSON format:
 {{
@@ -69,9 +122,8 @@ Respond in this exact JSON format:
         {{
             "name": "entity name exactly as given",
             "category": "tech_company/government/civil_society/academic/labor_union/consumer/media/investor/affected_community/international_body",
-            "fundamental_interests": "what this entity fundamentally wants in 1 sentence",
-            "interest_analysis": "how this proposition affects their interests in 1-2 sentences",
-            "real_position": "their logical position derived from interests, NOT their public PR stance",
+            "fundamental_interests": "what this entity fundamentally wants",
+            "real_position": "their logical position derived from interests",
             "stance": "for/against/neutral",
             "stake": "why this outcome matters to them",
             "relevance_score": 0.85
@@ -80,12 +132,10 @@ Respond in this exact JSON format:
 }}
 
 Rules:
-- Stance comes from INTEREST ANALYSIS, never from public statements or news sentiment
-- Ensure genuine diversity — not everyone can have the same stance
-- A tech company might be AGAINST regulation (threatens profits) OR FOR it (legitimizes industry, hurts competitors)
-- Derive which one from their specific situation in the graph context
+- Stance from INTEREST ANALYSIS only — never from public PR statements
+- Ensure genuine diversity — not everyone the same stance
 - Maximum 15 stakeholders
-- Only include entities with a genuine stake"""
+- Only real organizations with genuine stakes"""
 
     try:
         result = await call_llm_json(prompt, system)
@@ -94,18 +144,10 @@ Rules:
     except Exception as e:
         print(f"[StakeholderIdentifier] Classification error: {e}")
         return []
-    
+
 def enforce_diversity(stakeholders: list[dict], num_agents: int) -> list[dict]:
-    """
-    Ensure no single category dominates.
-    Cap any category at MAX_CATEGORY_SHARE of total agents.
-    Returns ranked diverse list.
-    """
     max_per_category = max(1, int(num_agents * MAX_CATEGORY_SHARE))
-
-    # Sort by relevance score descending
     sorted_s = sorted(stakeholders, key=lambda x: x.get("relevance_score", 0.5), reverse=True)
-
     category_counts = {}
     selected = []
 
@@ -120,21 +162,23 @@ def enforce_diversity(stakeholders: list[dict], num_agents: int) -> list[dict]:
 
 def fill_to_count(stakeholders: list[dict], num_agents: int) -> list[dict]:
     """
-    If we have fewer stakeholders than agents needed,
-    create representatives of the same stakeholders with slightly
-    different roles to fill the count.
+    Fill to required count with representatives.
+    No cap — representatives fill until we hit num_agents.
     """
     if len(stakeholders) >= num_agents:
         return stakeholders[:num_agents]
 
     filled = stakeholders.copy()
+    unique_count = len(stakeholders)
     i = 0
+
     while len(filled) < num_agents:
-        base = stakeholders[i % len(stakeholders)]
+        base = stakeholders[i % unique_count]
+        rep_num = i // unique_count + 2
         filled.append({
             **base,
-            "name": f"{base['name']} (representative {i // len(stakeholders) + 2})",
-            "real_position": f"A representative perspective aligned with {base['name']}'s position: {base['real_position']}"
+            "name": f"{base['name']} (representative {rep_num})",
+            "real_position": f"A secondary perspective aligned with {base['name']}'s position."
         })
         i += 1
 
@@ -143,17 +187,11 @@ def fill_to_count(stakeholders: list[dict], num_agents: int) -> list[dict]:
 async def identify_stakeholders(
     topic: str,
     G: nx.DiGraph,
-    num_agents: int = 20
+    num_agents: int = 10
 ) -> list[dict]:
-    """
-    Main function — identifies real stakeholders from knowledge graph.
-    Returns enriched stakeholder list ready for persona generation.
-    """
-    # Enforce minimum
     num_agents = max(num_agents, MIN_AGENTS)
     print(f"[StakeholderIdentifier] Identifying stakeholders for: {topic} ({num_agents} agents)")
 
-    # Pull entities from graph
     influential = get_most_influential(G, top_n=40)
     orgs = get_nodes_by_type(G, "org")
     people = get_nodes_by_type(G, "person")
@@ -163,33 +201,35 @@ async def identify_stakeholders(
         if not any(x["name"] == e["name"] for x in all_entities):
             all_entities.append(e)
 
-    # Build graph context string for LLM to read real positions from
     graph_context = "\n".join([
         f"- {n['name']}: {n.get('description', '')[:120]} [cited {n.get('citations', 1)}x]"
         for n in influential[:20]
     ])
 
-    # Classify entities and get real positions
     raw_stakeholders = await classify_and_position_entities(topic, all_entities, graph_context)
 
     if not raw_stakeholders:
-        print("[StakeholderIdentifier] No stakeholders identified, using graph entities as fallback")
         raw_stakeholders = [
             {
                 "name": e["name"],
                 "category": "civil_society",
+                "fundamental_interests": f"Has a stake in {topic}",
                 "real_position": f"Has a stake in {topic}",
                 "stance": "neutral",
                 "stake": "Identified from knowledge graph",
                 "relevance_score": e.get("influence_score", 0.5)
             }
-            for e in influential[:15]
+            for e in influential[:10]
         ]
 
-    # Enforce diversity — no category dominates
+    # Normalize categories
+    for s in raw_stakeholders:
+        s["category"] = normalize_category(s.get("category", "civil_society"))
+
+    # Enforce diversity
     diverse = enforce_diversity(raw_stakeholders, num_agents)
 
-    # Fill to required count if needed
+    # Fill to count with capped representatives
     filled = fill_to_count(diverse, num_agents)
 
     # Enrich with category weights
