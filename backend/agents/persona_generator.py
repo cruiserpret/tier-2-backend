@@ -8,14 +8,18 @@ from backend.utils.llm_client import call_llm_json
 from backend.utils.graph_utils import get_most_influential, get_nodes_by_type
 import networkx as nx
 
-# Force stance diversity across agents
 STANCE_MAP = {0: "strongly against", 1: "strongly for", 2: "neutral"}
+
+# ── Score ranges with clear separation from neutral zone ──────────
+# derive_stance in debate_engine: ≤3.5 = against, ≥6.5 = for, else neutral
+# Old ranges had "against" going up to 5.5 — agents drifted to neutral immediately
+# New ranges keep a buffer so agents hold their starting stance across rounds
 SCORE_RANGE = {
     "strongly against": (1.0, 2.5),
-    "against":          (1.5, 3.5),   # was (2.0, 5.5)
-    "neutral":          (4.0, 6.0),
-    "for":              (6.5, 8.5),   # was (5.5, 8.0)
-    "strongly for":     (7.5, 9.5),
+    "against":          (1.5, 3.0),  # was (1.5, 3.5) — buffer from 3.5 threshold
+    "neutral":          (4.2, 5.8),  # was (4.0, 6.0) — tighter middle band
+    "for":              (7.0, 8.5),  # was (6.5, 8.5) — buffer from 6.5 threshold
+    "strongly for":     (8.0, 9.5),
 }
 
 async def generate_single_persona(
@@ -42,7 +46,6 @@ async def generate_single_persona(
 
     existing_names_str = ", ".join(existing_names) if existing_names else "none"
 
-    # Use stakeholder if available, otherwise fall back to forced stance
     if stakeholder:
         stance_tendency = stakeholder.get("stance", "neutral")
         persuasion_resistance = stakeholder.get("persuasion_resistance", 0.5)
@@ -62,7 +65,7 @@ Persuasion resistance: {persuasion_resistance} (0=easily convinced, 1=never conv
         stakeholder_name = None
         stakeholder_category = "individual"
 
-    score_range = SCORE_RANGE.get(stance_tendency, (4.0, 6.0))
+    score_range = SCORE_RANGE.get(stance_tendency, (4.2, 5.8))
     score_min, score_max = score_range
 
     system = """You are designing a realistic human persona for a debate simulation.
@@ -98,12 +101,10 @@ Respond in this exact JSON format:
 
 Rules:
 - If the stakeholder is a well-known organization, use their ACTUAL real-world representative
-  (e.g. Meta → Mark Zuckerberg, European Union → Ursula von der Leyen, OpenAI → Sam Altman)
+  (e.g. Meta -> Mark Zuckerberg, European Union -> Ursula von der Leyen, OpenAI -> Sam Altman)
 - Only invent a name if the stakeholder has no single known representative
 - No "Dr." prefix unless the real person actually uses it
-- Name must be unique — not in: {existing_names_str}
-- The following names are already taken, use someone else: {existing_names_str}
-- This is a hard rule — generating a duplicate name will break the simulation"""
+- Name must be unique — not in: {existing_names_str}"""
 
     try:
         import re
@@ -114,7 +115,7 @@ Rules:
         import random
         score = round(random.uniform(score_min, score_max), 1)
 
-        # Clean up stance string
+        # Normalize stance
         stance = stance_tendency
         if stance in ["strongly against", "against"]:
             stance = "against"
@@ -146,7 +147,8 @@ Rules:
         print(f"[PersonaGenerator] Error generating persona {agent_index}: {e}")
         traceback.print_exc()
         return None
-    
+
+
 async def generate_personas(
     topic: str,
     G: nx.DiGraph,
@@ -158,7 +160,6 @@ async def generate_personas(
     existing_names = []
     valid_personas = []
 
-    # Run sequentially to guarantee unique names and correct stance cycling
     for i in range(num_agents):
         await asyncio.sleep(0.5)
         stakeholder = stakeholders[i] if stakeholders and i < len(stakeholders) else None
@@ -166,7 +167,9 @@ async def generate_personas(
         if persona:
             existing_names.append(persona["name"])
             valid_personas.append(persona)
-            print(f"[PersonaGenerator] Agent {i+1}: {persona['name']} | {persona.get('stakeholder_name', 'individual')} | stance: {persona['stance']} | score: {persona['score']}")
+            print(f"[PersonaGenerator] Agent {i+1}: {persona['name']} | "
+                  f"{persona.get('stakeholder_name', 'individual')} | "
+                  f"stance: {persona['stance']} | score: {persona['score']}")
 
     print(f"[PersonaGenerator] Successfully generated {len(valid_personas)} personas")
     return valid_personas

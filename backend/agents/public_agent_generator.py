@@ -9,28 +9,27 @@ from backend.utils.llm_client import call_llm_json
 from backend.utils.graph_utils import get_most_influential, get_nodes_by_type, query_graph
 import networkx as nx
 
+# ── Score ranges with clear separation from neutral zone ──────────
+# derive_stance in debate_engine: ≤3.5 = against, ≥6.5 = for, else neutral
+# Old ranges caused against agents to score 4.4/4.5 → instantly flipped neutral
+# New ranges create a buffer zone so agents hold their stance across rounds
 SCORE_RANGE = {
-    "for":     (5.5, 8.5),
-    "against": (1.5, 4.5),
-    "neutral": (4.0, 6.0),
+    "for":     (7.0, 8.8),  # well above 6.5 threshold — holds stance under pressure
+    "against": (1.5, 3.0),  # well below 3.5 threshold — holds stance under pressure
+    "neutral": (4.2, 5.8),  # clearly in middle
 }
 
 def safe_parse_json(raw: str) -> dict:
-    """
-    Robust JSON parser with multiple fallback strategies.
-    Fixes the 'Expecting comma delimiter' errors that kill public agents.
-    """
+    """Robust JSON parser with multiple fallback strategies."""
     if not raw:
         return {}
 
-    # Strategy 1 — strip control characters and parse directly
     try:
         clean = re.sub(r'[\x00-\x1f\x7f]', ' ', raw)
         return json.loads(clean)
     except Exception:
         pass
 
-    # Strategy 2 — find the first valid JSON object in the string
     try:
         clean = re.sub(r'[\x00-\x1f\x7f]', ' ', raw)
         start = clean.find('{')
@@ -40,7 +39,6 @@ def safe_parse_json(raw: str) -> dict:
     except Exception:
         pass
 
-    # Strategy 3 — strip markdown code blocks
     try:
         clean = re.sub(r'```json|```', '', raw).strip()
         clean = re.sub(r'[\x00-\x1f\x7f]', ' ', clean)
@@ -48,7 +46,6 @@ def safe_parse_json(raw: str) -> dict:
     except Exception:
         pass
 
-    # Strategy 4 — replace smart quotes and try again
     try:
         clean = raw.replace('\u201c', '"').replace('\u201d', '"')
         clean = clean.replace('\u2018', "'").replace('\u2019', "'")
@@ -60,10 +57,7 @@ def safe_parse_json(raw: str) -> dict:
     return {}
 
 
-async def extract_opinion_patterns(
-    topic: str,
-    G: nx.DiGraph
-) -> list[dict]:
+async def extract_opinion_patterns(topic: str, G) -> list[dict]:
     """Extract recurring public opinion patterns from the public sentiment graph."""
     claims = get_nodes_by_type(G, "claim")
     influential = get_most_influential(G, top_n=15)
@@ -96,22 +90,22 @@ Identify 6-8 distinct opinion patterns from this public discourse.
 Each must represent a SPECIFIC real demographic with a specific viewpoint.
 
 CRITICAL RULES:
-1. Demographic must be hyper-specific — not "workers" but "32-year-old freelance graphic designer in Chicago who lost 40% of income"
-2. You MUST include patterns across for, against, AND neutral — no stance should exceed 50% of patterns
-3. Emotional driver must be personal and visceral — fear, anger, hope, relief
-4. Sample argument must sound like a real Reddit/Quora comment — personal, specific, emotional
+1. Demographic must be hyper-specific — not "workers" but "32-year-old freelance graphic designer in Chicago"
+2. You MUST include patterns across for, against, AND neutral — no stance should exceed 50%
+3. Each demographic must be genuinely different — different age, profession, location, life situation
+4. Sample argument must sound like a real Reddit comment — personal, specific, emotional
 
 Respond in this exact JSON format:
 {{
     "patterns": [
         {{
-            "demographic": "hyper-specific description with age, profession, location context",
+            "demographic": "hyper-specific description with age, profession, location",
             "core_belief": "their central argument in 1 personal sentence",
-            "emotional_driver": "the specific personal fear, anger, hope or relief driving this",
+            "emotional_driver": "specific personal fear, anger, hope driving this",
             "emotional_intensity": "high/medium/low",
             "stance": "for/against/neutral",
             "prevalence": "high/medium/low",
-            "sample_argument": "a realistic Reddit-style comment this specific person would write"
+            "sample_argument": "realistic Reddit-style comment this specific person would write"
         }}
     ]
 }}"""
@@ -129,7 +123,6 @@ Respond in this exact JSON format:
         print(f"[PublicAgentGenerator] Extracted {total} patterns: "
               f"{for_count} for / {against_count} against / {neutral_count} neutral")
 
-        # Balance enforcement — if any stance > 55% request missing perspectives
         if total > 0 and (for_count / total > 0.55 or against_count / total > 0.55):
             missing = []
             if for_count == 0: missing.append("for")
@@ -137,14 +130,9 @@ Respond in this exact JSON format:
             if neutral_count == 0: missing.append("neutral")
 
             if missing:
-                balance_prompt = f"""The following stances are missing from patterns for: "{topic}"
-Missing stances: {', '.join(missing)}
-
-Generate 1-2 additional opinion patterns for each missing stance.
-Ground them in real public discourse about this topic.
-Same format — hyper-specific demographic, personal emotional driver, Reddit-style sample argument.
-
-Respond with additional patterns only:
+                balance_prompt = f"""Missing stances for topic "{topic}": {', '.join(missing)}
+Generate 1-2 additional patterns for each missing stance.
+Same format — hyper-specific demographic, personal emotional driver, Reddit-style argument.
 {{"patterns": [...]}}"""
 
                 try:
@@ -167,14 +155,23 @@ async def generate_public_agent(
     pattern: dict,
     agent_index: int,
     existing_names: list[str],
-    G: nx.DiGraph
+    existing_personas: list[dict],  # ← NEW: track full demographics to prevent duplication
+    G
 ) -> dict:
     """Generate a demographic agent grounded in a real public opinion pattern."""
     stance = pattern.get("stance", "neutral")
-    score_range = SCORE_RANGE.get(stance, (4.0, 6.0))
+    score_range = SCORE_RANGE.get(stance, (4.2, 5.8))
     emotional_intensity = pattern.get("emotional_intensity", "medium")
 
     existing_names_str = ", ".join(existing_names) if existing_names else "none"
+
+    # ── Demographic duplication prevention ───────────────────────
+    # Pass full persona descriptions so LLM can't generate the same
+    # "29-year-old Black software engineer in Atlanta" twice
+    existing_demographics_str = "\n".join([
+        f"- {p.get('age', '?')}-year-old {p.get('profession', '?')} in {p.get('location', '?')}"
+        for p in existing_personas
+    ]) if existing_personas else "none"
 
     keywords = pattern.get("core_belief", "").split()[:5]
     evidence = query_graph(G, keywords, top_n=3)
@@ -203,24 +200,31 @@ How they actually talk about this: {pattern['sample_argument']}
 Relevant context:
 {evidence_context}
 
-Names already used: {existing_names_str}
+Names already used (do not repeat): {existing_names_str}
+
+CRITICAL — Demographics already used (you MUST generate someone genuinely different):
+{existing_demographics_str}
+
+Generate someone with a different age, profession, AND location from all of the above.
+Do not generate another "tech startup founder in San Francisco" or another "software engineer in Atlanta"
+if those already exist above. Be creative — different city, different profession, different life stage.
 
 Respond in this exact JSON format:
 {{
     "name": "realistic full name",
     "age": 34,
-    "profession": "specific job title — not executive or academic",
-    "location": "city, state/country",
-    "persona": "2-3 sentences — their specific life situation and the personal experience that formed their opinion",
-    "initial_opinion": "their opinion in 2 sentences — first person, emotional, specific to their life. Must sound like a real person talking, NOT a policy statement.",
+    "profession": "specific job title — different from all existing personas above",
+    "location": "city, state/country — different from all existing personas above",
+    "persona": "2-3 sentences — their specific life situation and experience that formed their opinion",
+    "initial_opinion": "their opinion in 2 sentences — first person, emotional, specific to their life",
     "key_beliefs": ["personal belief from lived experience 1", "personal belief from lived experience 2"],
-    "known_entities": ["relevant topic or entity they personally encountered"]
+    "known_entities": ["relevant topic they personally encountered"]
 }}
 
 Rules:
 - Regular person only — no executives, academics, politicians
-- Opinion must come from personal experience
-- initial_opinion must be emotional and specific
+- Must be genuinely different from all existing demographics listed above
+- initial_opinion must sound like a real person talking, NOT a policy statement
 - Name must not be in: {existing_names_str}"""
 
     try:
@@ -270,7 +274,7 @@ Rules:
 
 async def generate_public_agents(
     topic: str,
-    G: nx.DiGraph,
+    G,
     num_agents: int
 ) -> list[dict]:
     """Main function — extract opinion patterns and generate public demographic agents."""
@@ -297,21 +301,30 @@ async def generate_public_agents(
         agent_counts[agent_counts.index(min(agent_counts))] += 1
 
     existing_names = []
+    existing_personas = []  # ← track full demographics
     all_agents = []
 
     for pattern, count in zip(patterns, agent_counts):
         for i in range(count):
             agent = await generate_public_agent(
-                topic, pattern,
-                len(all_agents),
-                existing_names.copy(),
-                G
+                topic=topic,
+                pattern=pattern,
+                agent_index=len(all_agents),
+                existing_names=existing_names.copy(),
+                existing_personas=existing_personas.copy(),  # ← pass demographics
+                G=G
             )
             if agent:
                 existing_names.append(agent["name"])
+                existing_personas.append({
+                    "age": agent["age"],
+                    "profession": agent["profession"],
+                    "location": agent["location"]
+                })
                 all_agents.append(agent)
                 print(f"[PublicAgentGenerator] {agent['name']} | "
-                      f"{agent['stakeholder_name']} | {agent['stance']} | {agent['score']}")
+                      f"{agent['profession']} in {agent['location']} | "
+                      f"{agent['stance']} | {agent['score']}")
 
     print(f"[PublicAgentGenerator] Generated {len(all_agents)} public agents")
     return all_agents
