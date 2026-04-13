@@ -13,8 +13,6 @@ CONFIDENCE_THRESHOLD = 3.0
 MAX_EVIDENCE_MULTIPLIER = 1.5
 
 # ── Confirmation Bias Parameters ──────────────────────────────────
-# How much contradicting evidence is discounted per category
-# 0 = no bias (accepts all evidence), 1 = full bias (ignores contradicting evidence)
 CONFIRMATION_BIAS_BY_CATEGORY = {
     "government":         0.65,
     "international_body": 0.60,
@@ -29,9 +27,9 @@ CONFIRMATION_BIAS_BY_CATEGORY = {
 }
 
 # ── Backfire Effect Parameters ────────────────────────────────────
-BACKFIRE_THRESHOLD = 2        # attacks before resistance starts increasing
-BACKFIRE_RESISTANCE_BOOST = 0.05  # resistance increase per attack above threshold
-MAX_RESISTANCE = 0.95         # resistance can never exceed this
+BACKFIRE_THRESHOLD = 2
+BACKFIRE_RESISTANCE_BOOST = 0.05
+MAX_RESISTANCE = 0.95
 
 def get_confirmation_bias(agent: dict) -> float:
     category = agent.get("stakeholder_category", "civil_society")
@@ -44,18 +42,15 @@ def apply_confirmation_bias(
 ) -> float:
     """
     Discount evidence multiplier when opponents are pushing against agent's position.
-    Grounded in Chuang et al. NAACL 2024 — LLMs need confirmation bias injection
-    to produce realistic opinion fragmentation.
+    Grounded in Chuang et al. NAACL 2024.
     """
     agent_score = agent.get("score", 5.0)
     bias = get_confirmation_bias(agent)
 
-    # Is the weighted average pushing against the agent's position?
     contradicting = (agent_score > 5.0 and weighted_avg < agent_score) or \
                     (agent_score < 5.0 and weighted_avg > agent_score)
 
     if contradicting:
-        # Discount the evidence multiplier by confirmation bias
         discounted = evidence_multiplier * (1.0 - bias)
         return round(max(discounted, 1.0), 3)
 
@@ -64,8 +59,8 @@ def apply_confirmation_bias(
 def apply_backfire_effect(agent: dict) -> float:
     """
     If agent has been repeatedly attacked without shifting,
-    increase their resistance — they dig in harder.
-    Grounded in Nyhan & Reifler 2010 backfire effect research.
+    increase their resistance.
+    Grounded in Nyhan & Reifler 2010.
     """
     attacks_received = agent.get("attacks_received", 0)
 
@@ -116,7 +111,6 @@ async def run_single_agent_round(
     round_num: int
 ) -> dict:
     # Step 1 — Pull evidence from knowledge graph
-    # Each agent queries their own graph — no cross-contamination
     G = G_pub if agent.get("graph_type") == "public" else G_inst
     keywords = agent.get("key_beliefs", []) + agent.get("known_entities", [])
     evidence = query_graph(G, keywords, top_n=5)
@@ -126,10 +120,11 @@ async def run_single_agent_round(
         for e in evidence
     ])
 
-    # Step 2 — Read opponents
+    # Step 2 — Read opponents (now includes last_argument for argument evolution)
     opponents = [a for a in all_agents if a["id"] != agent["id"]]
     opponent_context = "\n".join([
         f"- {o['name']} ({o['stance']}, score {o['score']}): {o['opinion']}"
+        + (f"\n  → Last argument: \"{o['last_argument']}\"" if o.get('last_argument') else "")
         for o in opponents[:6]
     ])
 
@@ -139,13 +134,27 @@ async def run_single_agent_round(
         if abs(agent["score"] - opp["score"]) < CONFIDENCE_THRESHOLD
     ]
 
+    # ── Argument Evolution — pick a specific target to respond to ──
+    # Priority: most influential within threshold → otherwise highest gap opponent
+    target_opponent = None
+    if within_threshold:
+        target_opponent = max(within_threshold, key=lambda o: o.get("influence_weight", 0.5))
+    elif opponents:
+        target_opponent = max(opponents, key=lambda o: abs(agent["score"] - o["score"]))
+
+    target_argument = ""
+    if target_opponent and target_opponent.get("last_argument"):
+        target_argument = (
+            f"\n\nYou MUST directly respond to this specific argument from {target_opponent['name']}:\n"
+            f"\"{target_opponent['last_argument']}\""
+        )
+
     # Step 4 — Calculate base evidence multiplier
     base_evidence_multiplier = calculate_evidence_multiplier(evidence)
     old_score = agent["score"]
 
     if within_threshold:
-        # Fix 4 — Influence-weighted Deffuant
-        # High influence agents pull others harder — not everyone has equal pull
+        # Influence-weighted Deffuant
         weights = [
             (1.0 / (abs(agent["score"] - opp["score"]) + 0.1)) * opp.get("influence_weight", 0.5)
             for opp in within_threshold
@@ -155,14 +164,12 @@ async def run_single_agent_round(
             opp["score"] * w for opp, w in zip(within_threshold, weights)
         ) / total_weight
 
-        # Fix 2 — Confirmation bias
-        # Discount evidence when opponents are pushing against agent's worldview
+        # Confirmation bias
         biased_multiplier = apply_confirmation_bias(
             base_evidence_multiplier, agent, weighted_avg
         )
 
-        # Fix 3 — Backfire effect
-        # Repeated attacks without shifting increases resistance
+        # Backfire effect
         effective_resistance = apply_backfire_effect(agent)
 
         new_score, delta = deffuant_update(
@@ -178,8 +185,6 @@ async def run_single_agent_round(
         )
         min_gap = abs(agent["score"] - influential_opponent["score"])
 
-        # Track attacks for backfire effect
-        # Agent is being "attacked" if weighted avg is against their position
         being_attacked = (old_score > 5.0 and weighted_avg < old_score) or \
                          (old_score < 5.0 and weighted_avg > old_score)
 
@@ -202,12 +207,13 @@ async def run_single_agent_round(
     if being_attacked and not shifted:
         attacks_received += 1
     elif shifted:
-        attacks_received = 0  # reset if they actually shifted
+        attacks_received = 0
 
     # Step 6 — LLM generates argument text
     system = """You are simulating a realistic human debater grounded in real evidence.
 Your opinion shift has already been mathematically calculated.
 Your job is to generate realistic argument text that reflects this outcome.
+You must directly engage with what specific opponents said — not generic statements.
 Respond in valid JSON only."""
 
     opponent_name = influential_opponent['name'] if influential_opponent else 'the group'
@@ -231,6 +237,7 @@ Evidence available from real sources:
 
 What other debaters said:
 {opponent_context}
+{target_argument}
 
 Mathematical outcome (already decided):
 - Your new score: {new_score}/10
@@ -239,11 +246,12 @@ Mathematical outcome (already decided):
 - You {"are being repeatedly challenged and digging in harder" if attacks_received > BACKFIRE_THRESHOLD else "are engaging with the debate openly"}
 
 Generate argument text that reflects this outcome naturally.
+If you have a target argument above, your response MUST explicitly reference it — agree, disagree, or reframe it.
 
 Respond in this exact JSON format:
 {{
-    "argument": "your argument this round citing specific evidence",
-    "responding_to": "{opponent_name}",
+    "argument": "your argument this round citing specific evidence and directly referencing the target opponent if provided",
+    "responding_to": "{target_opponent['name'] if target_opponent else opponent_name}",
     "new_opinion": "your updated opinion in 2 sentences reflecting score {new_score}",
     "shift_reason": "why you {'moved slightly' if shifted else 'held firm'} on this issue",
     "key_evidence_used": ["evidence point 1", "evidence point 2"]
@@ -263,6 +271,7 @@ Respond in this exact JSON format:
         updated_agent["shift_reason"] = response.get("shift_reason", "")
         updated_agent["key_evidence_used"] = response.get("key_evidence_used", [])
         updated_agent["responding_to"] = response.get("responding_to", "")
+        updated_agent["shift_caused_by"] = target_opponent["name"] if (shifted and target_opponent) else None
         updated_agent["evidence_multiplier"] = biased_multiplier
         updated_agent["deffuant_gap"] = round(min_gap, 2) if influential_opponent else None
         updated_agent["attacks_received"] = attacks_received
@@ -273,7 +282,6 @@ Respond in this exact JSON format:
 
     except Exception as e:
         print(f"[DebateEngine] Error in round {round_num} for {agent['name']}: {e}")
-        # Return agent with unchanged state but still update score from Deffuant math
         updated_agent = agent.copy()
         updated_agent["score"] = new_score
         updated_agent["stance"] = new_stance
@@ -305,7 +313,7 @@ async def run_debate(
     G_pub: nx.DiGraph = None
 ) -> dict:
     if G_pub is None:
-        G_pub = G_inst  # fallback — use same graph if no public graph
+        G_pub = G_inst
 
     print(f"[DebateEngine] Starting debate on: {topic}")
     print(f"[DebateEngine] {len(agents)} agents, {num_rounds} rounds")
@@ -318,7 +326,6 @@ async def run_debate(
         updated_agents = await run_debate_round(
             current_agents, topic, G_inst, G_pub, round_num
         )
-        # rest stays exactly the same
 
         round_result = {
             "round": round_num,
@@ -338,6 +345,9 @@ async def run_debate(
                     "attacks_received": a.get("attacks_received", 0),
                     "effective_resistance": a.get("effective_resistance"),
                     "confirmation_bias": a.get("confirmation_bias"),
+                    "shift_caused_by": a.get("shift_caused_by"),
+                    "last_argument": a.get("last_argument", ""),
+                    "responding_to": a.get("responding_to", ""),
                 }
                 for a in updated_agents
             ]
