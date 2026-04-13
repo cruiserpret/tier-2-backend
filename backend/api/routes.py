@@ -79,8 +79,8 @@ def start_simulation():
                 inst_chunks, pub_chunks = run_async(ingest(topic, pdf_paths))
 
                 # Step 3 — Build two separate graphs
-                G_inst = run_async(build_graph(inst_chunks))
-                G_pub = run_async(build_graph(pub_chunks)) if pub_chunks else G_inst
+                G_inst = run_async(build_graph(inst_chunks, graph_source="institutional"))
+                G_pub = run_async(build_graph(pub_chunks, graph_source="public")) if pub_chunks else G_inst
                 graph_summary = get_graph_summary(G_inst)
 
                 # Step 4 — Generate institutional agents

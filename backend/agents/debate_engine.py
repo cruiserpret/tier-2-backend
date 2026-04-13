@@ -273,7 +273,14 @@ Respond in this exact JSON format:
 
     except Exception as e:
         print(f"[DebateEngine] Error in round {round_num} for {agent['name']}: {e}")
-        return agent
+        # Return agent with unchanged state but still update score from Deffuant math
+        updated_agent = agent.copy()
+        updated_agent["score"] = new_score
+        updated_agent["stance"] = new_stance
+        updated_agent["opinion_delta"] = delta
+        updated_agent["shifted"] = shifted
+        updated_agent["attacks_received"] = attacks_received
+        return updated_agent
 
 async def run_debate_round(
     agents: list[dict],
