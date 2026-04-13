@@ -45,13 +45,22 @@ INSTITUTIONAL topic — the outcome is primarily determined by:
 - Governments, regulators, corporations, international bodies
 - Experts, academics, policy makers
 - The general public has opinions but institutions decide
-- Examples: AI regulation, merger approvals, trade agreements, corporate restructuring
+- Examples: AI regulation, merger approvals, trade agreements, corporate restructuring,
+  OpenAI nonprofit status, cryptocurrency regulation, antitrust law, central bank policy
 
 PUBLIC topic — the outcome is primarily determined by:
 - Employees, consumers, communities, general population
-- Public pressure drives institutional response
-- Lived experience matters more than policy expertise
-- Examples: workplace policies, consumer product decisions, social media behavior, lifestyle choices
+- Public pressure and lived experience drives institutional response
+- Everyday people are the primary stakeholders, not just observers
+- Examples: workplace policies, consumer product decisions, social media behavior,
+  lifestyle choices, education access and cost, student loan debt, healthcare access,
+  housing affordability, free college tuition, minimum wage, remote work,
+  social media bans for children, artist compensation, UBI, immigration lived impact
+
+CRITICAL RULE: If the topic directly affects how everyday people live their daily lives
+— their finances, education, health, work conditions, or personal freedom —
+classify it as PUBLIC even if governments or institutions make the final decision.
+The question is WHO IS MOST AFFECTED, not who has the final vote.
 
 Respond in this exact JSON format:
 {{
