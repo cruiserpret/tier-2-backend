@@ -85,7 +85,7 @@ def start_simulation():
 
                 # Step 4 — Generate institutional agents
                 from backend.agents.stakeholder_identifier import identify_stakeholders
-                stakeholders = run_async(identify_stakeholders(topic, G_inst, inst_count))
+                stakeholders = run_async(identify_stakeholders(topic, G_inst, inst_count, G_pub))
                 actual_inst_count = len(stakeholders)
                 inst_agents = run_async(generate_personas(topic, G_inst, actual_inst_count, stakeholders))
 
