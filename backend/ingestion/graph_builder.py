@@ -116,7 +116,8 @@ Respond in this exact JSON format:
 Rules:
 - Only extract NAMED real entities
 - Maximum 8 entities, 5 claims, 5 relationships
-- Claims must be factual statements, not opinions"""
+- Claims must be factual statements, not opinions
+- entity_refs in claims MUST match entity names exactly as listed above"""
 
     try:
         result = await call_llm_json(prompt, system)
@@ -139,7 +140,6 @@ async def extract_public_entities(chunk: dict) -> dict:
     """
     Extract opinion patterns from public discourse.
     Focuses on personal experiences, emotional positions, and lived impact.
-    Different from institutional extraction — captures HOW PEOPLE FEEL not just WHAT HAPPENED.
     """
     system = """You are an expert at understanding public sentiment and lived experience.
 Extract the core opinions, experiences, and emotional positions from this public discourse.
@@ -158,9 +158,9 @@ Respond in this exact JSON format:
 {{
     "entities": [
         {{
-            "name": "specific opinion or experience expressed",
+            "name": "specific topic, person, or organization being discussed",
             "type": "experience/concept/person/organization",
-            "description": "what this person feels or experienced in 1 sentence — use their actual words and emotions"
+            "description": "what this person feels or experienced in 1 sentence"
         }}
     ],
     "claims": [
@@ -168,7 +168,7 @@ Respond in this exact JSON format:
             "text": "specific opinion or personal experience claim",
             "sentiment": "positive/negative/neutral",
             "emotional_intensity": "high/medium/low",
-            "entity_refs": []
+            "entity_refs": ["entity names from the entities list above that this claim is about"]
         }}
     ],
     "relationships": []
@@ -177,9 +177,9 @@ Respond in this exact JSON format:
 Rules:
 - Focus on OPINIONS and EXPERIENCES not just facts
 - Capture emotional language and personal impact
-- "I lost clients because of AI" is more valuable than "AI affects artists"
+- entity_refs MUST match entity names exactly as listed in entities above
 - Maximum 5 entities, 5 claims
-- Preserve the emotional specificity — don't sanitize into corporate language"""
+- Preserve the emotional specificity"""
 
     try:
         result = await call_llm_json(prompt, system)
@@ -206,11 +206,10 @@ async def build_graph(
 ) -> nx.DiGraph:
     """
     Build a knowledge graph from ingested chunks.
-    graph_source: "institutional" or "public" — determines extraction strategy.
+    graph_source: "institutional" or "public"
     """
     print(f"[GraphBuilder] Extracting entities from {len(chunks)} {graph_source} chunks...")
 
-    # Choose extraction strategy based on source
     if graph_source == "public":
         tasks = [extract_public_entities(chunk) for chunk in chunks]
     else:
@@ -246,7 +245,6 @@ async def build_graph(
                 if source not in sources:
                     sources.append(source)
                 G.nodes[existing]["sources"] = sources
-                # Keep highest sentiment strength
                 existing_strength = G.nodes[existing].get("sentiment_strength", 0.0)
                 G.nodes[existing]["sentiment_strength"] = max(existing_strength, sentiment_strength)
             else:
@@ -261,14 +259,14 @@ async def build_graph(
                     sentiment_strength=sentiment_strength
                 )
 
-        # Add claim nodes — full text preserved for public discourse
+        # Add claim nodes
+        claim_nodes_added = []
         for claim in extraction.get("claims", []):
             if not claim.get("text"):
                 continue
 
-            # Public claims get full text, institutional get truncated
             if graph_source == "public":
-                claim_name = claim["text"][:200]  # was 80 — too short
+                claim_name = claim["text"][:200]
             else:
                 claim_name = claim["text"][:80]
 
@@ -289,10 +287,38 @@ async def build_graph(
                     graph_source=graph_source,
                     sentiment_strength=sentiment_strength
                 )
+                claim_nodes_added.append((claim_name, claim.get("entity_refs", [])))
             else:
                 G.nodes[existing]["citations"] = G.nodes[existing].get("citations", 1) + 1
+                claim_nodes_added.append((existing, claim.get("entity_refs", [])))
 
-        # Add relationships (institutional only — public discourse rarely has clean relationships)
+        # ── CRITICAL FIX ─────────────────────────────────────────────
+        # Connect claim nodes to their referenced entities for ALL graph types.
+        # Previously this only happened for institutional — so public graph
+        # always had 0 edges, breaking PageRank and the calibration signal.
+        for claim_node, entity_refs in claim_nodes_added:
+            if claim_node not in G.nodes:
+                continue
+            for entity_ref in entity_refs:
+                if not entity_ref or len(entity_ref) < 3:
+                    continue
+                entity_node = find_similar_node(G, entity_ref)
+                if entity_node and entity_node in G.nodes:
+                    if not G.has_edge(entity_node, claim_node):
+                        G.add_edge(
+                            entity_node,
+                            claim_node,
+                            relation="makes_claim",
+                            weight=0.6,
+                            source=source,
+                            citations=1
+                        )
+                    else:
+                        G[entity_node][claim_node]["citations"] = (
+                            G[entity_node][claim_node].get("citations", 1) + 1
+                        )
+
+        # Add explicit relationships (institutional only)
         if graph_source == "institutional":
             for rel in extraction.get("relationships", []):
                 if not rel.get("from") or not rel.get("to") or not rel.get("relation"):
@@ -307,7 +333,9 @@ async def build_graph(
                             1.0,
                             G[from_node][to_node].get("weight", 0.5) + 0.1
                         )
-                        G[from_node][to_node]["citations"] = G[from_node][to_node].get("citations", 1) + 1
+                        G[from_node][to_node]["citations"] = (
+                            G[from_node][to_node].get("citations", 1) + 1
+                        )
                     else:
                         G.add_edge(
                             from_node,
@@ -321,15 +349,31 @@ async def build_graph(
     # PageRank for influence scores
     if len(G.nodes) > 0:
         try:
-            pagerank = nx.pagerank(G, alpha=0.85, weight="weight")
-        except:
-            pagerank = nx.pagerank(G, alpha=0.85)
+            if len(G.edges) > 0:
+                pagerank = nx.pagerank(G, alpha=0.85, weight="weight")
+            else:
+                # No edges — fall back to citation count as influence proxy
+                max_citations = max(
+                    (G.nodes[n].get("citations", 1) for n in G.nodes), default=1
+                )
+                pagerank = {
+                    n: G.nodes[n].get("citations", 1) / max_citations
+                    for n in G.nodes
+                }
+        except Exception as e:
+            print(f"[GraphBuilder] PageRank failed: {e} — using citation fallback")
+            max_citations = max(
+                (G.nodes[n].get("citations", 1) for n in G.nodes), default=1
+            )
+            pagerank = {
+                n: G.nodes[n].get("citations", 1) / max_citations
+                for n in G.nodes
+            }
 
         for node in G.nodes:
             G.nodes[node]["influence_score"] = round(pagerank.get(node, 0.0), 4)
 
-    # Remove noise nodes — but never remove public sentiment nodes
-    # even if they have low citations (they might be the only testimony we have)
+    # Remove noise nodes — never remove public sentiment nodes
     nodes_to_remove = [
         n for n in G.nodes
         if G.nodes[n].get("citations", 1) == 1

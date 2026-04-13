@@ -4,10 +4,6 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 from backend.utils.llm_client import call_llm_json
 
-# Binary split ratios
-# institutional_ratio = fraction of agents that are institutional actors
-# public_ratio = fraction of agents that are public/demographic actors
-
 INSTITUTIONAL_TOPIC = {
     "institutional_ratio": 0.80,
     "public_ratio": 0.20,
@@ -21,18 +17,6 @@ PUBLIC_TOPIC = {
 }
 
 async def classify_topic(topic: str) -> dict:
-    """
-    Classify topic as institutional or public to determine agent split ratio.
-
-    Institutional topics — primarily debated by organizations, governments,
-    corporations. Public sentiment exists but institutional actors drive outcomes.
-    Examples: AI regulation, corporate restructuring, trade policy, mergers
-
-    Public topics — primarily debated by everyday people. Institutional actors
-    exist but public sentiment drives outcomes.
-    Examples: RTO policy, social media bans, consumer products, workplace rights
-    """
-
     system = """You are an expert at understanding who drives debates on different topics.
 Classify whether a topic is primarily driven by institutional actors or public sentiment.
 Respond in valid JSON only."""
@@ -41,26 +25,39 @@ Respond in valid JSON only."""
 
 Determine whether this is primarily an INSTITUTIONAL or PUBLIC topic.
 
-INSTITUTIONAL topic — the outcome is primarily determined by:
+INSTITUTIONAL topic — outcome primarily determined by:
 - Governments, regulators, corporations, international bodies
-- Experts, academics, policy makers
-- The general public has opinions but institutions decide
-- Examples: AI regulation, merger approvals, trade agreements, corporate restructuring,
-  OpenAI nonprofit status, cryptocurrency regulation, antitrust law, central bank policy
+- Experts, academics, policy makers in closed rooms
+- General public has opinions but institutions make the final call
+- Examples: AI regulation frameworks, merger approvals, trade agreements,
+  corporate restructuring, OpenAI nonprofit status, antitrust law,
+  central bank interest rate policy, military defense contracts
 
-PUBLIC topic — the outcome is primarily determined by:
-- Employees, consumers, communities, general population
-- Public pressure and lived experience drives institutional response
-- Everyday people are the primary stakeholders, not just observers
-- Examples: workplace policies, consumer product decisions, social media behavior,
-  lifestyle choices, education access and cost, student loan debt, healthcare access,
-  housing affordability, free college tuition, minimum wage, remote work,
-  social media bans for children, artist compensation, UBI, immigration lived impact
+PUBLIC topic — outcome primarily determined by:
+- Everyday people — their votes, their behavior, their lived experience
+- Public pressure forces institutional response
+- The topic directly affects how millions of ordinary people live daily
+- Examples: workplace policies (RTO, remote work), consumer product bans,
+  social media behavior, lifestyle choices, free college tuition,
+  student loan debt, healthcare access, housing affordability,
+  minimum wage, artist compensation, UBI, immigration lived impact,
+  social media bans for children, voting rights and participation,
+  mandatory voting, compulsory civic duties, election reform,
+  democratic participation, gun control, abortion rights,
+  drug legalization, criminal justice reform, police reform,
+  climate change personal impact, food labeling, public health mandates,
+  caste reservations, affirmative action, racial equity policies
 
-CRITICAL RULE: If the topic directly affects how everyday people live their daily lives
-— their finances, education, health, work conditions, or personal freedom —
-classify it as PUBLIC even if governments or institutions make the final decision.
+CRITICAL RULE — THE MOST IMPORTANT TEST:
+Ask yourself: "Does this topic directly affect how everyday people vote,
+work, raise children, pay bills, access healthcare, or exercise their
+democratic rights?"
+
+If YES -> classify as PUBLIC, even if governments make the final decision.
 The question is WHO IS MOST AFFECTED, not who has the final vote.
+
+MANDATORY VOTING, CIVIC PARTICIPATION, AFFIRMATIVE ACTION, CASTE POLICY
+are always PUBLIC topics. They affect every citizen's daily life directly.
 
 Respond in this exact JSON format:
 {{
