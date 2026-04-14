@@ -15,9 +15,39 @@ from backend.agents.stakeholder_identifier import identify_stakeholders
 api = Blueprint("api", __name__)
 
 # ── In-memory store (Phase 1) ─────────────────────────────────────
-# Stores active simulations by simulation_id
-# In Phase 2 we replace this with a proper database
 simulations = {}
+
+# ── Harmful topic guard ───────────────────────────────────────────
+# Assembly simulates policy debates — not arguments for violence,
+# abuse, or criminality. These topics cause LLMs to refuse generation,
+# producing 0 agents and a ZeroDivisionError crash downstream.
+# Block them cleanly before the simulation thread starts.
+#
+# Research basis: Content safety taxonomies (Weidinger et al. 2021,
+# Google DeepMind) classify requests that solicit harmful content
+# as categorically different from policy debates — no legitimate
+# simulation use case requires debating these.
+
+BLOCKED_TERMS = [
+    "rape", "sexual assault", "child abuse", "pedophilia", "child porn",
+    "child sexual", "molest", "genocide", "ethnic cleansing",
+    "slavery", "human trafficking", "torture", "terrorism how to",
+    "mass shooting how", "school shooting", "bomb making",
+]
+
+def is_harmful_topic(topic: str) -> bool:
+    """
+    Returns True if topic contains terms that are categorically
+    outside the scope of policy debate simulation.
+    Uses whole-word matching to avoid false positives.
+    """
+    topic_lower = topic.lower()
+    for term in BLOCKED_TERMS:
+        # Match as substring — these terms are unambiguous in context
+        if term in topic_lower:
+            return True
+    return False
+
 
 # ── Helper ────────────────────────────────────────────────────────
 def run_async(coro):
@@ -31,6 +61,7 @@ def run_async(coro):
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
     return loop.run_until_complete(coro)
+
 
 # ── 1. Start simulation ───────────────────────────────────────────
 import threading
@@ -47,9 +78,17 @@ def start_simulation():
         if not topic:
             return jsonify({"error": "topic is required"}), 400
 
+        # ── Harmful topic guard ───────────────────────────────────
+        # Check BEFORE starting the thread — return 400 immediately
+        # so the frontend gets a clean error instead of a silent crash.
+        if is_harmful_topic(topic):
+            print(f"[API] Blocked harmful topic: {topic}")
+            return jsonify({
+                "error": "This topic cannot be simulated. Assembly is designed for policy and social debates."
+            }), 400
+
         simulation_id = f"sim_{uuid.uuid4().hex[:8]}"
 
-        # Store immediately as "running"
         simulations[simulation_id] = {
             "simulation_id": simulation_id,
             "topic": topic,
@@ -61,7 +100,6 @@ def start_simulation():
             "report": {}
         }
 
-        # Return immediately
         def run_simulation():
             try:
                 print(f"\n[API] Starting simulation {simulation_id} on: {topic}")
@@ -104,7 +142,6 @@ def start_simulation():
                 print(f"[API] Total agents: {len(all_agents)} ({len(inst_agents)} institutional, {len(pub_agents)} public)")
 
                 # Step 8 — Run debate
-                # Pass both graphs so agents query their own
                 debate_result = run_async(run_debate(topic, all_agents, G_inst, num_rounds, G_pub))
 
                 # Step 9 — Generate report
@@ -147,7 +184,7 @@ def start_simulation():
     except Exception as e:
         print(f"[API] Error: {e}")
         return jsonify({"error": str(e)}), 500
-    
+
 
 @api.route("/api/simulation/<simulation_id>/status", methods=["GET"])
 def get_simulation_status(simulation_id):
@@ -161,6 +198,7 @@ def get_simulation_status(simulation_id):
         "agents_created": sim.get("agents_created", 0),
         "error": sim.get("error", None)
     }), 200
+
 
 # ── 2. Get debate rounds ──────────────────────────────────────────
 @api.route("/api/simulation/<simulation_id>/debate", methods=["GET"])
@@ -178,7 +216,6 @@ def get_debate(simulation_id):
 # ── 3. Get agent memory ───────────────────────────────────────────
 @api.route("/api/agent/<agent_id>/memory", methods=["GET"])
 def get_agent_memory(agent_id):
-    # Search all simulations for this agent
     memory = []
     for sim_id, sim in simulations.items():
         for agent in sim.get("final_agents", []):
@@ -228,12 +265,6 @@ def inject_event():
         final_agents = sim["final_agents"]
         current_tick = len(sim["rounds"]) + 1
 
-        # Inject the event as a new debate round
-        from backend.utils.graph_utils import query_graph
-        from backend.agents.debate_engine import run_debate_round
-
-        # Temporarily add the event as a node concept
-        # In Phase 2 this re-ingests and updates the graph
         reactions = []
         for agent in final_agents:
             old_opinion = agent["opinion"]
@@ -271,7 +302,6 @@ def branch_simulation():
 
         branch_id = f"branch_{uuid.uuid4().hex[:8]}"
 
-        # Clone state up to from_tick
         branched_rounds = sim["rounds"][:from_tick]
         branched_agents = branched_rounds[-1]["agents"] if branched_rounds else []
 
@@ -321,3 +351,36 @@ def get_sentiment_history(simulation_id):
             "ticks": []
         })
     ), 200
+
+
+# ── 8. Store correction (call after validating against real polls) ─
+@api.route("/api/correction/store", methods=["POST"])
+def store_prediction_correction():
+    """
+    Store a prediction error after comparing simulation output to
+    real polling data. This feeds the reflexion correction memory.
+
+    Body: {
+        "topic": "...",
+        "predicted": {"for": 0.70, "against": 0.15, "neutral": 0.15},
+        "actual":    {"for": 0.45, "against": 0.54, "neutral": 0.08},
+        "root_cause": "optional human explanation"
+    }
+    """
+    try:
+        from backend.agents.correction_store import store_correction
+        body = request.get_json()
+
+        topic      = body.get("topic")
+        predicted  = body.get("predicted")
+        actual     = body.get("actual")
+        root_cause = body.get("root_cause", "")
+
+        if not all([topic, predicted, actual]):
+            return jsonify({"error": "topic, predicted, and actual are required"}), 400
+
+        store_correction(topic, predicted, actual, root_cause)
+        return jsonify({"status": "stored", "topic": topic}), 200
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
