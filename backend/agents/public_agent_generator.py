@@ -20,8 +20,7 @@ SCORE_RANGE = {
 # ── Neutral cap ───────────────────────────────────────────────────
 # Grounded in Converse 1964 and Krosnick & Fabrigar 1997:
 # On salient political topics, genuine neutrals are rare (5-15%).
-# Excess neutral patterns represent LLM hedging bias (Perez et al. 2022),
-# not real public opinion. Cap enforced after extraction.
+# Excess neutral patterns represent LLM hedging bias (Perez et al. 2022).
 MAX_NEUTRAL_RATIO = 0.15
 
 
@@ -63,39 +62,33 @@ def enforce_neutral_cap(patterns: list[dict]) -> list[dict]:
     Cap neutral patterns at MAX_NEUTRAL_RATIO of total.
 
     Research basis:
-    - Converse 1964: on salient political issues, genuine neutrals hold
-      CONFLICTING interests — not mere indecision. Most "neutral" survey
-      responses are measurement artifacts, not true ambivalence.
+    - Converse 1964: genuine neutrals hold CONFLICTING interests,
+      not mere indecision. Most neutral survey responses are artifacts.
     - Krosnick & Fabrigar 1997: on high-salience topics, neutral is
-      consistently the minority position (5-15% of real public).
-    - Perez et al. 2022: LLMs systematically over-generate neutral
-      framings due to RLHF training toward appearing balanced.
-      This cap corrects for that systematic bias.
+      consistently the minority position (5-15%).
+    - Perez et al. 2022: LLMs over-generate neutral framings due to
+      RLHF training toward appearing balanced.
 
-    Excess neutral patterns are redistributed to whichever of
-    FOR/AGAINST is more underrepresented — not deleted, converted.
+    Excess neutrals converted to FOR/AGAINST — not deleted.
     """
     total = len(patterns)
     if total == 0:
         return patterns
 
-    neutral_patterns = [p for p in patterns if p.get("stance") == "neutral"]
-    for_patterns    = [p for p in patterns if p.get("stance") == "for"]
-    against_patterns = [p for p in patterns if p.get("stance") == "against"]
+    neutral_patterns  = [p for p in patterns if p.get("stance") == "neutral"]
+    for_patterns      = [p for p in patterns if p.get("stance") == "for"]
+    against_patterns  = [p for p in patterns if p.get("stance") == "against"]
 
     max_allowed_neutral = max(1, int(total * MAX_NEUTRAL_RATIO))
 
     if len(neutral_patterns) <= max_allowed_neutral:
-        return patterns  # within cap — no change needed
+        return patterns
 
-    # How many neutrals need to be converted
     excess = len(neutral_patterns) - max_allowed_neutral
     print(f"[PublicAgentGenerator] Neutral cap: {len(neutral_patterns)} neutral patterns "
           f"exceeds {MAX_NEUTRAL_RATIO*100:.0f}% cap — converting {excess} to for/against")
 
-    # Redistribute toward whichever stance is more underrepresented
-    # If FOR < AGAINST → convert excess to FOR, and vice versa
-    to_convert = neutral_patterns[:excess]  # take from lowest prevalence neutrals
+    to_convert        = neutral_patterns[:excess]
     remaining_neutrals = neutral_patterns[excess:]
 
     for pattern in to_convert:
@@ -115,9 +108,8 @@ def enforce_neutral_cap(patterns: list[dict]) -> list[dict]:
             against_patterns.append(pattern)
 
     converted = for_patterns + against_patterns + remaining_neutrals
-    new_neutral_count = len(remaining_neutrals)
     print(f"[PublicAgentGenerator] After cap: "
-          f"{len(for_patterns)} for / {len(against_patterns)} against / {new_neutral_count} neutral")
+          f"{len(for_patterns)} for / {len(against_patterns)} against / {len(remaining_neutrals)} neutral")
     return converted
 
 
@@ -154,24 +146,36 @@ Identify 6-8 distinct opinion patterns from this public discourse.
 Each must represent a SPECIFIC real demographic with a specific viewpoint.
 
 CRITICAL RULES:
-1. Demographic must be hyper-specific — not "workers" but "32-year-old freelance graphic designer in Chicago who lost 40% of income"
-2. Stance distribution must reflect REAL PUBLIC OPINION — not artificial balance.
-   If the real public is 65% for and 25% against, your patterns should reflect that ratio.
-   Do NOT default to equal thirds — that is almost never how real people split on salient issues.
-3. Each demographic must be genuinely different — different age, profession, location, life situation
-4. Sample argument must sound like a real Reddit comment — personal, specific, emotional
+
+1. Demographic must be hyper-specific — not "workers" but
+   "42-year-old assembly line worker in Detroit who lost health coverage when plant downsized"
+
+2. Stance distribution must reflect REAL PUBLIC OPINION — not what online forums over-represent.
+   Online discourse is systematically biased toward people with grievances and strong opinions.
+   People who are SATISFIED with the status quo post far less online than people who are angry.
+   You MUST actively seek out the AGAINST demographic even if they are underrepresented
+   in forum content. Ask yourself:
+   - Who is SATISFIED with how things currently work and would LOSE from this change?
+   - Who has ideological or economic objections that they don't post about on Reddit?
+   - Who silently opposes this even though they don't dominate online discourse?
+
+   Examples of silent AGAINST demographics to consider:
+   - On healthcare: people with good employer coverage who fear losing it
+   - On UBI: middle-class taxpayers worried about cost, not just wealthy conservatives
+   - On drug legalization: parents, religious communities, healthcare workers
+   - On immigration: rural communities with specific local concerns
+   These groups are real and numerous but QUIET online. Include them.
+
+3. Each demographic must be genuinely different — different age, profession, location,
+   life situation, income level
+
+4. Sample argument must sound like a real Reddit comment or text to a friend —
+   personal, specific, emotional, not policy-speak
 
 NEUTRAL PATTERNS — STRICT DEFINITION (Converse 1964):
-A neutral pattern is ONLY valid if the person has GENUINELY CONFLICTING personal interests.
-Examples of valid neutrals:
-- A pharmacist who supports access but fears losing prescription revenue
-- A libertarian who supports personal choice but opposes federal mandates
-- A small business owner who benefits economically but has moral objections
-Examples of INVALID neutrals (do NOT generate these):
-- Someone who "sees both sides" without personal stakes
-- Someone who is "undecided" or "needs more information"
-- Someone who wants "a balanced approach" without specific conflicting interests
-If you cannot identify a SPECIFIC conflicting interest, do not generate a neutral pattern.
+Valid neutral = person with GENUINELY CONFLICTING personal interests.
+Invalid neutral = "sees both sides", "undecided", "needs more information".
+If you cannot identify a specific conflicting interest, do not generate a neutral pattern.
 
 Respond in this exact JSON format:
 {{
@@ -209,9 +213,13 @@ Respond in this exact JSON format:
 
             if missing:
                 balance_prompt = f"""Missing stances for topic "{topic}": {', '.join(missing)}
+
 Generate 1-2 additional patterns for each missing stance.
+Focus especially on demographics that are UNDERREPRESENTED in online discourse —
+people who hold this view but don't typically post on Reddit or Quora.
 Same format — hyper-specific demographic, personal emotional driver, Reddit-style argument.
 {{"patterns": [...]}}"""
+
                 try:
                     balance_result = await call_llm_json(balance_prompt, system)
                     balance_parsed = safe_parse_json(balance_result)
@@ -221,9 +229,7 @@ Same format — hyper-specific demographic, personal emotional driver, Reddit-st
                 except Exception as e:
                     print(f"[PublicAgentGenerator] Balance correction error: {e}")
 
-        # ── Neutral cap enforcement ───────────────────────────────
-        # Apply AFTER balance enforcement so we don't create
-        # spurious neutrals and then immediately cap them
+        # Apply neutral cap after balance enforcement
         patterns = enforce_neutral_cap(patterns)
 
         return patterns
