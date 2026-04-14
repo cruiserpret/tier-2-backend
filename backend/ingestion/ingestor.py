@@ -171,7 +171,7 @@ def process_public_results(
     # ── Cap public chunks ─────────────────────────────────────────
     # Sort already done above so [:MAX] keeps highest-signal chunks.
     # 300 chunks → ~3 min runtime vs 1706 chunks → 15+ min.
-    MAX_PUBLIC_CHUNKS = 300
+    MAX_PUBLIC_CHUNKS = 600
     if len(chunks) > MAX_PUBLIC_CHUNKS:
         chunks = chunks[:MAX_PUBLIC_CHUNKS]
         print(f"[Ingestor] Capped public chunks to {MAX_PUBLIC_CHUNKS} (sorted by sentiment strength)")

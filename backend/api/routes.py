@@ -126,7 +126,7 @@ def start_simulation():
                 # identify_stakeholders returns (stakeholders, keyword_signal) tuple.
                 # keyword_signal flows to generate_public_agents for three-tier
                 # enforcement (Noelle-Neumann 1974 / Haidt 2012 tier system).
-                stakeholders, keyword_signal = run_async(identify_stakeholders(topic, G_inst, inst_count, G_pub))
+                stakeholders, keyword_signal = run_async(identify_stakeholders(topic, G_inst, inst_count, G_pub, pub_chunks=pub_chunks))
                 actual_inst_count = len(stakeholders)
                 inst_agents = run_async(generate_personas(topic, G_inst, actual_inst_count, stakeholders))
 

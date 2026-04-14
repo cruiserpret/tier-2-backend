@@ -9,19 +9,25 @@ from backend.utils.llm_client import call_llm_json
 from backend.utils.graph_utils import get_most_influential, get_nodes_by_type, query_graph
 import networkx as nx
 
-# ── Score ranges with clear separation from neutral zone ──────────
-# derive_stance in debate_engine: ≤3.5 = against, ≥6.5 = for, else neutral
+# ── Score ranges ──────────────────────────────────────────────────
+# Change 2: Narrowed ranges to reduce initial polarization.
+#
+# OLD ranges:  for=(7.0, 8.8)  against=(1.5, 3.0)
+# NEW ranges:  for=(6.5, 8.0)  against=(2.0, 3.5)
+#
+# Why this matters with Deffuant threshold=3.0:
+# Old: lowest FOR (7.0) vs highest AGAINST (3.0) = gap 4.0 > 3.0 → no interaction
+# New: lowest FOR (6.5) vs highest AGAINST (3.5) = gap 3.0 = threshold → can interact
+#
+# Agents on the edges of each camp can now influence neutrals and
+# occasionally each other — producing realistic 15-20% shift rates
+# on genuinely contested topics.
 SCORE_RANGE = {
-    "for":     (7.0, 8.8),
-    "against": (1.5, 3.0),
-    "neutral": (4.2, 5.8),
+    "for":     (6.5, 8.0),  # was (7.0, 8.8)
+    "against": (2.0, 3.5),  # was (1.5, 3.0)
+    "neutral": (4.2, 5.8),  # unchanged
 }
 
-# ── Neutral cap ───────────────────────────────────────────────────
-# Grounded in Converse 1964 and Krosnick & Fabrigar 1997:
-# On salient political topics, genuine neutrals are rare (5-15%).
-# Excess neutral patterns represent LLM hedging bias (Perez et al. 2022),
-# not real public opinion. Cap enforced after extraction.
 MAX_NEUTRAL_RATIO = 0.15
 
 
@@ -61,17 +67,7 @@ def safe_parse_json(raw: str) -> dict:
 def enforce_neutral_cap(patterns: list[dict]) -> list[dict]:
     """
     Cap neutral patterns at MAX_NEUTRAL_RATIO of total.
-
-    Research basis:
-    - Converse 1964: on salient political issues, genuine neutrals hold
-      CONFLICTING interests — not mere indecision. Most neutral survey
-      responses are measurement artifacts, not true ambivalence.
-    - Krosnick & Fabrigar 1997: on high-salience topics, neutral is
-      consistently the minority position (5-15% of real public).
-    - Perez et al. 2022: LLMs systematically over-generate neutral
-      framings due to RLHF training toward appearing balanced.
-
-    Excess neutral patterns are redistributed to FOR/AGAINST — not deleted.
+    Excess redistributed to FOR/AGAINST — not deleted.
     """
     total = len(patterns)
     if total == 0:
@@ -122,27 +118,7 @@ async def extract_opinion_patterns(
 ) -> list[dict]:
     """
     Extract recurring public opinion patterns from the public sentiment graph.
-
     Three-tier enforcement based on keyword signal strength.
-    Tier is determined by the dominant stance percentage from keyword scanning:
-
-    Tier 1 (>90% one direction): Moral consensus
-      → No balance enforcement. Generating fake opposition would be factually wrong.
-      → Research: Haidt 2012 (Moral Foundations Theory) — some issues have
-        genuine moral consensus that should not be artificially balanced.
-
-    Tier 2 (30-70% split): Genuine split
-      → Full silent majority enforcement. Minimum 2 FOR and 2 AGAINST patterns.
-      → Research: Noelle-Neumann 1974 (Spiral of Silence) — minority opinions
-        self-silence online. The silent majority exists in polls but not forums.
-
-    Tier 3 (70-90% one direction): Moderate consensus
-      → Gentle correction. Minimum 1 minority pattern.
-      → Research: Converse 1964 (Issue Publics) — even dominant positions
-        have a real minority that shouldn't be erased.
-
-    Without keyword_signal (or <100 hits): defaults to Tier 2.
-    This is the safe default — full enforcement is better than no enforcement.
     """
     claims = get_nodes_by_type(G, "claim")
     influential = get_most_influential(G, top_n=15)
@@ -157,7 +133,7 @@ async def extract_opinion_patterns(
         for n in influential[:10]
     ])
 
-    # ── Tier classification from keyword signal ───────────────────
+    # ── Tier classification ───────────────────────────────────────
     tier = 2
     min_for = 2
     min_against = 2
@@ -186,49 +162,37 @@ async def extract_opinion_patterns(
             print(f"[PublicAgentGenerator] Tier 2 — genuine split "
                   f"({for_pct*100:.0f}% for / {against_pct*100:.0f}% against) — full enforcement")
     else:
-        print(f"[PublicAgentGenerator] Tier 2 — insufficient signal "
-              f"(keyword_hits < 100 or no signal) — defaulting to full enforcement")
+        print(f"[PublicAgentGenerator] Tier 2 — insufficient signal — defaulting to full enforcement")
 
-    # ── Tier-adaptive balance instruction ─────────────────────────
     if tier == 1:
         balance_instruction = """
 CONSENSUS DETECTED: This topic has near-universal agreement in real public opinion.
 Do NOT generate artificial opposition — it would be factually wrong.
-Generate patterns that reflect the genuine overwhelming majority position.
-Only include a minority pattern if it genuinely and substantially exists
-in the discourse (e.g. edge cases, conflicting interests — not moral objection)."""
+Generate patterns that reflect the genuine overwhelming majority position."""
 
     elif tier == 3:
         balance_instruction = """
 MODERATE CONSENSUS: A clear majority position exists but a genuine minority also exists.
-Generate at least 1 pattern representing the minority position.
-These are real people who exist in polling data even if underrepresented online.
-Do not overstate the minority — they are smaller but real."""
+Generate at least 1 pattern representing the minority position."""
 
     else:
-        # Tier 2 — full enforcement
         balance_instruction = """
 GENUINE SPLIT DETECTED: Real public opinion is divided on this topic.
 
-SILENT MAJORITY RULE (Noelle-Neumann 1974, Spiral of Silence):
+SILENT MAJORITY RULE (Noelle-Neumann 1974):
 Online discourse oversamples the vocal, emotionally activated minority.
-The silent majority — satisfied, unaffected, or ideologically opposed people —
-rarely posts but absolutely exists in polling data.
-
-You MUST generate at least 2 AGAINST patterns representing this silent majority.
+You MUST generate at least 2 AGAINST patterns representing the silent majority.
 These are people who exist in Gallup/Pew polling but not on Reddit.
 
-Common silent majorities by topic type:
-- Healthcare single-payer: people satisfied with employer insurance who fear losing choice
-- Student loans: people who paid theirs off, see forgiveness as unfair
+Common silent majorities:
+- Healthcare single-payer: people satisfied with employer insurance
+- Student loans: people who paid theirs off
 - Minimum wage: small business owners worried about margins
 - Drug legalization: suburban parents, religious communities
 - UBI: middle-class taxpayers who don't want to fund it
 - 4-day work week: employers in retail, healthcare, manufacturing
-- Immigration: people with specific local economic concerns
 
-Do NOT let online discourse bias you toward generating only FOR patterns.
-Generate patterns that reflect REAL POLLING DISTRIBUTION, not forum volume."""
+Do NOT let online discourse bias you toward generating only FOR patterns."""
 
     system = """You are analyzing public discourse to identify recurring opinion patterns.
 Extract distinct viewpoint clusters representing how different types of real people think.
@@ -252,8 +216,7 @@ Each must represent a SPECIFIC real demographic with a specific viewpoint.
 CORE RULES:
 1. Demographic must be hyper-specific — not "workers" but
    "32-year-old freelance graphic designer in Chicago who lost 40% of income"
-2. Each demographic must be genuinely different — different age, profession,
-   location, life situation
+2. Each demographic must be genuinely different — different age, profession, location
 3. Sample argument must sound like a real Reddit comment — personal, specific, emotional
 
 NEUTRAL PATTERNS — STRICT DEFINITION (Converse 1964):
@@ -289,7 +252,6 @@ Respond in this exact JSON format:
         print(f"[PublicAgentGenerator] Extracted {total} patterns: "
               f"{for_count} for / {against_count} against / {neutral_count} neutral")
 
-        # ── Enforce tier minimums ─────────────────────────────────
         needs_more_for     = for_count < min_for
         needs_more_against = against_count < min_against
 
@@ -306,13 +268,7 @@ Respond in this exact JSON format:
 Current patterns: {for_count} for / {against_count} against / {neutral_count} neutral
 Need additional: {', '.join(missing)}
 
-Generate the missing patterns. Each must be:
-- A hyper-specific real demographic not yet represented
-- Grounded in lived personal experience — not policy language
-- Arguing from their specific life situation, NOT abstract ideology
-
-Focus on demographics UNDERREPRESENTED in online discourse — people who hold
-this view but don't typically post on Reddit or Quora.
+Generate the missing patterns. Focus on demographics UNDERREPRESENTED in online discourse.
 
 {{"patterns": [
     {{
@@ -335,7 +291,6 @@ this view but don't typically post on Reddit or Quora.
             except Exception as e:
                 print(f"[PublicAgentGenerator] Balance correction error: {e}")
 
-        # ── Neutral cap enforcement ───────────────────────────────
         patterns = enforce_neutral_cap(patterns)
 
         final_for     = sum(1 for p in patterns if p.get("stance") == "for")
@@ -403,17 +358,15 @@ Names already used (do not repeat): {existing_names_str}
 CRITICAL — Demographics already used (generate someone genuinely different):
 {existing_demographics_str}
 
-Generate someone with a different age, profession, AND location from all of the above.
-
 Respond in this exact JSON format:
 {{
     "name": "realistic full name",
     "age": 34,
     "profession": "specific job title — different from all existing personas above",
     "location": "city, state/country — different from all existing personas above",
-    "persona": "2-3 sentences — their specific life situation and experience that formed their opinion",
-    "initial_opinion": "their opinion in 2 sentences — first person, emotional, specific to their life",
-    "key_beliefs": ["personal belief from lived experience 1", "personal belief from lived experience 2"],
+    "persona": "2-3 sentences — their specific life situation and experience",
+    "initial_opinion": "their opinion in 2 sentences — first person, emotional, specific",
+    "key_beliefs": ["personal belief from lived experience 1", "personal belief 2"],
     "known_entities": ["relevant topic they personally encountered"]
 }}
 
@@ -474,13 +427,7 @@ async def generate_public_agents(
     num_agents: int,
     keyword_signal: dict = None
 ) -> list[dict]:
-    """
-    Main function — extract opinion patterns and generate public demographic agents.
-
-    keyword_signal: the distribution dict from stakeholder_identifier's keyword
-    scanning. When provided with >=100 hits, enables tier-based enforcement.
-    When None or insufficient, defaults safely to Tier 2 (full enforcement).
-    """
+    """Main function — extract opinion patterns and generate public demographic agents."""
     print(f"[PublicAgentGenerator] Generating {num_agents} public agents for: {topic}")
 
     patterns = await extract_opinion_patterns(topic, G, keyword_signal=keyword_signal)

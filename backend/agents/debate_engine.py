@@ -10,7 +10,7 @@ import networkx as nx
 
 # ── Deffuant Model Parameters ─────────────────────────────────────
 BASE_MU = 0.3
-CONFIDENCE_THRESHOLD = 2.0          # Fix E: lowered from 3.0
+CONFIDENCE_THRESHOLD = 3.0          # Change 2: raised from 2.0 — enables FOR/AGAINST interaction
 MAX_EVIDENCE_MULTIPLIER = 1.5
 
 # ── Emotional Contagion Parameters ────────────────────────────────
@@ -91,10 +91,6 @@ def apply_confirmation_bias(
     agent: dict,
     weighted_avg: float
 ) -> float:
-    """
-    Discount evidence multiplier when opponents push against agent's position.
-    Grounded in Chuang et al. NAACL 2024.
-    """
     agent_score = agent.get("score", 5.0)
     bias = get_confirmation_bias(agent)
     contradicting = (agent_score > 5.0 and weighted_avg < agent_score) or \
@@ -106,10 +102,6 @@ def apply_confirmation_bias(
 
 
 def apply_backfire_effect(agent: dict) -> float:
-    """
-    Repeated attacks without shifting increases resistance.
-    Grounded in Nyhan & Reifler 2010.
-    """
     attacks_received = agent.get("attacks_received", 0)
     if attacks_received <= BACKFIRE_THRESHOLD:
         return agent.get("persuasion_resistance", 0.5)
@@ -124,12 +116,6 @@ def apply_emotional_contagion(
     public_opponents: list[dict],
     old_score: float
 ) -> tuple[float, float, str | None]:
-    """
-    Fix D — Asymmetric emotional contagion.
-    Kelman 1958 — identification-based influence.
-    Public agents CAN shift institutional agents emotionally.
-    Institutional agents CANNOT shift public agents through logic.
-    """
     agent_type = agent.get("agent_type", "institutional")
     if agent_type == "public":
         return old_score, 0.0, None
@@ -439,9 +425,6 @@ async def run_debate(
     if G_pub is None:
         G_pub = G_inst
 
-    # ── Guard: abort cleanly if no agents generated ───────────────
-    # Prevents ZeroDivisionError crash when LLM refuses harmful topics
-    # or when agent generation fails completely.
     if not agents:
         print("[DebateEngine] No agents provided — aborting debate cleanly")
         return {"rounds": [], "final_agents": []}
@@ -459,7 +442,6 @@ async def run_debate(
             current_agents, topic, G_inst, G_pub, round_num
         )
 
-        # Guard against empty round result
         if not updated_agents:
             print(f"[DebateEngine] Round {round_num} produced no agents — stopping")
             break
