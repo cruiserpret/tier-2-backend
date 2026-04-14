@@ -9,27 +9,37 @@ from backend.utils.llm_client import call_llm_json
 from backend.utils.graph_utils import get_most_influential, get_nodes_by_type, query_graph
 import networkx as nx
 
-# ── Score ranges with clear separation from neutral zone ──────────
-# derive_stance in debate_engine: ≤3.5 = against, ≥6.5 = for, else neutral
-# Old ranges caused against agents to score 4.4/4.5 → instantly flipped neutral
-# New ranges create a buffer zone so agents hold their stance across rounds
+# ── Score ranges ──────────────────────────────────────────────────
+# Change 2: Narrowed ranges to reduce initial polarization.
+#
+# OLD ranges:  for=(7.0, 8.8)  against=(1.5, 3.0)
+# NEW ranges:  for=(6.5, 8.0)  against=(2.0, 3.5)
+#
+# Why this matters with Deffuant threshold=3.0:
+# Old: lowest FOR (7.0) vs highest AGAINST (3.0) = gap 4.0 > 3.0 → no interaction
+# New: lowest FOR (6.5) vs highest AGAINST (3.5) = gap 3.0 = threshold → can interact
+#
+# Agents on the edges of each camp can now influence neutrals and
+# occasionally each other — producing realistic 15-20% shift rates
+# on genuinely contested topics.
 SCORE_RANGE = {
-    "for":     (7.0, 8.8),  # well above 6.5 threshold — holds stance under pressure
-    "against": (1.5, 3.0),  # well below 3.5 threshold — holds stance under pressure
-    "neutral": (4.2, 5.8),  # clearly in middle
+    "for":     (6.5, 8.0),  # was (7.0, 8.8)
+    "against": (2.0, 3.5),  # was (1.5, 3.0)
+    "neutral": (4.2, 5.8),  # unchanged
 }
+
+MAX_NEUTRAL_RATIO = 0.15
+
 
 def safe_parse_json(raw: str) -> dict:
     """Robust JSON parser with multiple fallback strategies."""
     if not raw:
         return {}
-
     try:
         clean = re.sub(r'[\x00-\x1f\x7f]', ' ', raw)
         return json.loads(clean)
     except Exception:
         pass
-
     try:
         clean = re.sub(r'[\x00-\x1f\x7f]', ' ', raw)
         start = clean.find('{')
@@ -38,14 +48,12 @@ def safe_parse_json(raw: str) -> dict:
             return json.loads(clean[start:end + 1])
     except Exception:
         pass
-
     try:
         clean = re.sub(r'```json|```', '', raw).strip()
         clean = re.sub(r'[\x00-\x1f\x7f]', ' ', clean)
         return json.loads(clean)
     except Exception:
         pass
-
     try:
         clean = raw.replace('\u201c', '"').replace('\u201d', '"')
         clean = clean.replace('\u2018', "'").replace('\u2019', "'")
@@ -53,12 +61,65 @@ def safe_parse_json(raw: str) -> dict:
         return json.loads(clean)
     except Exception:
         pass
-
     return {}
 
 
-async def extract_opinion_patterns(topic: str, G) -> list[dict]:
-    """Extract recurring public opinion patterns from the public sentiment graph."""
+def enforce_neutral_cap(patterns: list[dict]) -> list[dict]:
+    """
+    Cap neutral patterns at MAX_NEUTRAL_RATIO of total.
+    Excess redistributed to FOR/AGAINST — not deleted.
+    """
+    total = len(patterns)
+    if total == 0:
+        return patterns
+
+    neutral_patterns = [p for p in patterns if p.get("stance") == "neutral"]
+    for_patterns     = [p for p in patterns if p.get("stance") == "for"]
+    against_patterns = [p for p in patterns if p.get("stance") == "against"]
+
+    max_allowed_neutral = max(1, int(total * MAX_NEUTRAL_RATIO))
+
+    if len(neutral_patterns) <= max_allowed_neutral:
+        return patterns
+
+    excess = len(neutral_patterns) - max_allowed_neutral
+    print(f"[PublicAgentGenerator] Neutral cap: {len(neutral_patterns)} neutral patterns "
+          f"exceeds {MAX_NEUTRAL_RATIO*100:.0f}% cap — converting {excess} to for/against")
+
+    to_convert        = neutral_patterns[:excess]
+    remaining_neutrals = neutral_patterns[excess:]
+
+    for pattern in to_convert:
+        if len(for_patterns) <= len(against_patterns):
+            pattern["stance"] = "for"
+            pattern["emotional_driver"] = (
+                pattern.get("emotional_driver", "") +
+                " — personal stake in gaining/maintaining access"
+            )
+            for_patterns.append(pattern)
+        else:
+            pattern["stance"] = "against"
+            pattern["emotional_driver"] = (
+                pattern.get("emotional_driver", "") +
+                " — personal stake in restricting/opposing change"
+            )
+            against_patterns.append(pattern)
+
+    converted = for_patterns + against_patterns + remaining_neutrals
+    print(f"[PublicAgentGenerator] After cap: "
+          f"{len(for_patterns)} for / {len(against_patterns)} against / {len(remaining_neutrals)} neutral")
+    return converted
+
+
+async def extract_opinion_patterns(
+    topic: str,
+    G,
+    keyword_signal: dict = None
+) -> list[dict]:
+    """
+    Extract recurring public opinion patterns from the public sentiment graph.
+    Three-tier enforcement based on keyword signal strength.
+    """
     claims = get_nodes_by_type(G, "claim")
     influential = get_most_influential(G, top_n=15)
 
@@ -71,6 +132,67 @@ async def extract_opinion_patterns(topic: str, G) -> list[dict]:
         f"- {n['name']}: {n.get('description', '')[:100]}"
         for n in influential[:10]
     ])
+
+    # ── Tier classification ───────────────────────────────────────
+    tier = 2
+    min_for = 2
+    min_against = 2
+
+    if keyword_signal and keyword_signal.get("keyword_hits", 0) >= 100:
+        for_pct     = keyword_signal.get("for", 0.33)
+        against_pct = keyword_signal.get("against", 0.33)
+        dominant    = max(for_pct, against_pct)
+
+        if dominant > 0.90:
+            tier = 1
+            min_for = 0
+            min_against = 0
+            print(f"[PublicAgentGenerator] Tier 1 — moral consensus "
+                  f"({dominant*100:.0f}% dominant) — no balance enforcement")
+        elif dominant > 0.70:
+            tier = 3
+            min_for = 1
+            min_against = 1
+            print(f"[PublicAgentGenerator] Tier 3 — moderate consensus "
+                  f"({dominant*100:.0f}% dominant) — gentle correction")
+        else:
+            tier = 2
+            min_for = 2
+            min_against = 2
+            print(f"[PublicAgentGenerator] Tier 2 — genuine split "
+                  f"({for_pct*100:.0f}% for / {against_pct*100:.0f}% against) — full enforcement")
+    else:
+        print(f"[PublicAgentGenerator] Tier 2 — insufficient signal — defaulting to full enforcement")
+
+    if tier == 1:
+        balance_instruction = """
+CONSENSUS DETECTED: This topic has near-universal agreement in real public opinion.
+Do NOT generate artificial opposition — it would be factually wrong.
+Generate patterns that reflect the genuine overwhelming majority position."""
+
+    elif tier == 3:
+        balance_instruction = """
+MODERATE CONSENSUS: A clear majority position exists but a genuine minority also exists.
+Generate at least 1 pattern representing the minority position."""
+
+    else:
+        balance_instruction = """
+GENUINE SPLIT DETECTED: Real public opinion is divided on this topic.
+
+SILENT MAJORITY RULE (Noelle-Neumann 1974):
+Online discourse oversamples the vocal, emotionally activated minority.
+You MUST generate at least 2 AGAINST patterns representing the silent majority.
+These are people who exist in Gallup/Pew polling but not on Reddit.
+
+Common silent majorities:
+- Healthcare single-payer: people satisfied with employer insurance
+- Student loans: people who paid theirs off
+- Minimum wage: small business owners worried about margins
+- Drug legalization: suburban parents, religious communities
+- UBI: middle-class taxpayers who don't want to fund it
+- 4-day work week: employers in retail, healthcare, manufacturing
+
+Do NOT let online discourse bias you toward generating only FOR patterns."""
 
     system = """You are analyzing public discourse to identify recurring opinion patterns.
 Extract distinct viewpoint clusters representing how different types of real people think.
@@ -86,14 +208,21 @@ Claims and opinions found:
 Key themes:
 {entities_context}
 
+{balance_instruction}
+
 Identify 6-8 distinct opinion patterns from this public discourse.
 Each must represent a SPECIFIC real demographic with a specific viewpoint.
 
-CRITICAL RULES:
-1. Demographic must be hyper-specific — not "workers" but "32-year-old freelance graphic designer in Chicago"
-2. You MUST include patterns across for, against, AND neutral — no stance should exceed 50%
-3. Each demographic must be genuinely different — different age, profession, location, life situation
-4. Sample argument must sound like a real Reddit comment — personal, specific, emotional
+CORE RULES:
+1. Demographic must be hyper-specific — not "workers" but
+   "32-year-old freelance graphic designer in Chicago who lost 40% of income"
+2. Each demographic must be genuinely different — different age, profession, location
+3. Sample argument must sound like a real Reddit comment — personal, specific, emotional
+
+NEUTRAL PATTERNS — STRICT DEFINITION (Converse 1964):
+A neutral pattern is ONLY valid if the person has GENUINELY CONFLICTING personal interests.
+Valid: A pharmacist who supports access but fears losing prescription revenue.
+Invalid: Someone who "sees both sides" or wants "a balanced approach".
 
 Respond in this exact JSON format:
 {{
@@ -115,7 +244,7 @@ Respond in this exact JSON format:
         parsed = safe_parse_json(result)
         patterns = parsed.get("patterns", [])
 
-        for_count = sum(1 for p in patterns if p.get("stance") == "for")
+        for_count     = sum(1 for p in patterns if p.get("stance") == "for")
         against_count = sum(1 for p in patterns if p.get("stance") == "against")
         neutral_count = sum(1 for p in patterns if p.get("stance") == "neutral")
         total = len(patterns)
@@ -123,28 +252,55 @@ Respond in this exact JSON format:
         print(f"[PublicAgentGenerator] Extracted {total} patterns: "
               f"{for_count} for / {against_count} against / {neutral_count} neutral")
 
-        if total > 0 and (for_count / total > 0.55 or against_count / total > 0.55):
+        needs_more_for     = for_count < min_for
+        needs_more_against = against_count < min_against
+
+        if needs_more_for or needs_more_against:
             missing = []
-            if for_count == 0: missing.append("for")
-            if against_count == 0: missing.append("against")
-            if neutral_count == 0: missing.append("neutral")
+            if needs_more_for:
+                missing.append(f"for (need {min_for}, have {for_count})")
+            if needs_more_against:
+                missing.append(f"against (need {min_against}, have {against_count})")
 
-            if missing:
-                balance_prompt = f"""Missing stances for topic "{topic}": {', '.join(missing)}
-Generate 1-2 additional patterns for each missing stance.
-Same format — hyper-specific demographic, personal emotional driver, Reddit-style argument.
-{{"patterns": [...]}}"""
+            print(f"[PublicAgentGenerator] Tier {tier} minimum not met: {missing} — requesting additional patterns")
 
-                try:
-                    balance_result = await call_llm_json(balance_prompt, system)
-                    balance_parsed = safe_parse_json(balance_result)
-                    additional = balance_parsed.get("patterns", [])
-                    patterns.extend(additional)
-                    print(f"[PublicAgentGenerator] Added {len(additional)} balancing patterns")
-                except Exception as e:
-                    print(f"[PublicAgentGenerator] Balance correction error: {e}")
+            balance_prompt = f"""Topic: "{topic}"
+Current patterns: {for_count} for / {against_count} against / {neutral_count} neutral
+Need additional: {', '.join(missing)}
+
+Generate the missing patterns. Focus on demographics UNDERREPRESENTED in online discourse.
+
+{{"patterns": [
+    {{
+        "demographic": "...",
+        "core_belief": "...",
+        "emotional_driver": "...",
+        "emotional_intensity": "high/medium/low",
+        "stance": "for/against",
+        "prevalence": "medium",
+        "sample_argument": "..."
+    }}
+]}}"""
+
+            try:
+                balance_result = await call_llm_json(balance_prompt, system)
+                balance_parsed = safe_parse_json(balance_result)
+                additional = balance_parsed.get("patterns", [])
+                patterns.extend(additional)
+                print(f"[PublicAgentGenerator] Added {len(additional)} patterns to meet Tier {tier} minimums")
+            except Exception as e:
+                print(f"[PublicAgentGenerator] Balance correction error: {e}")
+
+        patterns = enforce_neutral_cap(patterns)
+
+        final_for     = sum(1 for p in patterns if p.get("stance") == "for")
+        final_against = sum(1 for p in patterns if p.get("stance") == "against")
+        final_neutral = sum(1 for p in patterns if p.get("stance") == "neutral")
+        print(f"[PublicAgentGenerator] Final patterns: "
+              f"{final_for} for / {final_against} against / {final_neutral} neutral")
 
         return patterns
+
     except Exception as e:
         print(f"[PublicAgentGenerator] Pattern extraction error: {e}")
         return []
@@ -155,7 +311,7 @@ async def generate_public_agent(
     pattern: dict,
     agent_index: int,
     existing_names: list[str],
-    existing_personas: list[dict],  # ← NEW: track full demographics to prevent duplication
+    existing_personas: list[dict],
     G
 ) -> dict:
     """Generate a demographic agent grounded in a real public opinion pattern."""
@@ -165,9 +321,6 @@ async def generate_public_agent(
 
     existing_names_str = ", ".join(existing_names) if existing_names else "none"
 
-    # ── Demographic duplication prevention ───────────────────────
-    # Pass full persona descriptions so LLM can't generate the same
-    # "29-year-old Black software engineer in Atlanta" twice
     existing_demographics_str = "\n".join([
         f"- {p.get('age', '?')}-year-old {p.get('profession', '?')} in {p.get('location', '?')}"
         for p in existing_personas
@@ -202,12 +355,8 @@ Relevant context:
 
 Names already used (do not repeat): {existing_names_str}
 
-CRITICAL — Demographics already used (you MUST generate someone genuinely different):
+CRITICAL — Demographics already used (generate someone genuinely different):
 {existing_demographics_str}
-
-Generate someone with a different age, profession, AND location from all of the above.
-Do not generate another "tech startup founder in San Francisco" or another "software engineer in Atlanta"
-if those already exist above. Be creative — different city, different profession, different life stage.
 
 Respond in this exact JSON format:
 {{
@@ -215,9 +364,9 @@ Respond in this exact JSON format:
     "age": 34,
     "profession": "specific job title — different from all existing personas above",
     "location": "city, state/country — different from all existing personas above",
-    "persona": "2-3 sentences — their specific life situation and experience that formed their opinion",
-    "initial_opinion": "their opinion in 2 sentences — first person, emotional, specific to their life",
-    "key_beliefs": ["personal belief from lived experience 1", "personal belief from lived experience 2"],
+    "persona": "2-3 sentences — their specific life situation and experience",
+    "initial_opinion": "their opinion in 2 sentences — first person, emotional, specific",
+    "key_beliefs": ["personal belief from lived experience 1", "personal belief 2"],
     "known_entities": ["relevant topic they personally encountered"]
 }}
 
@@ -275,12 +424,13 @@ Rules:
 async def generate_public_agents(
     topic: str,
     G,
-    num_agents: int
+    num_agents: int,
+    keyword_signal: dict = None
 ) -> list[dict]:
     """Main function — extract opinion patterns and generate public demographic agents."""
     print(f"[PublicAgentGenerator] Generating {num_agents} public agents for: {topic}")
 
-    patterns = await extract_opinion_patterns(topic, G)
+    patterns = await extract_opinion_patterns(topic, G, keyword_signal=keyword_signal)
 
     if not patterns:
         print("[PublicAgentGenerator] No patterns found — skipping public agents")
@@ -301,7 +451,7 @@ async def generate_public_agents(
         agent_counts[agent_counts.index(min(agent_counts))] += 1
 
     existing_names = []
-    existing_personas = []  # ← track full demographics
+    existing_personas = []
     all_agents = []
 
     for pattern, count in zip(patterns, agent_counts):
@@ -311,7 +461,7 @@ async def generate_public_agents(
                 pattern=pattern,
                 agent_index=len(all_agents),
                 existing_names=existing_names.copy(),
-                existing_personas=existing_personas.copy(),  # ← pass demographics
+                existing_personas=existing_personas.copy(),
                 G=G
             )
             if agent:

@@ -1,0 +1,321 @@
+[
+  {
+    "topic": "Should the US federal government mandate a 4-day work week (32 hours) for all full-time employees?",
+    "topic_type": "labor_policy",
+    "predicted": {
+      "for": 0.55,
+      "against": 0.25,
+      "neutral": 0.2
+    },
+    "actual": {
+      "for": 0.38,
+      "against": 0.42,
+      "neutral": 0.2
+    },
+    "error": {
+      "for": 0.17,
+      "against": -0.17,
+      "neutral": 0.0
+    },
+    "reward": {
+      "brier_score": 0.0578,
+      "brier_skill_score": 0.1994,
+      "brier_reward": 0.9711,
+      "trajectory_bonus": 0.0,
+      "composite_reward": 0.6798
+    },
+    "root_cause": "Concept-vs-mandate gap \u2014 71% of Americans support 4-day work weeks as a concept but only 38% support a federal mandate. Keyword system read concept support ('support', 'favor', 'workers deserve') as mandate support. Topic-aware keywords needed to distinguish.",
+    "correction_rule": "reduce FOR signal by ~17% \u2014 pro voices overrepresented in online discourse; increase AGAINST signal by ~17% \u2014 opposition voices underrepresented online",
+    "stored_at": "2026-04-14T04:24:00.787319"
+  },
+  {
+    "topic": "Should the United States rejoin the Paris Climate Agreement?",
+    "topic_type": "climate_policy",
+    "predicted": {
+      "for": 0.55,
+      "against": 0.3,
+      "neutral": 0.15
+    },
+    "actual": {
+      "for": 0.69,
+      "against": 0.2,
+      "neutral": 0.12
+    },
+    "error": {
+      "for": -0.14,
+      "against": 0.1,
+      "neutral": 0.03
+    },
+    "reward": {
+      "brier_score": 0.0305,
+      "brier_skill_score": -1.1034,
+      "brier_reward": 0.9848,
+      "trajectory_bonus": 0.0,
+      "composite_reward": 0.6894
+    },
+    "root_cause": "False positive AGAINST hits \u2014 fossil fuel industry content and angry pro-climate articles both use AGAINST keywords ('dangerous', 'threat', 'undermine'). A pro-choice writer angrily describing abortion bans scores AGAINST even though they are FOR. Same pattern here: pro-climate outrage about withdrawal scores AGAINST.",
+    "correction_rule": "increase FOR signal by ~14% \u2014 support voices underrepresented online",
+    "stored_at": "2026-04-14T04:24:00.787815"
+  },
+  {
+    "topic": "Should the US federal government implement a Universal Basic Income of $1,000 per month for every adult citizen?",
+    "topic_type": "economic_welfare",
+    "predicted": {
+      "for": 0.7,
+      "against": 0.15,
+      "neutral": 0.15
+    },
+    "actual": {
+      "for": 0.45,
+      "against": 0.54,
+      "neutral": 0.08
+    },
+    "error": {
+      "for": 0.25,
+      "against": -0.39,
+      "neutral": 0.07
+    },
+    "reward": {
+      "brier_score": 0.2195,
+      "brier_skill_score": -1.1331,
+      "brier_reward": 0.8902,
+      "trajectory_bonus": 0.0,
+      "composite_reward": 0.6231
+    },
+    "root_cause": "Economic grievance voices dominate online UBI discourse. Workers facing hardship post loudly FOR. Upper-income (oppose due to cost), middle-class (oppose due to inflation concern), small business owners (oppose due to labor market effect) are all systematically silent online. Reflexion classifier overcorrected to 0.92 public score (25/75 split), flooding simulation with 15 public agents all drawn from pro-UBI forum posts.",
+    "correction_rule": "reduce FOR signal by ~25% \u2014 pro voices overrepresented in online discourse; increase AGAINST signal by ~39% \u2014 opposition voices underrepresented online",
+    "stored_at": "2026-04-14T04:24:00.788129"
+  },
+  {
+    "topic": "Should the US replace its current healthcare system with a single government-run insurance program covering all Americans?",
+    "topic_type": "healthcare_access",
+    "predicted": {
+      "for": 0.6,
+      "against": 0.25,
+      "neutral": 0.15
+    },
+    "actual": {
+      "for": 0.37,
+      "against": 0.5,
+      "neutral": 0.13
+    },
+    "error": {
+      "for": 0.23,
+      "against": -0.25,
+      "neutral": 0.02
+    },
+    "reward": {
+      "brier_score": 0.1158,
+      "brier_skill_score": -0.0883,
+      "brier_reward": 0.9421,
+      "trajectory_bonus": 0.0,
+      "composite_reward": 0.6595
+    },
+    "root_cause": "Healthcare horror stories dominate online discourse \u2014 people who were denied claims, buried in medical debt, or lost coverage post loudly FOR single-payer. 91% of insured Americans are satisfied with their current coverage but never post about it. The AGAINST camp (satisfied insured, small businesses worried about cost disruption, conservatives who prefer market solutions) is systematically quiet online.",
+    "correction_rule": "reduce FOR signal by ~23% \u2014 pro voices overrepresented in online discourse; increase AGAINST signal by ~25% \u2014 opposition voices underrepresented online",
+    "stored_at": "2026-04-14T04:24:00.788406"
+  },
+  {
+    "topic": "Should the US federal government fully legalize marijuana for recreational use nationwide?",
+    "topic_type": "drug_policy",
+    "predicted": {
+      "for": 0.6,
+      "against": 0.25,
+      "neutral": 0.15
+    },
+    "actual": {
+      "for": 0.64,
+      "against": 0.29,
+      "neutral": 0.07
+    },
+    "error": {
+      "for": -0.04,
+      "against": -0.04,
+      "neutral": 0.08
+    },
+    "reward": {
+      "brier_score": 0.0096,
+      "brier_skill_score": 0.0204,
+      "brier_reward": 0.9952,
+      "trajectory_bonus": 0.0,
+      "composite_reward": 0.6966
+    },
+    "root_cause": "Minor over-prediction of neutral. Marijuana discourse online roughly matches population because both FOR and AGAINST communities are vocal (cannabis advocates vs anti-drug parents/religious groups). Unusually balanced topic for online discourse.",
+    "correction_rule": "no systematic correction identified \u2014 prediction was accurate",
+    "stored_at": "2026-04-14T04:24:00.788791"
+  },
+  {
+    "topic": "Should the US federal government pass stricter gun control laws?",
+    "topic_type": "rights_social",
+    "predicted": {
+      "for": 0.55,
+      "against": 0.35,
+      "neutral": 0.2
+    },
+    "actual": {
+      "for": 0.58,
+      "against": 0.29,
+      "neutral": 0.13
+    },
+    "error": {
+      "for": -0.03,
+      "against": 0.06,
+      "neutral": 0.07
+    },
+    "reward": {
+      "brier_score": 0.0094,
+      "brier_skill_score": -5.7143,
+      "brier_reward": 0.9953,
+      "trajectory_bonus": 0.0,
+      "composite_reward": 0.6967
+    },
+    "root_cause": "Best test of sprint \u2014 all fixes fired simultaneously. Silent AGAINST demographic prompt generated 2 AGAINST patterns organically (rural gun owners, conservative women). Correction store injected 3 past errors into calibration. Topic-aware keywords for gun control are unambiguous ('Second Amendment', 'constitutional right', 'federal overreach' vs 'background checks', 'assault weapons ban'). Result: Brier Score 0.0094 \u2014 13x more accurate than UBI/healthcare tests.",
+    "correction_rule": "no systematic correction identified \u2014 prediction was accurate",
+    "stored_at": "2026-04-14T04:24:00.789174"
+  },
+  {
+    "topic": "Should the US federal government ban assault-style weapons?",
+    "topic_type": "general",
+    "predicted": {
+      "for": 0.53,
+      "against": 0.37,
+      "neutral": 0.11
+    },
+    "actual": {
+      "for": 0.58,
+      "against": 0.37,
+      "neutral": 0.05
+    },
+    "error": {
+      "for": -0.05,
+      "against": 0.0,
+      "neutral": 0.06
+    },
+    "reward": {
+      "brier_score": 0.0061,
+      "brier_skill_score": 0.5515,
+      "brier_reward": 0.997,
+      "trajectory_bonus": 0.0,
+      "composite_reward": 0.6979
+    },
+    "root_cause": "Keyword signal massively inverted (15% FOR / 58% AGAINST) but tier system caught the failure \u2014 enforced min 2 FOR patterns, neutral cap redistributed. LLM pattern extractor generated realistic FOR demographics organically from rich graph (1179 nodes). AGAINST exact at 37%. Neutral too high at 11% vs real 5% \u2014 neutral cap over-converting on polarized topics.",
+    "correction_rule": "no systematic correction identified \u2014 prediction was accurate",
+    "stored_at": "2026-04-14T13:26:09.241929"
+  },
+  {
+    "topic": "Should the US federal government cancel all federal student loan debt?",
+    "topic_type": "economic_welfare",
+    "predicted": {
+      "for": 0.4,
+      "against": 0.55,
+      "neutral": 0.05
+    },
+    "actual": {
+      "for": 0.46,
+      "against": 0.5,
+      "neutral": 0.04
+    },
+    "error": {
+      "for": -0.06,
+      "against": 0.05,
+      "neutral": 0.01
+    },
+    "reward": {
+      "brier_score": 0.0062,
+      "brier_skill_score": 0.8703,
+      "brier_reward": 0.9969,
+      "trajectory_bonus": 0.0,
+      "composite_reward": 0.6978
+    },
+    "root_cause": "Framing-sensitive topic \u2014 'cancel ALL' gets different numbers than 'cancel some'. Assembly read AGAINST correctly at 55% vs real 50%. Silent AGAINST demographic fired correctly: people who paid loans, tradespeople who didn't attend college, fiscal conservatives. FOR slightly low \u2014 online advocates for full cancellation are vocal but polling for complete cancellation is genuinely lower than partial.",
+    "correction_rule": "no systematic correction identified \u2014 prediction was accurate",
+    "stored_at": "2026-04-14T13:26:09.242315"
+  },
+  {
+    "topic": "Should the United States use the death penalty for people convicted of murder?",
+    "topic_type": "rights_social",
+    "predicted": {
+      "for": 0.47,
+      "against": 0.42,
+      "neutral": 0.11
+    },
+    "actual": {
+      "for": 0.52,
+      "against": 0.44,
+      "neutral": 0.04
+    },
+    "error": {
+      "for": -0.05,
+      "against": -0.02,
+      "neutral": 0.07
+    },
+    "reward": {
+      "brier_score": 0.0078,
+      "brier_skill_score": 0.688,
+      "brier_reward": 0.9961,
+      "trajectory_bonus": 0.0,
+      "composite_reward": 0.6973
+    },
+    "root_cause": "Closest real-world split tested (52/44 Gallup Oct 2025). AGAINST gap only 2 points \u2014 most accurate AGAINST prediction of stress test. Both FOR and AGAINST within 5 points simultaneously. Neutral too high at 11% vs real 4% \u2014 same pattern as assault weapons. Shift rate 11% with realistic dynamics: John Roberts moved toward more moderate FOR via emotional contagion from victim testimony.",
+    "correction_rule": "no systematic correction identified \u2014 prediction was accurate",
+    "stored_at": "2026-04-14T13:26:09.242671"
+  },
+  {
+    "topic": "Should abortion be legal in the United States?",
+    "topic_type": "rights_social",
+    "predicted": {
+      "for": 0.58,
+      "against": 0.32,
+      "neutral": 0.11
+    },
+    "actual": {
+      "for": 0.6,
+      "against": 0.37,
+      "neutral": 0.03
+    },
+    "error": {
+      "for": -0.02,
+      "against": -0.05,
+      "neutral": 0.08
+    },
+    "reward": {
+      "brier_score": 0.0093,
+      "brier_skill_score": 0.535,
+      "brier_reward": 0.9953,
+      "trajectory_bonus": 0.0,
+      "composite_reward": 0.6967
+    },
+    "root_cause": "Keyword signal badly inverted (22% FOR / 64% AGAINST) but LLM pattern extractor and tier system compensated \u2014 produced 58% FOR only 2 points from reality. Pro-choice discourse uses identical language to pro-life articles ('constitutional', 'rights', 'fundamental') causing keyword inversion. AGAINST 5 points low \u2014 religious conservative voices underrepresented in graph despite being ~37% of population. Neutral too high at 11% vs real 3% \u2014 abortion is one of the most polarized topics, near-zero genuine neutrals.",
+    "correction_rule": "no systematic correction identified \u2014 prediction was accurate",
+    "stored_at": "2026-04-14T13:26:09.243059"
+  },
+  {
+    "topic": "Should the US federal government raise the minimum wage to $15 per hour?",
+    "topic_type": "labor_policy",
+    "predicted": {
+      "for": 0.56,
+      "against": 0.31,
+      "neutral": 0.13
+    },
+    "actual": {
+      "for": 0.65,
+      "against": 0.35,
+      "neutral": 0.05
+    },
+    "error": {
+      "for": -0.09,
+      "against": -0.04,
+      "neutral": 0.08
+    },
+    "reward": {
+      "brier_score": 0.0161,
+      "brier_skill_score": 0.3534,
+      "brier_reward": 0.9919,
+      "trajectory_bonus": 0.0,
+      "composite_reward": 0.6943
+    },
+    "root_cause": "Change 3 (raw chunk text matching) active \u2014 hurt this topic specifically. 447 chunks pulled heavy policy analysis content (CBO reports, think-tank papers, economics articles) which use measured language triggering neutral keywords even when arguing strongly FOR. Raw signal read 30% FOR / 9% AGAINST / 60% neutral \u2014 completely inverted from reality 65/35/5. Calibration added 2 neutral stakeholders pulling distribution wrong direction. Fix: weight forum+high-sentiment chunks 2x for signal matching, down-weight institutional analysis chunks. Previous A-grade (0.0053) was without Change 3 where graph node matching accidentally read closer to correct at 39/42.",
+    "correction_rule": "no systematic correction identified \u2014 prediction was accurate",
+    "stored_at": "2026-04-14T13:26:09.243417"
+  }
+]

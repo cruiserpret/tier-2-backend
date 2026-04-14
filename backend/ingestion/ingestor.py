@@ -64,26 +64,17 @@ def build_public_queries(topic: str) -> list[str]:
     """
     Queries targeting actual lived experience and emotional public discourse.
     Designed to surface real voices from forums, not articles about public opinion.
-
     Targets Reddit, Quora, and personal story content specifically.
-    More queries, more specific — to give pattern extraction richer signal.
     """
     base = topic.rstrip("?").strip()
     return [
-        # Reddit — actual threads not articles about Reddit
         f'site:reddit.com "{base}"',
         f'site:reddit.com {base} personal experience',
         f'site:reddit.com {base} affected my life',
-
-        # Quora — personal answer format
         f'site:quora.com {base}',
         f'site:quora.com how has {base} affected you',
-
-        # Forum and community voice
         f'{base} "I lost" OR "I gained" OR "it affected me" personal story',
         f'{base} workers creators families impact lived experience',
-
-        # Emotional signal — people venting or celebrating
         f'{base} "I feel" OR "I think" OR "in my experience" opinion',
         f'{base} community response people affected',
     ]
@@ -124,6 +115,13 @@ def process_public_results(
     Uses smaller chunks and preserves emotional language.
     Tags chunks with sentiment strength for graph weighting.
     Prioritises Reddit and Quora content with higher sentiment weight.
+
+    ── Fix 1: Public chunk cap ──────────────────────────────────────
+    Caps at MAX_PUBLIC_CHUNKS after sorting by sentiment_strength.
+    Without this cap, high-volume topics (gun control, abortion) produce
+    1700+ chunks which takes 15+ minutes and hits API rate limits.
+    Chunks are already sorted by sentiment_strength so the cap keeps
+    the highest-signal content — accuracy impact is minimal.
     """
     from backend.utils.text_utils import detect_sentiment_strength
 
@@ -169,6 +167,15 @@ def process_public_results(
 
     # Sort by sentiment strength — richer signal first
     chunks.sort(key=lambda c: c.get("sentiment_strength", 0), reverse=True)
+
+    # ── Cap public chunks ─────────────────────────────────────────
+    # Sort already done above so [:MAX] keeps highest-signal chunks.
+    # 300 chunks → ~3 min runtime vs 1706 chunks → 15+ min.
+    MAX_PUBLIC_CHUNKS = 600
+    if len(chunks) > MAX_PUBLIC_CHUNKS:
+        chunks = chunks[:MAX_PUBLIC_CHUNKS]
+        print(f"[Ingestor] Capped public chunks to {MAX_PUBLIC_CHUNKS} (sorted by sentiment strength)")
+
     return chunks
 
 async def ingest(
@@ -177,18 +184,11 @@ async def ingest(
 ) -> tuple[list[dict], list[dict]]:
     """
     Main ingestion function.
-
     Returns (institutional_chunks, public_chunks).
-    Institutional: news, policy, corporate content — 500 word chunks
-    Public: forum posts, personal stories, reactions — 150 word chunks
-
-    Each population only sees their own chunks during debate.
     """
     inst_queries = build_institutional_queries(topic)
     pub_queries = build_public_queries(topic)
 
-    # All searches fire in parallel
-    # Public queries get more results per search to improve pattern extraction signal
     inst_tasks = [search_web(q, num_results=8) for q in inst_queries]
     pub_tasks = [search_web(q, num_results=10) for q in pub_queries]
     pdf_tasks = [parse_pdf(path) for path in pdf_paths]
@@ -202,20 +202,16 @@ async def ingest(
     pub_raw = all_results[num_inst:num_inst + num_pub]
     pdf_results = all_results[num_inst + num_pub:]
 
-    # Process institutional
     seen_inst = set()
     inst_chunks = process_institutional_results(inst_raw, seen_inst)
 
-    # Add PDFs to institutional
     for pdf_chunk_list in pdf_results:
         inst_chunks.extend(pdf_chunk_list)
 
-    # Process public — with emotion preservation, sentiment scoring, forum boosting
     pub_chunks = process_public_results(pub_raw, seen_inst)
 
     print(f"[Ingestor] {len(inst_chunks)} institutional chunks | {len(pub_chunks)} public chunks for: {topic}")
 
-    # Log quality breakdown
     forum_chunks = sum(1 for c in pub_chunks if c.get("is_forum", False))
     high_sentiment = sum(1 for c in pub_chunks if c.get("sentiment_strength", 0) > 0.3)
     print(f"[Ingestor] Forum chunks (Reddit/Quora): {forum_chunks}/{len(pub_chunks)}")

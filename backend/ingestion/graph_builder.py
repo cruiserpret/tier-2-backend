@@ -15,33 +15,18 @@ VALID_ENTITY_TYPES = {
 def normalize_type(raw_type: str) -> str:
     raw = raw_type.lower().strip()
     mapping = {
-        "org": "organization",
-        "org.": "organization",
-        "company": "organization",
-        "corporation": "organization",
-        "institution": "organization",
-        "ngo": "organization",
-        "govt": "government",
-        "gov": "government",
-        "gov.": "government",
-        "nation": "government",
-        "country": "government",
-        "state": "government",
-        "law": "policy",
-        "regulation": "policy",
-        "bill": "policy",
-        "act": "policy",
-        "tech": "product",
-        "technology": "product",
-        "platform": "product",
-        "app": "product",
-        "tool": "product",
-        "idea": "concept",
-        "issue": "concept",
-        "topic": "concept",
-        "opinion": "experience",
-        "feeling": "experience",
-        "testimony": "experience",
+        "org": "organization", "org.": "organization",
+        "company": "organization", "corporation": "organization",
+        "institution": "organization", "ngo": "organization",
+        "govt": "government", "gov": "government",
+        "gov.": "government", "nation": "government",
+        "country": "government", "state": "government",
+        "law": "policy", "regulation": "policy",
+        "bill": "policy", "act": "policy",
+        "tech": "product", "technology": "product",
+        "platform": "product", "app": "product", "tool": "product",
+        "idea": "concept", "issue": "concept", "topic": "concept",
+        "opinion": "experience", "feeling": "experience", "testimony": "experience",
     }
     return mapping.get(raw, raw if raw in VALID_ENTITY_TYPES else "concept")
 
@@ -206,16 +191,32 @@ async def build_graph(
 ) -> nx.DiGraph:
     """
     Build a knowledge graph from ingested chunks.
-    graph_source: "institutional" or "public"
+
+    ── Fix 2: Batched entity extraction ─────────────────────────────
+    Previously fired all chunks simultaneously via asyncio.gather.
+    On 1706 chunks this saturates the API rate limit and kills the run.
+    Now processes in BATCH_SIZE=50 groups, printing progress per batch.
+    No accuracy impact — same extractions, just rate-limit safe.
     """
     print(f"[GraphBuilder] Extracting entities from {len(chunks)} {graph_source} chunks...")
 
-    if graph_source == "public":
-        tasks = [extract_public_entities(chunk) for chunk in chunks]
-    else:
-        tasks = [extract_institutional_entities(chunk) for chunk in chunks]
-
-    extractions = await asyncio.gather(*tasks)
+    # ── Batched extraction — prevents API rate limit saturation ───
+    BATCH_SIZE = 50
+    extractions = []
+    for i in range(0, len(chunks), BATCH_SIZE):
+        batch = chunks[i:i + BATCH_SIZE]
+        if graph_source == "public":
+            batch_results = await asyncio.gather(*[
+                extract_public_entities(c) for c in batch
+            ])
+        else:
+            batch_results = await asyncio.gather(*[
+                extract_institutional_entities(c) for c in batch
+            ])
+        extractions.extend(batch_results)
+        processed = min(i + BATCH_SIZE, len(chunks))
+        if processed < len(chunks):
+            print(f"[GraphBuilder] Processed {processed}/{len(chunks)} chunks...")
 
     G = nx.DiGraph()
 
@@ -292,10 +293,7 @@ async def build_graph(
                 G.nodes[existing]["citations"] = G.nodes[existing].get("citations", 1) + 1
                 claim_nodes_added.append((existing, claim.get("entity_refs", [])))
 
-        # ── CRITICAL FIX ─────────────────────────────────────────────
-        # Connect claim nodes to their referenced entities for ALL graph types.
-        # Previously this only happened for institutional — so public graph
-        # always had 0 edges, breaking PageRank and the calibration signal.
+        # Connect claim nodes to referenced entities for ALL graph types
         for claim_node, entity_refs in claim_nodes_added:
             if claim_node not in G.nodes:
                 continue
@@ -352,7 +350,6 @@ async def build_graph(
             if len(G.edges) > 0:
                 pagerank = nx.pagerank(G, alpha=0.85, weight="weight")
             else:
-                # No edges — fall back to citation count as influence proxy
                 max_citations = max(
                     (G.nodes[n].get("citations", 1) for n in G.nodes), default=1
                 )
@@ -373,7 +370,7 @@ async def build_graph(
         for node in G.nodes:
             G.nodes[node]["influence_score"] = round(pagerank.get(node, 0.0), 4)
 
-    # Remove noise nodes — never remove public sentiment nodes
+    # Remove noise nodes
     nodes_to_remove = [
         n for n in G.nodes
         if G.nodes[n].get("citations", 1) == 1

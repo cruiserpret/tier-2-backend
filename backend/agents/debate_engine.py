@@ -10,7 +10,7 @@ import networkx as nx
 
 # ── Deffuant Model Parameters ─────────────────────────────────────
 BASE_MU = 0.3
-CONFIDENCE_THRESHOLD = 2.0          # Fix E: lowered from 3.0
+CONFIDENCE_THRESHOLD = 3.0          # Change 2: raised from 2.0 — enables FOR/AGAINST interaction
 MAX_EVIDENCE_MULTIPLIER = 1.5
 
 # ── Emotional Contagion Parameters ────────────────────────────────
@@ -91,10 +91,6 @@ def apply_confirmation_bias(
     agent: dict,
     weighted_avg: float
 ) -> float:
-    """
-    Discount evidence multiplier when opponents push against agent's position.
-    Grounded in Chuang et al. NAACL 2024.
-    """
     agent_score = agent.get("score", 5.0)
     bias = get_confirmation_bias(agent)
     contradicting = (agent_score > 5.0 and weighted_avg < agent_score) or \
@@ -106,10 +102,6 @@ def apply_confirmation_bias(
 
 
 def apply_backfire_effect(agent: dict) -> float:
-    """
-    Repeated attacks without shifting increases resistance.
-    Grounded in Nyhan & Reifler 2010.
-    """
     attacks_received = agent.get("attacks_received", 0)
     if attacks_received <= BACKFIRE_THRESHOLD:
         return agent.get("persuasion_resistance", 0.5)
@@ -124,20 +116,6 @@ def apply_emotional_contagion(
     public_opponents: list[dict],
     old_score: float
 ) -> tuple[float, float, str | None]:
-    """
-    Fix D — Asymmetric emotional contagion.
-
-    Kelman 1958 — identification-based influence:
-    Public agents influence through personal testimony and emotional
-    identification. This operates INDEPENDENTLY of rational persuasion.
-    Institutional agents cannot counter this with logic alone.
-
-    Asymmetric:
-    - Public agents → CAN shift institutional agents emotionally
-    - Institutional agents → CANNOT shift public agents through logic
-
-    Returns (new_score, emotional_delta, triggering_agent_name)
-    """
     agent_type = agent.get("agent_type", "institutional")
     if agent_type == "public":
         return old_score, 0.0, None
@@ -221,7 +199,6 @@ async def run_single_agent_round(
     G_pub: nx.DiGraph,
     round_num: int
 ) -> dict:
-    # Step 1 — Pull evidence from knowledge graph
     G = G_pub if agent.get("graph_type") == "public" else G_inst
     keywords = agent.get("key_beliefs", []) + agent.get("known_entities", [])
     evidence = query_graph(G, keywords, top_n=5)
@@ -231,7 +208,6 @@ async def run_single_agent_round(
         for e in evidence
     ])
 
-    # Step 2 — Read opponents (includes last_argument for argument evolution)
     opponents = [a for a in all_agents if a["id"] != agent["id"]]
     opponent_context = "\n".join([
         f"- {o['name']} ({o['stance']}, score {o['score']}): {o['opinion']}"
@@ -239,19 +215,16 @@ async def run_single_agent_round(
         for o in opponents[:6]
     ])
 
-    # Step 3 — Find all opponents within threshold
     within_threshold = [
         opp for opp in opponents
         if abs(agent["score"] - opp["score"]) < CONFIDENCE_THRESHOLD
     ]
 
-    # Separate public opponents for emotional contagion
     public_opponents = [
         opp for opp in opponents
         if opp.get("agent_type") == "public"
     ]
 
-    # Argument Evolution — pick specific target to respond to
     target_opponent = None
     if within_threshold:
         target_opponent = max(within_threshold, key=lambda o: o.get("influence_weight", 0.5))
@@ -265,7 +238,6 @@ async def run_single_agent_round(
             f"\"{target_opponent['last_argument']}\""
         )
 
-    # Step 4 — Calculate base evidence multiplier
     base_evidence_multiplier = calculate_evidence_multiplier(evidence)
     old_score = agent["score"]
 
@@ -309,8 +281,6 @@ async def run_single_agent_round(
         effective_resistance = agent.get("persuasion_resistance", 0.5)
         being_attacked = False
 
-    # Step 5 — Apply emotional contagion ON TOP of Deffuant
-    # Only fires for institutional agents being influenced by public agents
     emotional_score, emotional_delta, contagion_source = apply_emotional_contagion(
         agent, public_opponents, new_score
     )
@@ -319,7 +289,6 @@ async def run_single_agent_round(
         new_score = emotional_score
         delta = max(delta, emotional_delta)
 
-    # Step 6 — Derive stance and shift
     new_stance = derive_stance(new_score)
     stance_changed = new_stance != agent.get("stance", "neutral")
     shifted = stance_changed or (delta > 0.10)
@@ -330,7 +299,6 @@ async def run_single_agent_round(
     elif shifted:
         attacks_received = 0
 
-    # Step 7 — LLM generates argument text
     system = """You are simulating a realistic human debater grounded in real evidence.
 Your opinion shift has already been mathematically calculated.
 Your job is to generate realistic argument text that reflects this outcome.
@@ -346,7 +314,11 @@ Respond in valid JSON only."""
 
     emotional_note = ""
     if contagion_source:
-        emotional_note = f"\nNote: You were emotionally moved by {contagion_source}'s personal testimony."
+        emotional_note = (
+            f"\nIMPORTANT: You were emotionally affected by {contagion_source}'s "
+            f"personal testimony. Acknowledge this in your argument — not as a full "
+            f"position change, but as a moment of genuine human recognition."
+        )
 
     prompt = f"""You are {agent['name']}, representing {agent.get('stakeholder_name', 'yourself')}.
 Background: {agent['persona']}
@@ -453,6 +425,10 @@ async def run_debate(
     if G_pub is None:
         G_pub = G_inst
 
+    if not agents:
+        print("[DebateEngine] No agents provided — aborting debate cleanly")
+        return {"rounds": [], "final_agents": []}
+
     print(f"[DebateEngine] Starting debate on: {topic}")
     print(f"[DebateEngine] {len(agents)} agents, {num_rounds} rounds")
     print(f"[DebateEngine] Deffuant params: mu={BASE_MU}, threshold={CONFIDENCE_THRESHOLD}")
@@ -465,6 +441,10 @@ async def run_debate(
         updated_agents = await run_debate_round(
             current_agents, topic, G_inst, G_pub, round_num
         )
+
+        if not updated_agents:
+            print(f"[DebateEngine] Round {round_num} produced no agents — stopping")
+            break
 
         round_result = {
             "round": round_num,
