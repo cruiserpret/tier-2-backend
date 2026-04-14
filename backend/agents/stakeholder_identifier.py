@@ -21,48 +21,88 @@ STAKEHOLDER_CATEGORIES = {
 }
 
 CATEGORY_NORMALIZER = {
-    "tech_leader": "tech_company",
-    "tech_executive": "tech_company",
-    "tech_entrepreneur": "tech_company",
-    "tech_industry": "tech_company",
-    "technology": "tech_company",
-    "corporation": "tech_company",
-    "business": "tech_company",
-    "company": "tech_company",
-    "ngo": "civil_society",
-    "nonprofit": "civil_society",
-    "advocacy": "civil_society",
-    "university": "academic",
-    "research": "academic",
-    "think_tank": "academic",
-    "defense_technology": "government",
-    "military": "government",
-    "defense": "government",
-    "nation": "government",
-    "country": "government",
-    "finance": "investor",
-    "fund": "investor",
-    "bank": "investor",
-    "venture_capital": "investor",
-    "vc": "investor",
-    "press": "media",
-    "news": "media",
-    "journalist": "media",
-    "union": "labor_union",
-    "workers": "labor_union",
-    "people": "affected_community",
-    "community": "affected_community",
-    "citizens": "consumer",
-    "public": "consumer",
-    "un": "international_body",
-    "nato": "international_body",
-    "who": "international_body",
-    "wto": "international_body",
+    "tech_leader": "tech_company", "tech_executive": "tech_company",
+    "tech_entrepreneur": "tech_company", "tech_industry": "tech_company",
+    "technology": "tech_company", "corporation": "tech_company",
+    "business": "tech_company", "company": "tech_company",
+    "ngo": "civil_society", "nonprofit": "civil_society", "advocacy": "civil_society",
+    "university": "academic", "research": "academic", "think_tank": "academic",
+    "defense_technology": "government", "military": "government",
+    "defense": "government", "nation": "government", "country": "government",
+    "finance": "investor", "fund": "investor", "bank": "investor",
+    "venture_capital": "investor", "vc": "investor",
+    "press": "media", "news": "media", "journalist": "media",
+    "union": "labor_union", "workers": "labor_union",
+    "people": "affected_community", "community": "affected_community",
+    "citizens": "consumer", "public": "consumer",
+    "un": "international_body", "nato": "international_body",
+    "who": "international_body", "wto": "international_body",
 }
 
 MAX_CATEGORY_SHARE = 0.30
 MIN_AGENTS = 5
-CALIBRATION_THRESHOLD = 0.15  # lowered from 0.20 for more aggressive correction
+CALIBRATION_THRESHOLD = 0.15
+
+# ── Stance keyword lexicons ───────────────────────────────────────
+# Grounded in Mohammad et al. 2016 (SemEval Stance Detection) and
+# Turney 2002 (Semantic Orientation of Phrases).
+#
+# KEY INSIGHT: Sentiment analysis (positive/negative) and stance detection
+# (for/against a target) are formally distinct NLP tasks (SemEval 2016).
+# A pro-choice writer angrily describing abortion bans produces NEGATIVE
+# sentiment but represents a FOR stance toward abortion rights.
+# The old code counted negative sentiment as AGAINST — that was the bug.
+#
+# These keywords are TARGET-AGNOSTIC stance indicators — they signal
+# a speaker's position toward whatever proposition is being debated.
+
+FOR_KEYWORDS = [
+    # direct support language
+    "should be legal", "support", "favor", "advocate", "endorse",
+    "in favor", "pro-", "right to", "rights to", "access to",
+    "deserve", "deserves", "entitled to", "should have",
+    # positive framing of change / expansion
+    "necessary", "essential", "critical", "important that",
+    "must be", "need to", "urgent", "imperative",
+    "protect", "expand", "restore", "guarantee", "ensure access",
+    # personal experience of deprivation (signals FOR access/rights)
+    "couldn't get", "denied", "lost access", "couldn't afford",
+    "had to travel", "went without", "forced to", "had no choice",
+    "fought for", "struggled to get", "finally able to",
+    # solidarity and universality language
+    "everyone should", "all people deserve", "basic right",
+    "human right", "fundamental right", "freedom to",
+    "should not be criminalized", "decriminalize",
+]
+
+AGAINST_KEYWORDS = [
+    # direct opposition
+    "should be illegal", "oppose", "against", "ban", "prohibit",
+    "restrict", "forbidden", "not a right", "no right to",
+    "shouldn't be", "must not", "should not allow",
+    # conservative framing
+    "protect life", "sanctity of life", "unborn", "moral issue",
+    "traditional values", "community values", "local decision",
+    "state's right", "federal overreach", "government overreach",
+    "parental rights", "family values", "goes too far",
+    # harm framing toward the proposition
+    "dangerous", "harmful to", "risk to", "threat to",
+    "destabilize", "undermine", "destroy", "corrupt",
+    "addiction", "dependency", "gateway", "slippery slope",
+    # fiscal/economic opposition
+    "taxpayer funded", "fiscal irresponsibility", "too expensive",
+    "economic burden", "unfair to those who",
+]
+
+NEUTRAL_KEYWORDS = [
+    "on one hand", "on the other hand", "both sides",
+    "complex issue", "nuanced", "depends on", "case by case",
+    "balanced approach", "middle ground", "compromise",
+    "further research needed", "more evidence needed",
+    "not yet clear", "uncertain", "remains to be seen",
+    "should be decided by", "leave it to", "up to the individual",
+    "personal choice", "neither support nor oppose",
+]
 
 
 def normalize_category(raw: str) -> str:
@@ -77,42 +117,101 @@ def normalize_category(raw: str) -> str:
     return "civil_society"
 
 
+def classify_claim_stance(claim_text: str) -> str:
+    """
+    Classify a single claim's stance using keyword matching.
+    Returns "for", "against", "neutral", or None (no signal found).
+    Ties broken toward neutral (most conservative classification).
+    """
+    text = claim_text.lower()
+
+    for_score    = sum(1 for kw in FOR_KEYWORDS    if kw in text)
+    against_score = sum(1 for kw in AGAINST_KEYWORDS if kw in text)
+    neutral_score = sum(1 for kw in NEUTRAL_KEYWORDS if kw in text)
+
+    if for_score == 0 and against_score == 0 and neutral_score == 0:
+        return None  # no signal — caller uses fallback
+
+    if for_score > against_score and for_score > neutral_score:
+        return "for"
+    elif against_score > for_score and against_score > neutral_score:
+        return "against"
+    else:
+        return "neutral"
+
+
 def extract_public_sentiment_distribution(G_pub: nx.DiGraph) -> dict:
-    """Extract FOR/AGAINST/NEUTRAL distribution from public sentiment graph."""
+    """
+    Extract FOR/AGAINST/NEUTRAL population stance distribution from public graph.
+
+    Uses target-aware stance keyword matching on claim description text.
+    Falls back to legacy sentiment tags only when keyword matching finds no signal.
+
+    This fixes the core calibration bug: content sentiment != population stance.
+    (Mohammad et al. 2016, SemEval Stance Detection Task)
+    """
     if G_pub is None:
         return None
 
     claims = get_nodes_by_type(G_pub, "claim")
     if not claims:
-        all_nodes = [
-            data for _, data in G_pub.nodes(data=True)
-            if data.get("sentiment") in ("positive", "negative", "neutral")
+        claims = [
+            {"name": n, **data}
+            for n, data in G_pub.nodes(data=True)
+            if data.get("type") in ("claim", "experience")
         ]
-        claims = all_nodes
 
     if not claims:
         return None
 
-    pos = sum(1 for c in claims if c.get("sentiment") == "positive")
-    neg = sum(1 for c in claims if c.get("sentiment") == "negative")
-    neu = sum(1 for c in claims if c.get("sentiment") == "neutral")
-    total = pos + neg + neu
+    for_count = 0
+    against_count = 0
+    neutral_count = 0
+    keyword_hits = 0
+    fallback_hits = 0
 
+    for claim in claims:
+        # Use full description — richer signal than truncated name
+        claim_text = claim.get("description", "") or claim.get("name", "")
+        stance = classify_claim_stance(claim_text)
+
+        if stance is not None:
+            keyword_hits += 1
+            if stance == "for":
+                for_count += 1
+            elif stance == "against":
+                against_count += 1
+            else:
+                neutral_count += 1
+        else:
+            # No keyword match — fall back to legacy sentiment tag
+            fallback_hits += 1
+            legacy = claim.get("sentiment", "neutral")
+            if legacy == "positive":
+                for_count += 1
+            elif legacy == "negative":
+                against_count += 1
+            else:
+                neutral_count += 1
+
+    total = for_count + against_count + neutral_count
     if total == 0:
         return None
 
     distribution = {
-        "for":     round(pos / total, 2),
-        "against": round(neg / total, 2),
-        "neutral": round(neu / total, 2),
-        "total_signal": total
+        "for":           round(for_count / total, 2),
+        "against":       round(against_count / total, 2),
+        "neutral":       round(neutral_count / total, 2),
+        "total_signal":  total,
+        "keyword_hits":  keyword_hits,
+        "fallback_hits": fallback_hits,
     }
 
-    print(f"[StakeholderIdentifier] Public sentiment signal — "
+    print(f"[StakeholderIdentifier] Public stance signal (keyword-based) — "
           f"for: {distribution['for']*100:.0f}% / "
           f"against: {distribution['against']*100:.0f}% / "
           f"neutral: {distribution['neutral']*100:.0f}% "
-          f"(from {total} claim nodes)")
+          f"({total} claims: {keyword_hits} keyword-matched, {fallback_hits} fallback)")
 
     return distribution
 
@@ -121,11 +220,9 @@ def get_current_distribution(stakeholders: list[dict]) -> dict:
     total = len(stakeholders)
     if total == 0:
         return {"for": 0, "against": 0, "neutral": 0}
-
     for_count     = sum(1 for s in stakeholders if s.get("stance") == "for")
     against_count = sum(1 for s in stakeholders if s.get("stance") == "against")
     neutral_count = sum(1 for s in stakeholders if s.get("stance") == "neutral")
-
     return {
         "for":     round(for_count / total, 2),
         "against": round(against_count / total, 2),
@@ -133,112 +230,39 @@ def get_current_distribution(stakeholders: list[dict]) -> dict:
     }
 
 
-async def request_missing_stakeholders(
-    topic: str,
-    missing_stances: list[str],
-    num_needed: int,
-    graph_context: str,
-    existing_names: list[str]
-) -> list[dict]:
-    """Ask LLM to generate additional stakeholders for underrepresented stances."""
+async def request_missing_stakeholders(topic, missing_stances, num_needed, graph_context, existing_names):
     system = """You are identifying additional stakeholders whose interests are being overlooked.
 These must be REAL, SPECIFIC entities with genuine stakes in this topic.
 Respond in valid JSON only."""
-
     existing_str = ", ".join(existing_names) if existing_names else "none"
-
     prompt = f"""Topic: {topic}
-
-The current stakeholder list is missing perspectives from these stances: {', '.join(missing_stances)}
-Already identified stakeholders: {existing_str}
-
-Context from knowledge graph:
-{graph_context}
-
-Identify {num_needed} additional UNIQUE real stakeholders who would hold these stances.
-Do NOT repeat any stakeholders already listed above.
-These should be stakeholders whose voices are underrepresented.
-
-For stance "for" — who genuinely BENEFITS from what the proposition suggests?
-For stance "against" — who genuinely LOSES from what the proposition suggests?
-For stance "neutral" — who has genuinely mixed interests?
-
-Respond in this exact JSON format:
-{{
-    "stakeholders": [
-        {{
-            "name": "specific real entity name — must not be in the existing list",
-            "category": "tech_company/government/civil_society/academic/labor_union/consumer/media/investor/affected_community/international_body",
-            "fundamental_interests": "what this entity fundamentally wants",
-            "real_position": "their logical position derived from interests",
-            "stance": "for/against/neutral",
-            "stake": "why this outcome matters to them",
-            "relevance_score": 0.75
-        }}
-    ]
-}}"""
-
+Missing stances: {', '.join(missing_stances)}
+Already identified: {existing_str}
+Context: {graph_context}
+Identify {num_needed} additional UNIQUE real stakeholders for the missing stances.
+{{"stakeholders": [{{"name": "...", "category": "...", "fundamental_interests": "...", "real_position": "...", "stance": "for/against/neutral", "stake": "...", "relevance_score": 0.75}}]}}"""
     try:
         result = await call_llm_json(prompt, system)
         parsed = json.loads(result)
         additional = parsed.get("stakeholders", [])
         for s in additional:
             s["category"] = normalize_category(s.get("category", "civil_society"))
-        print(f"[StakeholderIdentifier] Calibration added {len(additional)} stakeholders for: {missing_stances}")
+        print(f"[StakeholderIdentifier] Calibration added {len(additional)} for: {missing_stances}")
         return additional
     except Exception as e:
         print(f"[StakeholderIdentifier] Calibration request error: {e}")
         return []
 
 
-async def request_more_unique_stakeholders(
-    topic: str,
-    existing: list[dict],
-    num_needed: int,
-    graph_context: str
-) -> list[dict]:
-    """
-    Request more UNIQUE stakeholders when we don't have enough.
-    Replaces the fill_to_count duplication approach.
-    """
+async def request_more_unique_stakeholders(topic, existing, num_needed, graph_context):
     existing_names = [s["name"] for s in existing]
     existing_str = ", ".join(existing_names) if existing_names else "none"
-
-    system = """You are identifying additional stakeholders for a debate simulation.
-Find real, distinct entities not already represented.
-Respond in valid JSON only."""
-
+    system = "You are identifying additional stakeholders for a debate simulation. Respond in valid JSON only."
     prompt = f"""Topic: {topic}
-
-Already identified stakeholders: {existing_str}
-
-We need {num_needed} more UNIQUE stakeholders for this debate.
-Do NOT repeat any stakeholders already listed.
-Find stakeholders from different categories and perspectives.
-
-Context:
-{graph_context}
-
-Respond in this exact JSON format:
-{{
-    "stakeholders": [
-        {{
-            "name": "specific real entity — must not already be listed",
-            "category": "tech_company/government/civil_society/academic/labor_union/consumer/media/investor/affected_community/international_body",
-            "fundamental_interests": "what this entity fundamentally wants",
-            "real_position": "their logical position on this topic",
-            "stance": "for/against/neutral",
-            "stake": "why this outcome matters to them",
-            "relevance_score": 0.70
-        }}
-    ]
-}}
-
-Rules:
-- Every stakeholder must be genuinely unique and not in the existing list
-- Ensure stance diversity — spread across for/against/neutral
-- Must be real organizations or people with genuine stakes"""
-
+Already identified: {existing_str}
+Need {num_needed} more UNIQUE stakeholders — different categories, different stances.
+Context: {graph_context}
+{{"stakeholders": [{{"name": "...", "category": "...", "fundamental_interests": "...", "real_position": "...", "stance": "for/against/neutral", "stake": "...", "relevance_score": 0.70}}]}}"""
     try:
         result = await call_llm_json(prompt, system)
         parsed = json.loads(result)
@@ -252,122 +276,64 @@ Rules:
         return []
 
 
-async def calibrate_distribution(
-    stakeholders: list[dict],
-    topic: str,
-    G_pub: nx.DiGraph,
-    graph_context: str
-) -> list[dict]:
-    """
-    Compare current distribution to public sentiment signal.
-    Correct underrepresented stances by requesting additional stakeholders.
-    """
+async def calibrate_distribution(stakeholders, topic, G_pub, graph_context):
     public_dist = extract_public_sentiment_distribution(G_pub)
-
     if public_dist is None or public_dist["total_signal"] < 10:
         print("[StakeholderIdentifier] Insufficient public signal — skipping calibration")
         return stakeholders
 
     current_dist = get_current_distribution(stakeholders)
-
     print(f"[StakeholderIdentifier] Current distribution — "
-          f"for: {current_dist['for']*100:.0f}% / "
-          f"against: {current_dist['against']*100:.0f}% / "
-          f"neutral: {current_dist['neutral']*100:.0f}%")
-    print(f"[StakeholderIdentifier] Target distribution — "
-          f"for: {public_dist['for']*100:.0f}% / "
-          f"against: {public_dist['against']*100:.0f}% / "
-          f"neutral: {public_dist['neutral']*100:.0f}%")
+          f"for: {current_dist['for']*100:.0f}% / against: {current_dist['against']*100:.0f}% / neutral: {current_dist['neutral']*100:.0f}%")
+    print(f"[StakeholderIdentifier] Target distribution  — "
+          f"for: {public_dist['for']*100:.0f}% / against: {public_dist['against']*100:.0f}% / neutral: {public_dist['neutral']*100:.0f}%")
 
     missing_stances = []
     for stance in ["for", "against", "neutral"]:
         gap = public_dist[stance] - current_dist[stance]
         if gap > CALIBRATION_THRESHOLD:
             missing_stances.append(stance)
-            print(f"[StakeholderIdentifier] '{stance}' underrepresented by "
-                  f"{gap*100:.0f}% — flagging for correction")
+            print(f"[StakeholderIdentifier] '{stance}' underrepresented by {gap*100:.0f}% — correcting")
 
     if not missing_stances:
         print("[StakeholderIdentifier] Distribution within acceptable range — no calibration needed")
         return stakeholders
 
     total = len(stakeholders)
-    num_needed = max(2, round(max(
-        public_dist[s] - current_dist[s]
-        for s in missing_stances
-    ) * total))
-
+    num_needed = max(2, round(max(public_dist[s] - current_dist[s] for s in missing_stances) * total))
     existing_names = [s["name"] for s in stakeholders]
-    additional = await request_missing_stakeholders(
-        topic, missing_stances, num_needed, graph_context, existing_names
-    )
+    additional = await request_missing_stakeholders(topic, missing_stances, num_needed, graph_context, existing_names)
 
     if additional:
         calibrated = stakeholders + additional
         new_dist = get_current_distribution(calibrated)
-        print(f"[StakeholderIdentifier] Post-calibration distribution — "
-              f"for: {new_dist['for']*100:.0f}% / "
-              f"against: {new_dist['against']*100:.0f}% / "
-              f"neutral: {new_dist['neutral']*100:.0f}%")
+        print(f"[StakeholderIdentifier] Post-calibration — "
+              f"for: {new_dist['for']*100:.0f}% / against: {new_dist['against']*100:.0f}% / neutral: {new_dist['neutral']*100:.0f}%")
         return calibrated
-
     return stakeholders
 
 
-async def classify_and_position_entities(
-    topic: str,
-    entities: list[dict],
-    graph_context: str
-) -> list[dict]:
+async def classify_and_position_entities(topic, entities, graph_context):
     entity_list = "\n".join([
         f"- {e['name']} (influence: {e.get('influence_score', 0):.3f}, citations: {e.get('citations', 1)})"
         for e in entities[:35]
     ])
-
     system = """You are an expert at identifying stakeholders and their real-world positions.
 Derive stance from INTERESTS, not public statements or news sentiment.
 Respond in valid JSON only."""
-
     proposition = topic if "?" in topic else f"{topic}?"
-    prompt = f"""Proposition being debated: {proposition}
+    prompt = f"""Proposition: {proposition}
+- "for" = entity SUPPORTS the proposition
+- "against" = entity OPPOSES the proposition
+- "neutral" = genuinely mixed position
 
-CRITICAL: stance must always be relative to the proposition itself.
-- "for" = this entity SUPPORTS what the proposition is suggesting
-- "against" = this entity OPPOSES what the proposition is suggesting
-- "neutral" = this entity has genuinely mixed or unclear position
+Entities: {entity_list}
+Context: {graph_context}
 
-Entities from knowledge graph:
-{entity_list}
+Ensure genuine diversity — at least one FOR, one AGAINST, one NEUTRAL minimum.
+Maximum 15 stakeholders. Only real organizations with genuine stakes.
 
-Knowledge graph context:
-{graph_context}
-
-For each real stakeholder, analyze their fundamental interests and derive their logical stance.
-
-IMPORTANT: Ensure genuine diversity — not everyone can have the same stance.
-Find at least one FOR, one AGAINST, and one NEUTRAL stakeholder minimum.
-
-Respond in this exact JSON format:
-{{
-    "stakeholders": [
-        {{
-            "name": "entity name exactly as given",
-            "category": "tech_company/government/civil_society/academic/labor_union/consumer/media/investor/affected_community/international_body",
-            "fundamental_interests": "what this entity fundamentally wants",
-            "real_position": "their logical position derived from interests",
-            "stance": "for/against/neutral",
-            "stake": "why this outcome matters to them",
-            "relevance_score": 0.85
-        }}
-    ]
-}}
-
-Rules:
-- Stance from INTEREST ANALYSIS only
-- Ensure genuine diversity across for/against/neutral
-- Maximum 15 stakeholders
-- Only real organizations with genuine stakes"""
-
+{{"stakeholders": [{{"name": "...", "category": "tech_company/government/civil_society/academic/labor_union/consumer/media/investor/affected_community/international_body", "fundamental_interests": "...", "real_position": "...", "stance": "for/against/neutral", "stake": "...", "relevance_score": 0.85}}]}}"""
     try:
         result = await call_llm_json(prompt, system)
         parsed = json.loads(result)
@@ -377,70 +343,41 @@ Rules:
         return []
 
 
-def enforce_diversity(stakeholders: list[dict], num_agents: int) -> list[dict]:
+def enforce_diversity(stakeholders, num_agents):
     max_per_category = max(1, int(num_agents * MAX_CATEGORY_SHARE))
     sorted_s = sorted(stakeholders, key=lambda x: x.get("relevance_score", 0.5), reverse=True)
     category_counts = {}
     selected = []
-
     for s in sorted_s:
         cat = s.get("category", "civil_society")
         count = category_counts.get(cat, 0)
         if count < max_per_category:
             selected.append(s)
             category_counts[cat] = count + 1
-
     return selected
 
 
-async def fill_to_count(
-    stakeholders: list[dict],
-    num_agents: int,
-    topic: str,
-    graph_context: str
-) -> list[dict]:
-    """
-    Fill to required count by requesting MORE UNIQUE stakeholders from LLM.
-    Replaces the old approach of duplicating agents as 'representative 2/3/etc'
-    which was producing 5 unique agents repeated 3x.
-    """
+async def fill_to_count(stakeholders, num_agents, topic, graph_context):
     if len(stakeholders) >= num_agents:
         return stakeholders[:num_agents]
-
     needed = num_agents - len(stakeholders)
     print(f"[StakeholderIdentifier] Need {needed} more unique stakeholders — requesting from LLM")
-
-    additional = await request_more_unique_stakeholders(
-        topic, stakeholders, needed, graph_context
-    )
-
+    additional = await request_more_unique_stakeholders(topic, stakeholders, needed, graph_context)
     filled = stakeholders + additional
-
-    # Only fall back to duplication if LLM couldn't provide enough
     if len(filled) < num_agents:
-        print(f"[StakeholderIdentifier] LLM provided {len(additional)}, "
-              f"still need {num_agents - len(filled)} — using representatives as last resort")
+        print(f"[StakeholderIdentifier] Still need {num_agents - len(filled)} — using representatives as last resort")
         i = 0
         unique_count = len(stakeholders)
         while len(filled) < num_agents and unique_count > 0:
             base = stakeholders[i % unique_count]
             rep_num = i // unique_count + 2
-            filled.append({
-                **base,
-                "name": f"{base['name']} (representative {rep_num})",
-                "real_position": f"A secondary perspective aligned with {base['name']}'s position."
-            })
+            filled.append({**base, "name": f"{base['name']} (representative {rep_num})",
+                          "real_position": f"Secondary perspective aligned with {base['name']}."})
             i += 1
-
     return filled[:num_agents]
 
 
-async def identify_stakeholders(
-    topic: str,
-    G: nx.DiGraph,
-    num_agents: int = 10,
-    G_pub: nx.DiGraph = None
-) -> list[dict]:
+async def identify_stakeholders(topic, G, num_agents=10, G_pub=None):
     num_agents = max(num_agents, MIN_AGENTS)
     print(f"[StakeholderIdentifier] Identifying stakeholders for: {topic} ({num_agents} agents)")
 
@@ -462,15 +399,11 @@ async def identify_stakeholders(
 
     if not raw_stakeholders:
         raw_stakeholders = [
-            {
-                "name": e["name"],
-                "category": "civil_society",
-                "fundamental_interests": f"Has a stake in {topic}",
-                "real_position": f"Has a stake in {topic}",
-                "stance": "neutral",
-                "stake": "Identified from knowledge graph",
-                "relevance_score": e.get("influence_score", 0.5)
-            }
+            {"name": e["name"], "category": "civil_society",
+             "fundamental_interests": f"Has a stake in {topic}",
+             "real_position": f"Has a stake in {topic}", "stance": "neutral",
+             "stake": "Identified from knowledge graph",
+             "relevance_score": e.get("influence_score", 0.5)}
             for e in influential[:10]
         ]
 
@@ -479,33 +412,23 @@ async def identify_stakeholders(
 
     diverse = enforce_diversity(raw_stakeholders, num_agents)
 
-    # Calibrate distribution against public sentiment signal
     if G_pub is not None:
         diverse = await calibrate_distribution(diverse, topic, G_pub, graph_context)
     else:
         print("[StakeholderIdentifier] No public graph — skipping calibration")
 
-    # Fill to count with LLM-generated unique stakeholders (not duplicates)
     filled = await fill_to_count(diverse, num_agents, topic, graph_context)
 
-    # Enrich with category weights
     enriched = []
     for s in filled:
         category = s.get("category", "civil_society")
         defaults = STAKEHOLDER_CATEGORIES.get(category, STAKEHOLDER_CATEGORIES["civil_society"])
-        enriched.append({
-            **s,
-            "persuasion_resistance": defaults["persuasion_resistance"],
-            "influence_weight": defaults["influence_weight"],
-        })
+        enriched.append({**s, "persuasion_resistance": defaults["persuasion_resistance"],
+                         "influence_weight": defaults["influence_weight"]})
 
     final_dist = get_current_distribution(enriched)
-    print(f"[StakeholderIdentifier] Identified {len(enriched)} stakeholders across "
-          f"{len(set(s['category'] for s in enriched))} categories")
-    print(f"[StakeholderIdentifier] Final stance distribution — "
-          f"for: {final_dist['for']*100:.0f}% / "
-          f"against: {final_dist['against']*100:.0f}% / "
-          f"neutral: {final_dist['neutral']*100:.0f}%")
+    print(f"[StakeholderIdentifier] Final: {len(enriched)} stakeholders, "
+          f"for: {final_dist['for']*100:.0f}% / against: {final_dist['against']*100:.0f}% / neutral: {final_dist['neutral']*100:.0f}%")
     for s in enriched:
         print(f"  -> {s['name']} [{s['category']}] stance: {s['stance']}")
 
