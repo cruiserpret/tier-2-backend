@@ -87,13 +87,25 @@ def calculate_verdict(final_agents: list[dict], rounds: list[dict]) -> dict:
     """
     Mathematically derive verdict confidence.
 
-    confidence = (stance_concentration × 0.4) +
-                 (shift_convergence × 0.3) +
-                 (score_separation × 0.3)
+    confidence = (stance_concentration × 0.50) +
+                 (score_separation     × 0.35) +
+                 (shift_convergence    × 0.15)
 
-    shift_convergence — did agents move TOWARD the dominant stance
-    score_separation  — how far the dominant group's avg score is from neutral (5.0)
-    These two fix the 25-35% problem — low deltas no longer tank confidence.
+    Research basis for weight change (Pransh, April 2026):
+    Old weights gave shift_convergence 30%. On entrenched topics
+    (abortion, gun control) agents correctly hold firm — near-zero
+    shifts is realistic human behavior, not a simulation failure.
+    Penalising it with 30% produced artificially low confidence
+    (25-35%) on topics with genuine strong consensus.
+
+    New weights: stance_concentration dominates at 50%.
+    A simulation where 12 FOR agents hold at score 8.0 across 3
+    rounds now gets high confidence — correctly.
+    shift_convergence demoted to 15% — it still matters but doesn't
+    tank the score when polarisation is the real-world truth.
+
+    score_separation — how far dominant group's avg score is from
+    neutral (5.0). A group at 8.0 is more decided than one at 6.0.
     """
     total = len(final_agents)
     if total == 0:
@@ -110,7 +122,6 @@ def calculate_verdict(final_agents: list[dict], rounds: list[dict]) -> dict:
     stance_concentration = dominant_count / total
 
     # Score separation — how far dominant group is from neutral (5.0)
-    # A group averaging 8.0 is more "decided" than one averaging 6.0
     dominant_agents = [a for a in final_agents if a.get("stance") == dominant_stance]
     if dominant_agents:
         avg_dominant_score = sum(a["score"] for a in dominant_agents) / len(dominant_agents)
@@ -119,7 +130,6 @@ def calculate_verdict(final_agents: list[dict], rounds: list[dict]) -> dict:
         score_separation = 0.0
 
     # Shift convergence — agents who shifted toward dominant stance
-    # Use 0.10 threshold to match our shifted definition in debate engine
     total_convergent_shifts = 0
     total_agent_rounds = total * len(rounds) if rounds else 1
 
@@ -132,11 +142,11 @@ def calculate_verdict(final_agents: list[dict], rounds: list[dict]) -> dict:
 
     shift_convergence = min(total_convergent_shifts / total_agent_rounds, 1.0)
 
-    # Final confidence
+    # Final confidence — updated weights (Pransh April 2026)
     confidence = (
-        stance_concentration * 0.4 +
-        shift_convergence * 0.3 +
-        score_separation * 0.3
+        stance_concentration * 0.50 +
+        score_separation     * 0.35 +
+        shift_convergence    * 0.15
     )
     confidence_pct = round(confidence * 100, 1)
 
@@ -329,7 +339,6 @@ Generate the God's Eye View in this exact JSON format:
         "simulation_id": simulation_id,
         "topic": topic,
 
-        # The three main display fields
         "summary": synthesis.get("summary", ""),
         "predicted_trajectory": synthesis.get("predicted_trajectory", ""),
         "verdict": {
@@ -345,7 +354,6 @@ Generate the God's Eye View in this exact JSON format:
             "real_world_implication": synthesis.get("real_world_implication", ""),
         },
 
-        # Supporting fields
         "actionable_insight": synthesis.get("actionable_insight", ""),
         "consensus_level": synthesis.get("consensus_level", "medium"),
         "agents_shifted": len(agents_shifted),
