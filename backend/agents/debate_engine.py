@@ -10,8 +10,20 @@ import networkx as nx
 
 # ── Deffuant Model Parameters ─────────────────────────────────────
 BASE_MU = 0.3
-CONFIDENCE_THRESHOLD = 3.0
+CONFIDENCE_THRESHOLD = 2.0          # Fix E: lowered from 3.0
 MAX_EVIDENCE_MULTIPLIER = 1.5
+
+# ── Emotional Contagion Parameters ────────────────────────────────
+# Kelman 1958 — identification-based influence operates independently
+# of rational persuasion. Public agents influence through personal
+# testimony. Institutional agents cannot counter this with logic alone.
+EMOTIONAL_CONTAGION_REACH = 4.0
+EMOTIONAL_CONTAGION_MU = 0.08
+EMOTIONAL_INTENSITY_MULTIPLIER = {
+    "high":   1.5,
+    "medium": 1.0,
+    "low":    0.5,
+}
 
 # ── Confirmation Bias Parameters ──────────────────────────────────
 CONFIRMATION_BIAS_BY_CATEGORY = {
@@ -36,35 +48,15 @@ MAX_RESISTANCE = 0.95
 def safe_parse_json(raw: str) -> dict:
     """
     Robust JSON parser with 4 fallback strategies.
-
-    Research basis:
-    - Ouyang et al. 2022 (InstructGPT): RLHF-trained LLMs fail JSON parsing
-      in 3 predictable systematic ways — control characters, smart quotes,
-      markdown code fences. These are not random; they are structural.
-    - McConnell 2004 (Code Complete): external I/O that can fail must be
-      wrapped in graceful degradation — a single parse failure should not
-      cascade into losing agent state for the rest of the simulation.
-    - Hamming 1986: in multi-round simulations, a round 1 failure prevents
-      last_argument from being set, silently degrading rounds 2 and 3.
-      One recoverable error cascades into 2 broken rounds without this fix.
-
-    Strategies applied in order of least to most aggressive transformation:
-    1. Strip control characters only
-    2. Extract first valid JSON object from string
-    3. Strip markdown code fences then parse
-    4. Replace smart quotes then parse
+    Grounded in Ouyang et al. 2022 — systematic LLM output failure modes.
     """
     if not raw:
         return {}
-
-    # Strategy 1 — strip control characters
     try:
         clean = re.sub(r'[\x00-\x1f\x7f]', ' ', raw)
         return json.loads(clean)
     except Exception:
         pass
-
-    # Strategy 2 — extract first valid JSON object
     try:
         clean = re.sub(r'[\x00-\x1f\x7f]', ' ', raw)
         start = clean.find('{')
@@ -73,16 +65,12 @@ def safe_parse_json(raw: str) -> dict:
             return json.loads(clean[start:end + 1])
     except Exception:
         pass
-
-    # Strategy 3 — strip markdown code fences
     try:
         clean = re.sub(r'```json|```', '', raw).strip()
         clean = re.sub(r'[\x00-\x1f\x7f]', ' ', clean)
         return json.loads(clean)
     except Exception:
         pass
-
-    # Strategy 4 — replace smart quotes
     try:
         clean = raw.replace('\u201c', '"').replace('\u201d', '"')
         clean = clean.replace('\u2018', "'").replace('\u2019', "'")
@@ -90,7 +78,6 @@ def safe_parse_json(raw: str) -> dict:
         return json.loads(clean)
     except Exception:
         pass
-
     return {}
 
 
@@ -110,14 +97,11 @@ def apply_confirmation_bias(
     """
     agent_score = agent.get("score", 5.0)
     bias = get_confirmation_bias(agent)
-
     contradicting = (agent_score > 5.0 and weighted_avg < agent_score) or \
                     (agent_score < 5.0 and weighted_avg > agent_score)
-
     if contradicting:
         discounted = evidence_multiplier * (1.0 - bias)
         return round(max(discounted, 1.0), 3)
-
     return evidence_multiplier
 
 
@@ -127,14 +111,65 @@ def apply_backfire_effect(agent: dict) -> float:
     Grounded in Nyhan & Reifler 2010.
     """
     attacks_received = agent.get("attacks_received", 0)
-
     if attacks_received <= BACKFIRE_THRESHOLD:
         return agent.get("persuasion_resistance", 0.5)
-
     extra_attacks = attacks_received - BACKFIRE_THRESHOLD
     boost = extra_attacks * BACKFIRE_RESISTANCE_BOOST
     new_resistance = agent.get("persuasion_resistance", 0.5) + boost
     return round(min(new_resistance, MAX_RESISTANCE), 3)
+
+
+def apply_emotional_contagion(
+    agent: dict,
+    public_opponents: list[dict],
+    old_score: float
+) -> tuple[float, float, str | None]:
+    """
+    Fix D — Asymmetric emotional contagion.
+    Kelman 1958 — identification-based influence.
+    Public agents CAN shift institutional agents emotionally.
+    Institutional agents CANNOT shift public agents through logic.
+    """
+    agent_type = agent.get("agent_type", "institutional")
+    if agent_type == "public":
+        return old_score, 0.0, None
+
+    if not public_opponents:
+        return old_score, 0.0, None
+
+    reachable = [
+        opp for opp in public_opponents
+        if abs(old_score - opp["score"]) < EMOTIONAL_CONTAGION_REACH
+    ]
+
+    if not reachable:
+        return old_score, 0.0, None
+
+    best_contagion = None
+    best_pull = 0.0
+
+    for opp in reachable:
+        intensity = opp.get("emotional_intensity", "medium")
+        intensity_mult = EMOTIONAL_INTENSITY_MULTIPLIER.get(intensity, 1.0)
+        gap = abs(old_score - opp["score"])
+        pull = intensity_mult / (gap + 0.1)
+        if pull > best_pull:
+            best_pull = pull
+            best_contagion = opp
+
+    if not best_contagion:
+        return old_score, 0.0, None
+
+    emotional_delta = EMOTIONAL_CONTAGION_MU * (best_contagion["score"] - old_score)
+    new_score = round(max(1.0, min(10.0, old_score + emotional_delta)), 2)
+    actual_delta = abs(new_score - old_score)
+
+    if actual_delta > 0.01:
+        print(f"[DebateEngine] Emotional contagion: {agent['name']} nudged by "
+              f"{best_contagion['name']} ({best_contagion.get('emotional_intensity', 'medium')} intensity) "
+              f"delta={actual_delta:.3f}")
+
+    return new_score, actual_delta, best_contagion["name"]
 
 
 def calculate_evidence_multiplier(evidence: list[dict]) -> float:
@@ -178,7 +213,6 @@ async def run_single_agent_round(
     G_pub: nx.DiGraph,
     round_num: int
 ) -> dict:
-    # Step 1 — Pull evidence from knowledge graph
     G = G_pub if agent.get("graph_type") == "public" else G_inst
     keywords = agent.get("key_beliefs", []) + agent.get("known_entities", [])
     evidence = query_graph(G, keywords, top_n=5)
@@ -188,7 +222,6 @@ async def run_single_agent_round(
         for e in evidence
     ])
 
-    # Step 2 — Read opponents (includes last_argument for argument evolution)
     opponents = [a for a in all_agents if a["id"] != agent["id"]]
     opponent_context = "\n".join([
         f"- {o['name']} ({o['stance']}, score {o['score']}): {o['opinion']}"
@@ -196,13 +229,16 @@ async def run_single_agent_round(
         for o in opponents[:6]
     ])
 
-    # Step 3 — Find all opponents within threshold
     within_threshold = [
         opp for opp in opponents
         if abs(agent["score"] - opp["score"]) < CONFIDENCE_THRESHOLD
     ]
 
-    # ── Argument Evolution — pick specific target to respond to ───
+    public_opponents = [
+        opp for opp in opponents
+        if opp.get("agent_type") == "public"
+    ]
+
     target_opponent = None
     if within_threshold:
         target_opponent = max(within_threshold, key=lambda o: o.get("influence_weight", 0.5))
@@ -216,7 +252,6 @@ async def run_single_agent_round(
             f"\"{target_opponent['last_argument']}\""
         )
 
-    # Step 4 — Calculate base evidence multiplier
     base_evidence_multiplier = calculate_evidence_multiplier(evidence)
     old_score = agent["score"]
 
@@ -260,7 +295,14 @@ async def run_single_agent_round(
         effective_resistance = agent.get("persuasion_resistance", 0.5)
         being_attacked = False
 
-    # Step 5 — Derive stance and shift
+    emotional_score, emotional_delta, contagion_source = apply_emotional_contagion(
+        agent, public_opponents, new_score
+    )
+
+    if emotional_delta > 0.01:
+        new_score = emotional_score
+        delta = max(delta, emotional_delta)
+
     new_stance = derive_stance(new_score)
     stance_changed = new_stance != agent.get("stance", "neutral")
     shifted = stance_changed or (delta > 0.10)
@@ -271,7 +313,6 @@ async def run_single_agent_round(
     elif shifted:
         attacks_received = 0
 
-    # Step 6 — LLM generates argument text
     system = """You are simulating a realistic human debater grounded in real evidence.
 Your opinion shift has already been mathematically calculated.
 Your job is to generate realistic argument text that reflects this outcome.
@@ -284,6 +325,14 @@ Respond in valid JSON only."""
         if influential_opponent and shifted
         else "You held your position firm"
     )
+
+    emotional_note = ""
+    if contagion_source:
+        emotional_note = (
+            f"\nIMPORTANT: You were emotionally affected by {contagion_source}'s "
+            f"personal testimony. Acknowledge this in your argument — not as a full "
+            f"position change, but as a moment of genuine human recognition."
+        )
 
     prompt = f"""You are {agent['name']}, representing {agent.get('stakeholder_name', 'yourself')}.
 Background: {agent['persona']}
@@ -310,9 +359,10 @@ Mathematical outcome (already decided):
 - Opinion shifted: {shifted}
 - {shift_direction}
 - You {"are being repeatedly challenged and digging in harder" if attacks_received > BACKFIRE_THRESHOLD else "are engaging with the debate openly"}
+{emotional_note}
 
 Generate argument text that reflects this outcome naturally.
-If you have a target argument above, your response MUST explicitly reference it.
+If you have a target argument above, your response MUST explicitly reference it by name.
 
 Respond in this exact JSON format:
 {{
@@ -325,12 +375,6 @@ Respond in this exact JSON format:
 
     try:
         result = await call_llm_json(prompt, system)
-
-        # ── Fix C: safe_parse_json replaces json.loads ────────────
-        # json.loads fails on control chars, smart quotes, markdown fences.
-        # These are systematic LLM output failure modes (Ouyang et al. 2022).
-        # A single parse failure cascades — agent loses last_argument,
-        # breaking argument evolution for all subsequent rounds (Hamming 1986).
         response = safe_parse_json(result)
 
         if not response:
@@ -354,6 +398,7 @@ Respond in this exact JSON format:
         updated_agent["attacks_received"] = attacks_received
         updated_agent["effective_resistance"] = effective_resistance
         updated_agent["confirmation_bias"] = get_confirmation_bias(agent)
+        updated_agent["emotional_contagion_source"] = contagion_source
 
         return updated_agent
 
@@ -394,9 +439,17 @@ async def run_debate(
     if G_pub is None:
         G_pub = G_inst
 
+    # ── Guard: abort cleanly if no agents generated ───────────────
+    # Prevents ZeroDivisionError crash when LLM refuses harmful topics
+    # or when agent generation fails completely.
+    if not agents:
+        print("[DebateEngine] No agents provided — aborting debate cleanly")
+        return {"rounds": [], "final_agents": []}
+
     print(f"[DebateEngine] Starting debate on: {topic}")
     print(f"[DebateEngine] {len(agents)} agents, {num_rounds} rounds")
     print(f"[DebateEngine] Deffuant params: mu={BASE_MU}, threshold={CONFIDENCE_THRESHOLD}")
+    print(f"[DebateEngine] Emotional contagion: reach={EMOTIONAL_CONTAGION_REACH}, mu={EMOTIONAL_CONTAGION_MU}")
 
     all_rounds = []
     current_agents = agents.copy()
@@ -405,6 +458,11 @@ async def run_debate(
         updated_agents = await run_debate_round(
             current_agents, topic, G_inst, G_pub, round_num
         )
+
+        # Guard against empty round result
+        if not updated_agents:
+            print(f"[DebateEngine] Round {round_num} produced no agents — stopping")
+            break
 
         round_result = {
             "round": round_num,
@@ -419,12 +477,14 @@ async def run_debate(
                     "stance": a["stance"],
                     "stakeholder_name": a.get("stakeholder_name"),
                     "stakeholder_category": a.get("stakeholder_category"),
+                    "agent_type": a.get("agent_type", "institutional"),
                     "deffuant_gap": a.get("deffuant_gap"),
                     "evidence_multiplier": a.get("evidence_multiplier"),
                     "attacks_received": a.get("attacks_received", 0),
                     "effective_resistance": a.get("effective_resistance"),
                     "confirmation_bias": a.get("confirmation_bias"),
                     "shift_caused_by": a.get("shift_caused_by"),
+                    "emotional_contagion_source": a.get("emotional_contagion_source"),
                     "last_argument": a.get("last_argument", ""),
                     "responding_to": a.get("responding_to", ""),
                 }
@@ -437,7 +497,9 @@ async def run_debate(
 
         shifts = sum(1 for a in updated_agents if a.get("shifted", False))
         avg_delta = sum(a.get("opinion_delta", 0) for a in updated_agents) / len(updated_agents)
-        print(f"[DebateEngine] Round {round_num} complete. Shifts: {shifts}/{len(updated_agents)} | Avg delta: {avg_delta:.3f}")
+        emotional_nudges = sum(1 for a in updated_agents if a.get("emotional_contagion_source"))
+        print(f"[DebateEngine] Round {round_num} complete. Shifts: {shifts}/{len(updated_agents)} | "
+              f"Avg delta: {avg_delta:.3f} | Emotional nudges: {emotional_nudges}")
 
     return {
         "rounds": all_rounds,
