@@ -123,13 +123,20 @@ def start_simulation():
 
                 # Step 4 — Generate institutional agents
                 from backend.agents.stakeholder_identifier import identify_stakeholders
-                stakeholders = run_async(identify_stakeholders(topic, G_inst, inst_count, G_pub))
+                # identify_stakeholders returns (stakeholders, keyword_signal) tuple.
+                # keyword_signal flows to generate_public_agents for three-tier
+                # enforcement (Noelle-Neumann 1974 / Haidt 2012 tier system).
+                stakeholders, keyword_signal = run_async(identify_stakeholders(topic, G_inst, inst_count, G_pub))
                 actual_inst_count = len(stakeholders)
                 inst_agents = run_async(generate_personas(topic, G_inst, actual_inst_count, stakeholders))
 
                 # Step 5 — Generate public agents
+                # Pass keyword_signal so pattern extractor knows which tier to use.
+                # Tier 1 (>90%): moral consensus — no balance enforcement
+                # Tier 2 (30-70%): genuine split — full silent majority enforcement
+                # Tier 3 (70-90%): moderate — gentle correction
                 from backend.agents.public_agent_generator import generate_public_agents
-                pub_agents = run_async(generate_public_agents(topic, G_pub, pub_count))
+                pub_agents = run_async(generate_public_agents(topic, G_pub, pub_count, keyword_signal=keyword_signal))
 
                 # Step 6 — Tag agents with their graph type
                 for a in inst_agents:

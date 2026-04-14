@@ -11,8 +11,7 @@ import networkx as nx
 # Shinn et al. 2023 — verbal correction memories injected as context.
 # get_correction_context() retrieves past prediction errors on similar
 # topics and injects them into the calibration prompt so the LLM
-# can correct for known systematic biases (e.g. online discourse
-# overrepresenting economic grievance voices on welfare topics).
+# can correct for known systematic biases.
 try:
     from backend.agents.correction_store import get_correction_context
     CORRECTION_STORE_AVAILABLE = True
@@ -64,7 +63,6 @@ CALIBRATION_THRESHOLD = 0.15
 # These are TARGET-AGNOSTIC — they catch general stance signals
 # across any topic. Topic-specific keywords are generated separately
 # via generate_topic_keywords() and combined at classification time.
-# (Pransh's Claude suggestion — self-calibrating per proposition)
 
 FOR_KEYWORDS = [
     "should be legal", "support", "favor", "advocate", "endorse",
@@ -123,19 +121,16 @@ async def generate_topic_keywords(topic: str) -> tuple[list, list]:
     """
     Generate topic-specific stance keywords for THIS exact proposition.
 
-    Pransh's Claude suggestion (April 2026):
-    Generic base keywords catch general sentiment but miss the
-    concept-vs-mandate gap. A 4-day work week question surfaces
-    "support" (concept) but needs "federal law", "mandate",
-    "legally require" (proposition-specific) to distinguish
-    "I want shorter weeks" from "I want Congress to force it."
-
-    Returns (for_keywords, against_keywords) to combine with base lists.
-    Cached per simulation — called once, not once per claim.
-
     Research basis: Mohammad et al. 2016 (SemEval) — stance detection
     must be target-dependent. Same text can signal FOR one proposition
     and AGAINST another depending on framing.
+
+    The concept-vs-mandate gap: "I support 4-day weeks" vs "I support
+    a federal mandate" require different keywords to distinguish.
+    Generic base keywords catch concept support but miss mandate opposition.
+
+    Returns (for_keywords, against_keywords) to combine with base lists.
+    Called once per simulation — cached in identify_stakeholders().
     """
     system = """You are an expert in stance detection and NLP.
 Generate proposition-specific stance keywords for this exact debate topic.
@@ -147,17 +142,17 @@ Generate 10 FOR keywords and 10 AGAINST keywords that someone would use
 when specifically supporting or opposing THIS proposition — not just the
 general concept behind it.
 
-Think about the specific framing of this question:
-- What words signal someone supports THIS specific action/policy/law?
-- What words signal someone opposes THIS specific action/policy/law?
+Think about the specific framing:
+- What words signal support for THIS specific action/policy/law?
+- What words signal opposition to THIS specific action/policy/law?
 
 Examples for "Should the federal government mandate a 4-day work week":
-- FOR: "federal law", "mandate", "legally require", "workers need protection", "legislation"
-- AGAINST: "let employers decide", "market forces", "government shouldn't mandate", "voluntary not mandatory"
+- FOR: "federal law", "mandate", "legally require", "workers need protection"
+- AGAINST: "let employers decide", "market forces", "government shouldn't mandate"
 
 Examples for "Should the US ban TikTok":
-- FOR: "national security threat", "ban the app", "chinese espionage", "data risk"
-- AGAINST: "first amendment", "free speech", "170 million users", "unconstitutional"
+- FOR: "national security threat", "ban the app", "chinese espionage"
+- AGAINST: "first amendment", "free speech", "unconstitutional"
 
 Respond in this exact JSON format:
 {{
@@ -170,8 +165,8 @@ Respond in this exact JSON format:
 Rules:
 - Keywords must be specific to THIS proposition, not generic
 - Keep each keyword short (1-4 words) so they match within claim text
-- Do not repeat keywords from general lists like "support" or "oppose"
-- Focus on the specific ACTION being proposed (mandate, ban, legalize, restore, etc.)"""
+- Do not repeat generic words like "support" or "oppose"
+- Focus on the specific ACTION being proposed"""
 
     try:
         result = await call_llm_json(prompt, system)
@@ -195,18 +190,11 @@ def classify_claim_stance(
 ) -> str:
     """
     Classify a single claim's stance using base + topic-specific keywords.
-
-    Two-layer approach:
-    1. Topic-specific keywords (higher specificity, catch proposition framing)
-    2. Base keywords (catch general stance signals)
-
-    Topic keywords combined with base keywords — not replacing them.
     Returns "for", "against", "neutral", or None (no signal).
+    Ties broken toward neutral (most conservative classification).
     """
     text = claim_text.lower()
-
-    # Combine base + topic-specific keyword lists
-    all_for = FOR_KEYWORDS + (topic_for_keywords or [])
+    all_for     = FOR_KEYWORDS + (topic_for_keywords or [])
     all_against = AGAINST_KEYWORDS + (topic_against_keywords or [])
 
     for_score     = sum(1 for kw in all_for     if kw.lower() in text)
@@ -230,13 +218,13 @@ def extract_public_sentiment_distribution(
     topic_against_keywords: list = None
 ) -> dict:
     """
-    Extract FOR/AGAINST/NEUTRAL population stance distribution from public graph.
+    Extract FOR/AGAINST/NEUTRAL stance distribution from public graph.
 
-    Uses base + topic-specific keyword matching on claim description text.
-    Falls back to legacy sentiment tags only when keyword matching finds no signal.
+    Uses base + topic-specific keyword matching on claim text.
+    Falls back to legacy sentiment tags only when keywords find no signal.
 
     Fix: content sentiment != population stance (Mohammad et al. 2016)
-    Enhancement: topic-aware keywords fix concept-vs-mandate gap (Pransh's Claude, April 2026)
+    Enhancement: topic-aware keywords fix concept-vs-mandate gap.
     """
     if G_pub is None:
         return None
@@ -252,11 +240,8 @@ def extract_public_sentiment_distribution(
     if not claims:
         return None
 
-    for_count = 0
-    against_count = 0
-    neutral_count = 0
-    keyword_hits = 0
-    fallback_hits = 0
+    for_count = against_count = neutral_count = 0
+    keyword_hits = fallback_hits = 0
 
     for claim in claims:
         claim_text = claim.get("description", "") or claim.get("name", "")
@@ -268,21 +253,15 @@ def extract_public_sentiment_distribution(
 
         if stance is not None:
             keyword_hits += 1
-            if stance == "for":
-                for_count += 1
-            elif stance == "against":
-                against_count += 1
-            else:
-                neutral_count += 1
+            if stance == "for":       for_count += 1
+            elif stance == "against": against_count += 1
+            else:                     neutral_count += 1
         else:
             fallback_hits += 1
             legacy = claim.get("sentiment", "neutral")
-            if legacy == "positive":
-                for_count += 1
-            elif legacy == "negative":
-                against_count += 1
-            else:
-                neutral_count += 1
+            if legacy == "positive":   for_count += 1
+            elif legacy == "negative": against_count += 1
+            else:                      neutral_count += 1
 
     total = for_count + against_count + neutral_count
     if total == 0:
@@ -310,17 +289,16 @@ def get_current_distribution(stakeholders: list[dict]) -> dict:
     total = len(stakeholders)
     if total == 0:
         return {"for": 0, "against": 0, "neutral": 0}
-    for_count     = sum(1 for s in stakeholders if s.get("stance") == "for")
-    against_count = sum(1 for s in stakeholders if s.get("stance") == "against")
-    neutral_count = sum(1 for s in stakeholders if s.get("stance") == "neutral")
     return {
-        "for":     round(for_count / total, 2),
-        "against": round(against_count / total, 2),
-        "neutral": round(neutral_count / total, 2),
+        "for":     round(sum(1 for s in stakeholders if s.get("stance") == "for") / total, 2),
+        "against": round(sum(1 for s in stakeholders if s.get("stance") == "against") / total, 2),
+        "neutral": round(sum(1 for s in stakeholders if s.get("stance") == "neutral") / total, 2),
     }
 
 
-async def request_missing_stakeholders(topic, missing_stances, num_needed, graph_context, existing_names):
+async def request_missing_stakeholders(
+    topic, missing_stances, num_needed, graph_context, existing_names
+):
     system = """You are identifying additional stakeholders whose interests are being overlooked.
 These must be REAL, SPECIFIC entities with genuine stakes in this topic.
 Respond in valid JSON only."""
@@ -368,26 +346,37 @@ Context: {graph_context}
 
 async def calibrate_distribution(
     stakeholders, topic, G_pub, graph_context,
-    topic_for_keywords=None, topic_against_keywords=None
+    topic_for_keywords=None, topic_against_keywords=None,
+    keyword_signal=None
 ):
     """
-    Compare current stakeholder distribution to topic-aware keyword signal.
-    Passes topic-specific keywords into sentiment extraction.
+    Compare current stakeholder distribution to public keyword signal.
+    Adds missing stakeholders if any stance deviates > CALIBRATION_THRESHOLD.
+
+    keyword_signal: pre-computed distribution from identify_stakeholders.
+    If provided, skips re-extraction (Pransh's optimization — avoids
+    computing the signal twice per simulation).
     """
-    public_dist = extract_public_sentiment_distribution(
+    # Use pre-computed signal if available — avoids double extraction
+    public_dist = keyword_signal or extract_public_sentiment_distribution(
         G_pub,
         topic_for_keywords=topic_for_keywords,
         topic_against_keywords=topic_against_keywords
     )
+
     if public_dist is None or public_dist["total_signal"] < 10:
         print("[StakeholderIdentifier] Insufficient public signal — skipping calibration")
         return stakeholders
 
     current_dist = get_current_distribution(stakeholders)
     print(f"[StakeholderIdentifier] Current distribution — "
-          f"for: {current_dist['for']*100:.0f}% / against: {current_dist['against']*100:.0f}% / neutral: {current_dist['neutral']*100:.0f}%")
+          f"for: {current_dist['for']*100:.0f}% / "
+          f"against: {current_dist['against']*100:.0f}% / "
+          f"neutral: {current_dist['neutral']*100:.0f}%")
     print(f"[StakeholderIdentifier] Target distribution  — "
-          f"for: {public_dist['for']*100:.0f}% / against: {public_dist['against']*100:.0f}% / neutral: {public_dist['neutral']*100:.0f}%")
+          f"for: {public_dist['for']*100:.0f}% / "
+          f"against: {public_dist['against']*100:.0f}% / "
+          f"neutral: {public_dist['neutral']*100:.0f}%")
 
     missing_stances = []
     for stance in ["for", "against", "neutral"]:
@@ -413,7 +402,9 @@ async def calibrate_distribution(
         calibrated = stakeholders + additional
         new_dist = get_current_distribution(calibrated)
         print(f"[StakeholderIdentifier] Post-calibration — "
-              f"for: {new_dist['for']*100:.0f}% / against: {new_dist['against']*100:.0f}% / neutral: {new_dist['neutral']*100:.0f}%")
+              f"for: {new_dist['for']*100:.0f}% / "
+              f"against: {new_dist['against']*100:.0f}% / "
+              f"neutral: {new_dist['neutral']*100:.0f}%")
         return calibrated
     return stakeholders
 
@@ -476,22 +467,37 @@ async def fill_to_count(stakeholders, num_agents, topic, graph_context):
         while len(filled) < num_agents and unique_count > 0:
             base = stakeholders[i % unique_count]
             rep_num = i // unique_count + 2
-            filled.append({**base, "name": f"{base['name']} (representative {rep_num})",
-                          "real_position": f"Secondary perspective aligned with {base['name']}."})
+            filled.append({
+                **base,
+                "name": f"{base['name']} (representative {rep_num})",
+                "real_position": f"Secondary perspective aligned with {base['name']}."
+            })
             i += 1
     return filled[:num_agents]
 
 
-async def identify_stakeholders(topic, G, num_agents=10, G_pub=None):
+async def identify_stakeholders(
+    topic: str,
+    G,
+    num_agents: int = 10,
+    G_pub=None
+) -> tuple[list, dict]:
     """
-    Main entry point. Now generates topic-specific keywords once
-    at the start and passes them through the entire calibration pipeline.
+    Main entry point.
+
+    Returns (enriched_stakeholders, keyword_signal) as a tuple.
+    keyword_signal flows to generate_public_agents() for tier-based
+    enforcement (Pransh's Feature 4 — signal flow through pipeline).
+
+    keyword_signal is computed ONCE here and:
+    1. Passed to calibrate_distribution() — avoids double extraction
+    2. Returned to routes.py — forwarded to generate_public_agents()
+       so the three-tier system can make data-driven decisions
     """
     num_agents = max(num_agents, MIN_AGENTS)
     print(f"[StakeholderIdentifier] Identifying stakeholders for: {topic} ({num_agents} agents)")
 
-    # ── Generate topic-specific keywords once per simulation ──────
-    # Cached here — passed to calibration, not regenerated per claim
+    # Generate topic-specific keywords once — passed through entire pipeline
     topic_for_kw, topic_against_kw = await generate_topic_keywords(topic)
 
     influential = get_most_influential(G, top_n=40)
@@ -512,11 +518,13 @@ async def identify_stakeholders(topic, G, num_agents=10, G_pub=None):
 
     if not raw_stakeholders:
         raw_stakeholders = [
-            {"name": e["name"], "category": "civil_society",
-             "fundamental_interests": f"Has a stake in {topic}",
-             "real_position": f"Has a stake in {topic}", "stance": "neutral",
-             "stake": "Identified from knowledge graph",
-             "relevance_score": e.get("influence_score", 0.5)}
+            {
+                "name": e["name"], "category": "civil_society",
+                "fundamental_interests": f"Has a stake in {topic}",
+                "real_position": f"Has a stake in {topic}", "stance": "neutral",
+                "stake": "Identified from knowledge graph",
+                "relevance_score": e.get("influence_score", 0.5)
+            }
             for e in influential[:10]
         ]
 
@@ -525,20 +533,32 @@ async def identify_stakeholders(topic, G, num_agents=10, G_pub=None):
 
     diverse = enforce_diversity(raw_stakeholders, num_agents)
 
-    # ── Reflexion correction context ─────────────────────────────
+    # ── Reflexion correction context (Hamza) ──────────────────────
     # Retrieve past prediction errors on similar topics.
-    # Injected into calibrate_distribution's request prompt so the
-    # LLM corrects for known systematic biases before generating
-    # additional stakeholders. (Shinn et al. 2023)
+    # Injected into graph_context so the LLM corrects for known
+    # systematic biases when generating additional stakeholders.
+    # Proved effective: gun control test Brier Score 0.0094.
     correction_context = get_correction_context(topic)
     if correction_context:
         graph_context = graph_context + "\n\n" + correction_context
 
+    # ── Extract keyword signal ONCE (Pransh) ──────────────────────
+    # Computed here, passed to both calibrate_distribution AND
+    # returned as tuple so routes.py can forward to generate_public_agents.
+    # This avoids computing the signal twice per simulation.
+    keyword_signal = None
     if G_pub is not None:
+        keyword_signal = extract_public_sentiment_distribution(
+            G_pub,
+            topic_for_keywords=topic_for_kw,
+            topic_against_keywords=topic_against_kw
+        )
+
         diverse = await calibrate_distribution(
             diverse, topic, G_pub, graph_context,
             topic_for_keywords=topic_for_kw,
-            topic_against_keywords=topic_against_kw
+            topic_against_keywords=topic_against_kw,
+            keyword_signal=keyword_signal  # pre-computed — no double extraction
         )
     else:
         print("[StakeholderIdentifier] No public graph — skipping calibration")
@@ -549,13 +569,20 @@ async def identify_stakeholders(topic, G, num_agents=10, G_pub=None):
     for s in filled:
         category = s.get("category", "civil_society")
         defaults = STAKEHOLDER_CATEGORIES.get(category, STAKEHOLDER_CATEGORIES["civil_society"])
-        enriched.append({**s, "persuasion_resistance": defaults["persuasion_resistance"],
-                         "influence_weight": defaults["influence_weight"]})
+        enriched.append({
+            **s,
+            "persuasion_resistance": defaults["persuasion_resistance"],
+            "influence_weight": defaults["influence_weight"]
+        })
 
     final_dist = get_current_distribution(enriched)
-    print(f"[StakeholderIdentifier] Final: {len(enriched)} stakeholders, "
-          f"for: {final_dist['for']*100:.0f}% / against: {final_dist['against']*100:.0f}% / neutral: {final_dist['neutral']*100:.0f}%")
+    print(f"[StakeholderIdentifier] Final: {len(enriched)} stakeholders — "
+          f"for: {final_dist['for']*100:.0f}% / "
+          f"against: {final_dist['against']*100:.0f}% / "
+          f"neutral: {final_dist['neutral']*100:.0f}%")
     for s in enriched:
         print(f"  -> {s['name']} [{s['category']}] stance: {s['stance']}")
 
-    return enriched
+    # Return tuple — keyword_signal flows to generate_public_agents
+    # for three-tier enforcement (Feature 4)
+    return enriched, keyword_signal

@@ -20,7 +20,8 @@ SCORE_RANGE = {
 # ── Neutral cap ───────────────────────────────────────────────────
 # Grounded in Converse 1964 and Krosnick & Fabrigar 1997:
 # On salient political topics, genuine neutrals are rare (5-15%).
-# Excess neutral patterns represent LLM hedging bias (Perez et al. 2022).
+# Excess neutral patterns represent LLM hedging bias (Perez et al. 2022),
+# not real public opinion. Cap enforced after extraction.
 MAX_NEUTRAL_RATIO = 0.15
 
 
@@ -62,22 +63,23 @@ def enforce_neutral_cap(patterns: list[dict]) -> list[dict]:
     Cap neutral patterns at MAX_NEUTRAL_RATIO of total.
 
     Research basis:
-    - Converse 1964: genuine neutrals hold CONFLICTING interests,
-      not mere indecision. Most neutral survey responses are artifacts.
+    - Converse 1964: on salient political issues, genuine neutrals hold
+      CONFLICTING interests — not mere indecision. Most neutral survey
+      responses are measurement artifacts, not true ambivalence.
     - Krosnick & Fabrigar 1997: on high-salience topics, neutral is
-      consistently the minority position (5-15%).
-    - Perez et al. 2022: LLMs over-generate neutral framings due to
-      RLHF training toward appearing balanced.
+      consistently the minority position (5-15% of real public).
+    - Perez et al. 2022: LLMs systematically over-generate neutral
+      framings due to RLHF training toward appearing balanced.
 
-    Excess neutrals converted to FOR/AGAINST — not deleted.
+    Excess neutral patterns are redistributed to FOR/AGAINST — not deleted.
     """
     total = len(patterns)
     if total == 0:
         return patterns
 
-    neutral_patterns  = [p for p in patterns if p.get("stance") == "neutral"]
-    for_patterns      = [p for p in patterns if p.get("stance") == "for"]
-    against_patterns  = [p for p in patterns if p.get("stance") == "against"]
+    neutral_patterns = [p for p in patterns if p.get("stance") == "neutral"]
+    for_patterns     = [p for p in patterns if p.get("stance") == "for"]
+    against_patterns = [p for p in patterns if p.get("stance") == "against"]
 
     max_allowed_neutral = max(1, int(total * MAX_NEUTRAL_RATIO))
 
@@ -113,8 +115,35 @@ def enforce_neutral_cap(patterns: list[dict]) -> list[dict]:
     return converted
 
 
-async def extract_opinion_patterns(topic: str, G) -> list[dict]:
-    """Extract recurring public opinion patterns from the public sentiment graph."""
+async def extract_opinion_patterns(
+    topic: str,
+    G,
+    keyword_signal: dict = None
+) -> list[dict]:
+    """
+    Extract recurring public opinion patterns from the public sentiment graph.
+
+    Three-tier enforcement based on keyword signal strength.
+    Tier is determined by the dominant stance percentage from keyword scanning:
+
+    Tier 1 (>90% one direction): Moral consensus
+      → No balance enforcement. Generating fake opposition would be factually wrong.
+      → Research: Haidt 2012 (Moral Foundations Theory) — some issues have
+        genuine moral consensus that should not be artificially balanced.
+
+    Tier 2 (30-70% split): Genuine split
+      → Full silent majority enforcement. Minimum 2 FOR and 2 AGAINST patterns.
+      → Research: Noelle-Neumann 1974 (Spiral of Silence) — minority opinions
+        self-silence online. The silent majority exists in polls but not forums.
+
+    Tier 3 (70-90% one direction): Moderate consensus
+      → Gentle correction. Minimum 1 minority pattern.
+      → Research: Converse 1964 (Issue Publics) — even dominant positions
+        have a real minority that shouldn't be erased.
+
+    Without keyword_signal (or <100 hits): defaults to Tier 2.
+    This is the safe default — full enforcement is better than no enforcement.
+    """
     claims = get_nodes_by_type(G, "claim")
     influential = get_most_influential(G, top_n=15)
 
@@ -127,6 +156,79 @@ async def extract_opinion_patterns(topic: str, G) -> list[dict]:
         f"- {n['name']}: {n.get('description', '')[:100]}"
         for n in influential[:10]
     ])
+
+    # ── Tier classification from keyword signal ───────────────────
+    tier = 2
+    min_for = 2
+    min_against = 2
+
+    if keyword_signal and keyword_signal.get("keyword_hits", 0) >= 100:
+        for_pct     = keyword_signal.get("for", 0.33)
+        against_pct = keyword_signal.get("against", 0.33)
+        dominant    = max(for_pct, against_pct)
+
+        if dominant > 0.90:
+            tier = 1
+            min_for = 0
+            min_against = 0
+            print(f"[PublicAgentGenerator] Tier 1 — moral consensus "
+                  f"({dominant*100:.0f}% dominant) — no balance enforcement")
+        elif dominant > 0.70:
+            tier = 3
+            min_for = 1
+            min_against = 1
+            print(f"[PublicAgentGenerator] Tier 3 — moderate consensus "
+                  f"({dominant*100:.0f}% dominant) — gentle correction")
+        else:
+            tier = 2
+            min_for = 2
+            min_against = 2
+            print(f"[PublicAgentGenerator] Tier 2 — genuine split "
+                  f"({for_pct*100:.0f}% for / {against_pct*100:.0f}% against) — full enforcement")
+    else:
+        print(f"[PublicAgentGenerator] Tier 2 — insufficient signal "
+              f"(keyword_hits < 100 or no signal) — defaulting to full enforcement")
+
+    # ── Tier-adaptive balance instruction ─────────────────────────
+    if tier == 1:
+        balance_instruction = """
+CONSENSUS DETECTED: This topic has near-universal agreement in real public opinion.
+Do NOT generate artificial opposition — it would be factually wrong.
+Generate patterns that reflect the genuine overwhelming majority position.
+Only include a minority pattern if it genuinely and substantially exists
+in the discourse (e.g. edge cases, conflicting interests — not moral objection)."""
+
+    elif tier == 3:
+        balance_instruction = """
+MODERATE CONSENSUS: A clear majority position exists but a genuine minority also exists.
+Generate at least 1 pattern representing the minority position.
+These are real people who exist in polling data even if underrepresented online.
+Do not overstate the minority — they are smaller but real."""
+
+    else:
+        # Tier 2 — full enforcement
+        balance_instruction = """
+GENUINE SPLIT DETECTED: Real public opinion is divided on this topic.
+
+SILENT MAJORITY RULE (Noelle-Neumann 1974, Spiral of Silence):
+Online discourse oversamples the vocal, emotionally activated minority.
+The silent majority — satisfied, unaffected, or ideologically opposed people —
+rarely posts but absolutely exists in polling data.
+
+You MUST generate at least 2 AGAINST patterns representing this silent majority.
+These are people who exist in Gallup/Pew polling but not on Reddit.
+
+Common silent majorities by topic type:
+- Healthcare single-payer: people satisfied with employer insurance who fear losing choice
+- Student loans: people who paid theirs off, see forgiveness as unfair
+- Minimum wage: small business owners worried about margins
+- Drug legalization: suburban parents, religious communities
+- UBI: middle-class taxpayers who don't want to fund it
+- 4-day work week: employers in retail, healthcare, manufacturing
+- Immigration: people with specific local economic concerns
+
+Do NOT let online discourse bias you toward generating only FOR patterns.
+Generate patterns that reflect REAL POLLING DISTRIBUTION, not forum volume."""
 
     system = """You are analyzing public discourse to identify recurring opinion patterns.
 Extract distinct viewpoint clusters representing how different types of real people think.
@@ -142,40 +244,22 @@ Claims and opinions found:
 Key themes:
 {entities_context}
 
+{balance_instruction}
+
 Identify 6-8 distinct opinion patterns from this public discourse.
 Each must represent a SPECIFIC real demographic with a specific viewpoint.
 
-CRITICAL RULES:
-
+CORE RULES:
 1. Demographic must be hyper-specific — not "workers" but
-   "42-year-old assembly line worker in Detroit who lost health coverage when plant downsized"
-
-2. Stance distribution must reflect REAL PUBLIC OPINION — not what online forums over-represent.
-   Online discourse is systematically biased toward people with grievances and strong opinions.
-   People who are SATISFIED with the status quo post far less online than people who are angry.
-   You MUST actively seek out the AGAINST demographic even if they are underrepresented
-   in forum content. Ask yourself:
-   - Who is SATISFIED with how things currently work and would LOSE from this change?
-   - Who has ideological or economic objections that they don't post about on Reddit?
-   - Who silently opposes this even though they don't dominate online discourse?
-
-   Examples of silent AGAINST demographics to consider:
-   - On healthcare: people with good employer coverage who fear losing it
-   - On UBI: middle-class taxpayers worried about cost, not just wealthy conservatives
-   - On drug legalization: parents, religious communities, healthcare workers
-   - On immigration: rural communities with specific local concerns
-   These groups are real and numerous but QUIET online. Include them.
-
-3. Each demographic must be genuinely different — different age, profession, location,
-   life situation, income level
-
-4. Sample argument must sound like a real Reddit comment or text to a friend —
-   personal, specific, emotional, not policy-speak
+   "32-year-old freelance graphic designer in Chicago who lost 40% of income"
+2. Each demographic must be genuinely different — different age, profession,
+   location, life situation
+3. Sample argument must sound like a real Reddit comment — personal, specific, emotional
 
 NEUTRAL PATTERNS — STRICT DEFINITION (Converse 1964):
-Valid neutral = person with GENUINELY CONFLICTING personal interests.
-Invalid neutral = "sees both sides", "undecided", "needs more information".
-If you cannot identify a specific conflicting interest, do not generate a neutral pattern.
+A neutral pattern is ONLY valid if the person has GENUINELY CONFLICTING personal interests.
+Valid: A pharmacist who supports access but fears losing prescription revenue.
+Invalid: Someone who "sees both sides" or wants "a balanced approach".
 
 Respond in this exact JSON format:
 {{
@@ -205,32 +289,60 @@ Respond in this exact JSON format:
         print(f"[PublicAgentGenerator] Extracted {total} patterns: "
               f"{for_count} for / {against_count} against / {neutral_count} neutral")
 
-        # Balance enforcement — request missing perspectives if any stance >55%
-        if total > 0 and (for_count / total > 0.55 or against_count / total > 0.55):
+        # ── Enforce tier minimums ─────────────────────────────────
+        needs_more_for     = for_count < min_for
+        needs_more_against = against_count < min_against
+
+        if needs_more_for or needs_more_against:
             missing = []
-            if for_count == 0: missing.append("for")
-            if against_count == 0: missing.append("against")
+            if needs_more_for:
+                missing.append(f"for (need {min_for}, have {for_count})")
+            if needs_more_against:
+                missing.append(f"against (need {min_against}, have {against_count})")
 
-            if missing:
-                balance_prompt = f"""Missing stances for topic "{topic}": {', '.join(missing)}
+            print(f"[PublicAgentGenerator] Tier {tier} minimum not met: {missing} — requesting additional patterns")
 
-Generate 1-2 additional patterns for each missing stance.
-Focus especially on demographics that are UNDERREPRESENTED in online discourse —
-people who hold this view but don't typically post on Reddit or Quora.
-Same format — hyper-specific demographic, personal emotional driver, Reddit-style argument.
-{{"patterns": [...]}}"""
+            balance_prompt = f"""Topic: "{topic}"
+Current patterns: {for_count} for / {against_count} against / {neutral_count} neutral
+Need additional: {', '.join(missing)}
 
-                try:
-                    balance_result = await call_llm_json(balance_prompt, system)
-                    balance_parsed = safe_parse_json(balance_result)
-                    additional = balance_parsed.get("patterns", [])
-                    patterns.extend(additional)
-                    print(f"[PublicAgentGenerator] Added {len(additional)} balancing patterns")
-                except Exception as e:
-                    print(f"[PublicAgentGenerator] Balance correction error: {e}")
+Generate the missing patterns. Each must be:
+- A hyper-specific real demographic not yet represented
+- Grounded in lived personal experience — not policy language
+- Arguing from their specific life situation, NOT abstract ideology
 
-        # Apply neutral cap after balance enforcement
+Focus on demographics UNDERREPRESENTED in online discourse — people who hold
+this view but don't typically post on Reddit or Quora.
+
+{{"patterns": [
+    {{
+        "demographic": "...",
+        "core_belief": "...",
+        "emotional_driver": "...",
+        "emotional_intensity": "high/medium/low",
+        "stance": "for/against",
+        "prevalence": "medium",
+        "sample_argument": "..."
+    }}
+]}}"""
+
+            try:
+                balance_result = await call_llm_json(balance_prompt, system)
+                balance_parsed = safe_parse_json(balance_result)
+                additional = balance_parsed.get("patterns", [])
+                patterns.extend(additional)
+                print(f"[PublicAgentGenerator] Added {len(additional)} patterns to meet Tier {tier} minimums")
+            except Exception as e:
+                print(f"[PublicAgentGenerator] Balance correction error: {e}")
+
+        # ── Neutral cap enforcement ───────────────────────────────
         patterns = enforce_neutral_cap(patterns)
+
+        final_for     = sum(1 for p in patterns if p.get("stance") == "for")
+        final_against = sum(1 for p in patterns if p.get("stance") == "against")
+        final_neutral = sum(1 for p in patterns if p.get("stance") == "neutral")
+        print(f"[PublicAgentGenerator] Final patterns: "
+              f"{final_for} for / {final_against} against / {final_neutral} neutral")
 
         return patterns
 
@@ -356,11 +468,22 @@ Rules:
         return None
 
 
-async def generate_public_agents(topic: str, G, num_agents: int) -> list[dict]:
-    """Main function — extract opinion patterns and generate public demographic agents."""
+async def generate_public_agents(
+    topic: str,
+    G,
+    num_agents: int,
+    keyword_signal: dict = None
+) -> list[dict]:
+    """
+    Main function — extract opinion patterns and generate public demographic agents.
+
+    keyword_signal: the distribution dict from stakeholder_identifier's keyword
+    scanning. When provided with >=100 hits, enables tier-based enforcement.
+    When None or insufficient, defaults safely to Tier 2 (full enforcement).
+    """
     print(f"[PublicAgentGenerator] Generating {num_agents} public agents for: {topic}")
 
-    patterns = await extract_opinion_patterns(topic, G)
+    patterns = await extract_opinion_patterns(topic, G, keyword_signal=keyword_signal)
 
     if not patterns:
         print("[PublicAgentGenerator] No patterns found — skipping public agents")
