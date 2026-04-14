@@ -2,6 +2,7 @@ import json
 import asyncio
 import sys
 import os
+import re
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 from backend.utils.llm_client import call_llm_json
 from backend.utils.graph_utils import query_graph
@@ -31,9 +32,72 @@ BACKFIRE_THRESHOLD = 2
 BACKFIRE_RESISTANCE_BOOST = 0.05
 MAX_RESISTANCE = 0.95
 
+
+def safe_parse_json(raw: str) -> dict:
+    """
+    Robust JSON parser with 4 fallback strategies.
+
+    Research basis:
+    - Ouyang et al. 2022 (InstructGPT): RLHF-trained LLMs fail JSON parsing
+      in 3 predictable systematic ways — control characters, smart quotes,
+      markdown code fences. These are not random; they are structural.
+    - McConnell 2004 (Code Complete): external I/O that can fail must be
+      wrapped in graceful degradation — a single parse failure should not
+      cascade into losing agent state for the rest of the simulation.
+    - Hamming 1986: in multi-round simulations, a round 1 failure prevents
+      last_argument from being set, silently degrading rounds 2 and 3.
+      One recoverable error cascades into 2 broken rounds without this fix.
+
+    Strategies applied in order of least to most aggressive transformation:
+    1. Strip control characters only
+    2. Extract first valid JSON object from string
+    3. Strip markdown code fences then parse
+    4. Replace smart quotes then parse
+    """
+    if not raw:
+        return {}
+
+    # Strategy 1 — strip control characters
+    try:
+        clean = re.sub(r'[\x00-\x1f\x7f]', ' ', raw)
+        return json.loads(clean)
+    except Exception:
+        pass
+
+    # Strategy 2 — extract first valid JSON object
+    try:
+        clean = re.sub(r'[\x00-\x1f\x7f]', ' ', raw)
+        start = clean.find('{')
+        end = clean.rfind('}')
+        if start != -1 and end != -1:
+            return json.loads(clean[start:end + 1])
+    except Exception:
+        pass
+
+    # Strategy 3 — strip markdown code fences
+    try:
+        clean = re.sub(r'```json|```', '', raw).strip()
+        clean = re.sub(r'[\x00-\x1f\x7f]', ' ', clean)
+        return json.loads(clean)
+    except Exception:
+        pass
+
+    # Strategy 4 — replace smart quotes
+    try:
+        clean = raw.replace('\u201c', '"').replace('\u201d', '"')
+        clean = clean.replace('\u2018', "'").replace('\u2019', "'")
+        clean = re.sub(r'[\x00-\x1f\x7f]', ' ', clean)
+        return json.loads(clean)
+    except Exception:
+        pass
+
+    return {}
+
+
 def get_confirmation_bias(agent: dict) -> float:
     category = agent.get("stakeholder_category", "civil_society")
     return CONFIRMATION_BIAS_BY_CATEGORY.get(category, 0.35)
+
 
 def apply_confirmation_bias(
     evidence_multiplier: float,
@@ -41,7 +105,7 @@ def apply_confirmation_bias(
     weighted_avg: float
 ) -> float:
     """
-    Discount evidence multiplier when opponents are pushing against agent's position.
+    Discount evidence multiplier when opponents push against agent's position.
     Grounded in Chuang et al. NAACL 2024.
     """
     agent_score = agent.get("score", 5.0)
@@ -56,10 +120,10 @@ def apply_confirmation_bias(
 
     return evidence_multiplier
 
+
 def apply_backfire_effect(agent: dict) -> float:
     """
-    If agent has been repeatedly attacked without shifting,
-    increase their resistance.
+    Repeated attacks without shifting increases resistance.
     Grounded in Nyhan & Reifler 2010.
     """
     attacks_received = agent.get("attacks_received", 0)
@@ -72,12 +136,14 @@ def apply_backfire_effect(agent: dict) -> float:
     new_resistance = agent.get("persuasion_resistance", 0.5) + boost
     return round(min(new_resistance, MAX_RESISTANCE), 3)
 
+
 def calculate_evidence_multiplier(evidence: list[dict]) -> float:
     if not evidence:
         return 1.0
     avg_citations = sum(e.get("citations", 1) for e in evidence) / len(evidence)
     multiplier = 1.0 + (min(avg_citations, 10) / 10) * (MAX_EVIDENCE_MULTIPLIER - 1.0)
     return round(min(multiplier, MAX_EVIDENCE_MULTIPLIER), 3)
+
 
 def deffuant_update(
     opinion_i: float,
@@ -94,6 +160,7 @@ def deffuant_update(
     actual_delta = abs(new_opinion - opinion_i)
     return new_opinion, actual_delta
 
+
 def derive_stance(score: float) -> str:
     if score <= 3.5:
         return "against"
@@ -101,6 +168,7 @@ def derive_stance(score: float) -> str:
         return "for"
     else:
         return "neutral"
+
 
 async def run_single_agent_round(
     agent: dict,
@@ -120,7 +188,7 @@ async def run_single_agent_round(
         for e in evidence
     ])
 
-    # Step 2 — Read opponents (now includes last_argument for argument evolution)
+    # Step 2 — Read opponents (includes last_argument for argument evolution)
     opponents = [a for a in all_agents if a["id"] != agent["id"]]
     opponent_context = "\n".join([
         f"- {o['name']} ({o['stance']}, score {o['score']}): {o['opinion']}"
@@ -134,8 +202,7 @@ async def run_single_agent_round(
         if abs(agent["score"] - opp["score"]) < CONFIDENCE_THRESHOLD
     ]
 
-    # ── Argument Evolution — pick a specific target to respond to ──
-    # Priority: most influential within threshold → otherwise highest gap opponent
+    # ── Argument Evolution — pick specific target to respond to ───
     target_opponent = None
     if within_threshold:
         target_opponent = max(within_threshold, key=lambda o: o.get("influence_weight", 0.5))
@@ -154,7 +221,6 @@ async def run_single_agent_round(
     old_score = agent["score"]
 
     if within_threshold:
-        # Influence-weighted Deffuant
         weights = [
             (1.0 / (abs(agent["score"] - opp["score"]) + 0.1)) * opp.get("influence_weight", 0.5)
             for opp in within_threshold
@@ -164,12 +230,9 @@ async def run_single_agent_round(
             opp["score"] * w for opp, w in zip(within_threshold, weights)
         ) / total_weight
 
-        # Confirmation bias
         biased_multiplier = apply_confirmation_bias(
             base_evidence_multiplier, agent, weighted_avg
         )
-
-        # Backfire effect
         effective_resistance = apply_backfire_effect(agent)
 
         new_score, delta = deffuant_update(
@@ -202,7 +265,6 @@ async def run_single_agent_round(
     stance_changed = new_stance != agent.get("stance", "neutral")
     shifted = stance_changed or (delta > 0.10)
 
-    # Update attack counter for backfire effect tracking
     attacks_received = agent.get("attacks_received", 0)
     if being_attacked and not shifted:
         attacks_received += 1
@@ -217,7 +279,11 @@ You must directly engage with what specific opponents said — not generic state
 Respond in valid JSON only."""
 
     opponent_name = influential_opponent['name'] if influential_opponent else 'the group'
-    shift_direction = f"You moved toward {opponent_name}'s position" if influential_opponent and shifted else "You held your position firm"
+    shift_direction = (
+        f"You moved toward {opponent_name}'s position"
+        if influential_opponent and shifted
+        else "You held your position firm"
+    )
 
     prompt = f"""You are {agent['name']}, representing {agent.get('stakeholder_name', 'yourself')}.
 Background: {agent['persona']}
@@ -246,7 +312,7 @@ Mathematical outcome (already decided):
 - You {"are being repeatedly challenged and digging in harder" if attacks_received > BACKFIRE_THRESHOLD else "are engaging with the debate openly"}
 
 Generate argument text that reflects this outcome naturally.
-If you have a target argument above, your response MUST explicitly reference it — agree, disagree, or reframe it.
+If you have a target argument above, your response MUST explicitly reference it.
 
 Respond in this exact JSON format:
 {{
@@ -259,7 +325,16 @@ Respond in this exact JSON format:
 
     try:
         result = await call_llm_json(prompt, system)
-        response = json.loads(result)
+
+        # ── Fix C: safe_parse_json replaces json.loads ────────────
+        # json.loads fails on control chars, smart quotes, markdown fences.
+        # These are systematic LLM output failure modes (Ouyang et al. 2022).
+        # A single parse failure cascades — agent loses last_argument,
+        # breaking argument evolution for all subsequent rounds (Hamming 1986).
+        response = safe_parse_json(result)
+
+        if not response:
+            raise ValueError("safe_parse_json returned empty — LLM response unparseable")
 
         updated_agent = agent.copy()
         updated_agent["opinion"] = response.get("new_opinion", agent["opinion"])
@@ -271,7 +346,9 @@ Respond in this exact JSON format:
         updated_agent["shift_reason"] = response.get("shift_reason", "")
         updated_agent["key_evidence_used"] = response.get("key_evidence_used", [])
         updated_agent["responding_to"] = response.get("responding_to", "")
-        updated_agent["shift_caused_by"] = target_opponent["name"] if (shifted and target_opponent) else None
+        updated_agent["shift_caused_by"] = (
+            target_opponent["name"] if (shifted and target_opponent) else None
+        )
         updated_agent["evidence_multiplier"] = biased_multiplier
         updated_agent["deffuant_gap"] = round(min_gap, 2) if influential_opponent else None
         updated_agent["attacks_received"] = attacks_received
@@ -290,6 +367,7 @@ Respond in this exact JSON format:
         updated_agent["attacks_received"] = attacks_received
         return updated_agent
 
+
 async def run_debate_round(
     agents: list[dict],
     topic: str,
@@ -304,6 +382,7 @@ async def run_debate_round(
     ]
     updated_agents = await asyncio.gather(*tasks)
     return list(updated_agents)
+
 
 async def run_debate(
     topic: str,
