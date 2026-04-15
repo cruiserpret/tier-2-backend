@@ -6,7 +6,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 import config
 from backend.utils.text_utils import chunk_text, clean_text
 
-async def search_web(query: str, num_results: int = 10) -> list[dict]:
+async def search_web(query: str, num_results: int = 10, domain_boost: list = None) -> list[dict]:
     """Search web using Tavily and return raw results."""
     url = "https://api.tavily.com/search"
 
@@ -17,6 +17,9 @@ async def search_web(query: str, num_results: int = 10) -> list[dict]:
         "search_depth": "advanced",
         "include_raw_content": True,
     }
+
+    if domain_boost:
+        payload["include_domains"] = domain_boost
 
     async with aiohttp.ClientSession() as session:
         async with session.post(url, json=payload) as response:
@@ -46,13 +49,64 @@ async def parse_pdf(filepath: str) -> list[dict]:
     doc.close()
     return chunks
 
-def build_institutional_queries(topic: str) -> list[str]:
+# ── Domain routing ────────────────────────────────────────────────
+# Routes Tavily to the right sources based on topic type.
+# UCSD questions → r/UCSD, ucsdguardian.org
+# General campus questions → college subreddits, higher ed press
+# Default → no domain restriction
+
+UCSD_KEYWORDS = [
+    "ucsd", "triton", "uc san diego", "rady",
+    "price center", "geisel", "revelle", "muir", "warren college"
+]
+
+UCSD_DOMAINS = [
+    "reddit.com/r/UCSD",
+    "ucsdguardian.org",
+    "as.ucsd.edu",
+    "triton.news",
+]
+
+CAMPUS_KEYWORDS = [
+    "campus", "university", "college", "student government",
+    "library hours", "dormitory", "dorm", "dining hall",
+    "tuition", "financial aid", "student loan", "major", "graduation"
+]
+
+CAMPUS_DOMAINS = [
+    "reddit.com/r/college",
+    "reddit.com/r/StudentLoans",
+    "chronicle.com",
+    "insidehighered.com",
+]
+
+def get_domain_boost(topic: str, context: str = "") -> list:
     """
-    Queries targeting news, policy, corporate statements.
-    Captures what institutions, executives, and policy makers say.
+    Returns domain boost list for Tavily based on topic and context.
+    UCSD-specific → UCSD domains
+    General campus → campus education domains
+    Default → no restriction (full web)
+    """
+    combined = (topic + " " + context).lower()
+
+    if any(kw in combined for kw in UCSD_KEYWORDS):
+        print(f"[Ingestor] UCSD topic detected — boosting UCSD domains")
+        return UCSD_DOMAINS
+
+    if any(kw in combined for kw in CAMPUS_KEYWORDS):
+        print(f"[Ingestor] Campus topic detected — boosting education domains")
+        return CAMPUS_DOMAINS
+
+    return []
+
+def build_institutional_queries(topic: str, context: str = "") -> list[str]:
+    """
+    Queries targeting news, policy, expert analysis.
+    Context enriches queries for product/startup questions.
     """
     base = topic.rstrip("?").strip()
-    return [
+
+    queries = [
         topic,
         f"arguments for {base}",
         f"arguments against {base}",
@@ -60,14 +114,22 @@ def build_institutional_queries(topic: str) -> list[str]:
         f"{base} expert analysis",
     ]
 
-def build_public_queries(topic: str) -> list[str]:
+    # If context provided, add context-enriched queries
+    if context:
+        context_short = context[:100].strip()
+        queries.append(f"{base} {context_short}")
+        queries.append(f"{context_short} market research analysis")
+
+    return queries
+
+def build_public_queries(topic: str, context: str = "") -> list[str]:
     """
-    Queries targeting actual lived experience and emotional public discourse.
-    Designed to surface real voices from forums, not articles about public opinion.
-    Targets Reddit, Quora, and personal story content specifically.
+    Queries targeting lived experience and public discourse.
+    Context enriches queries for product/startup questions.
     """
     base = topic.rstrip("?").strip()
-    return [
+
+    queries = [
         f'site:reddit.com "{base}"',
         f'site:reddit.com {base} personal experience',
         f'site:reddit.com {base} affected my life',
@@ -78,6 +140,15 @@ def build_public_queries(topic: str) -> list[str]:
         f'{base} "I feel" OR "I think" OR "in my experience" opinion',
         f'{base} community response people affected',
     ]
+
+    # If context provided (startup use case), add product-specific queries
+    if context:
+        context_short = context[:100].strip()
+        queries.append(f'site:reddit.com {context_short} would you pay')
+        queries.append(f'site:reddit.com {context_short} opinion review')
+        queries.append(f'{context_short} user reviews reddit')
+
+    return queries
 
 def process_institutional_results(
     results: list[list[dict]],
@@ -112,16 +183,8 @@ def process_public_results(
 ) -> list[dict]:
     """
     Process public sentiment results.
-    Uses smaller chunks and preserves emotional language.
-    Tags chunks with sentiment strength for graph weighting.
-    Prioritises Reddit and Quora content with higher sentiment weight.
-
-    ── Fix 1: Public chunk cap ──────────────────────────────────────
-    Caps at MAX_PUBLIC_CHUNKS after sorting by sentiment_strength.
-    Without this cap, high-volume topics (gun control, abortion) produce
-    1700+ chunks which takes 15+ minutes and hits API rate limits.
-    Chunks are already sorted by sentiment_strength so the cap keeps
-    the highest-signal content — accuracy impact is minimal.
+    Preserves emotional language, tags sentiment strength.
+    Caps at MAX_PUBLIC_CHUNKS sorted by signal strength.
     """
     from backend.utils.text_utils import detect_sentiment_strength
 
@@ -139,7 +202,6 @@ def process_public_results(
 
             source_url = r.get("url", "")
 
-            # Boost sentiment weight for Reddit and Quora — these are real voices
             source_boost = 1.0
             if "reddit.com" in source_url:
                 source_boost = 1.5
@@ -165,12 +227,8 @@ def process_public_results(
                     "is_forum": "reddit.com" in source_url or "quora.com" in source_url
                 })
 
-    # Sort by sentiment strength — richer signal first
     chunks.sort(key=lambda c: c.get("sentiment_strength", 0), reverse=True)
 
-    # ── Cap public chunks ─────────────────────────────────────────
-    # Sort already done above so [:MAX] keeps highest-signal chunks.
-    # 300 chunks → ~3 min runtime vs 1706 chunks → 15+ min.
     MAX_PUBLIC_CHUNKS = 600
     if len(chunks) > MAX_PUBLIC_CHUNKS:
         chunks = chunks[:MAX_PUBLIC_CHUNKS]
@@ -180,17 +238,26 @@ def process_public_results(
 
 async def ingest(
     topic: str,
-    pdf_paths: list[str] = []
+    pdf_paths: list[str] = [],
+    context: str = ""
 ) -> tuple[list[dict], list[dict]]:
     """
     Main ingestion function.
+    context — optional additional information about the topic.
+              For UCSD questions: "This is a UCSD campus policy question"
+              For startups: product description, price point, target user
     Returns (institutional_chunks, public_chunks).
     """
-    inst_queries = build_institutional_queries(topic)
-    pub_queries = build_public_queries(topic)
+    inst_queries = build_institutional_queries(topic, context)
+    pub_queries = build_public_queries(topic, context)
+    domain_boost = get_domain_boost(topic, context)
 
+    # Domain boost applies to public queries — that's where local discourse lives
     inst_tasks = [search_web(q, num_results=8) for q in inst_queries]
-    pub_tasks = [search_web(q, num_results=10) for q in pub_queries]
+    pub_tasks = [
+        search_web(q, num_results=10, domain_boost=domain_boost if domain_boost else None)
+        for q in pub_queries
+    ]
     pdf_tasks = [parse_pdf(path) for path in pdf_paths]
 
     all_results = await asyncio.gather(*inst_tasks, *pub_tasks, *pdf_tasks)
@@ -211,6 +278,8 @@ async def ingest(
     pub_chunks = process_public_results(pub_raw, seen_inst)
 
     print(f"[Ingestor] {len(inst_chunks)} institutional chunks | {len(pub_chunks)} public chunks for: {topic}")
+    if context:
+        print(f"[Ingestor] Context used: {context[:80]}...")
 
     forum_chunks = sum(1 for c in pub_chunks if c.get("is_forum", False))
     high_sentiment = sum(1 for c in pub_chunks if c.get("sentiment_strength", 0) > 0.3)

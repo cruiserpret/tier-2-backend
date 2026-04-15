@@ -5,16 +5,7 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 from backend.utils.llm_client import call_llm_json
 
-# ── Continuous spectrum formula ───────────────────────────────────
-# inst_ratio = 0.80 - (public_score * 0.60)
-# pub_ratio  = 0.20 + (public_score * 0.60)
-#
-# public_score = 0.0  → 80/20 (pure institutional)
-# public_score = 0.5  → 50/50 (balanced)
-# public_score = 1.0  → 20/80 (pure public)
-
 def calculate_split(public_score: float) -> tuple[float, float]:
-    """Convert public_score (0-1) to institutional/public ratio."""
     public_score = max(0.0, min(1.0, public_score))
     inst_ratio = round(0.80 - (public_score * 0.60), 2)
     pub_ratio  = round(0.20 + (public_score * 0.60), 2)
@@ -35,10 +26,6 @@ def safe_parse(raw: str) -> dict:
     return {}
 
 async def classify_topic_primary(topic: str) -> dict:
-    """
-    Call 1 — Primary classifier.
-    Rates topic on 5 dimensions, returns public_score and reasoning.
-    """
     system = """You are an expert at understanding who drives public debates.
 Rate this topic on 5 dimensions to determine the institutional/public split.
 Respond in valid JSON only."""
@@ -72,10 +59,25 @@ For each dimension, give a score from 0.0 to 1.0:
    0 = ordinary people's lived experience is the primary evidence
    1 = requires specialized knowledge — economists, lawyers, scientists only
 
-Examples to calibrate:
+CALIBRATION EXAMPLES — use these to anchor your scores:
+
+National policy:
 - "Should the Fed raise interest rates" → personal_impact: 0.2, emotional_salience: 0.1, institutional_decision: 0.95, public_discourse: 0.1, expert_dominance: 0.95
 - "Should abortion be legal" → personal_impact: 0.95, emotional_salience: 0.98, institutional_decision: 0.4, public_discourse: 0.95, expert_dominance: 0.1
 - "Should AI be regulated" → personal_impact: 0.5, emotional_salience: 0.4, institutional_decision: 0.8, public_discourse: 0.5, expert_dominance: 0.7
+
+CAMPUS QUALITY-OF-LIFE QUESTIONS — these are student-driven, not admin-driven:
+- "Should Geisel library be open 24/7" → personal_impact: 0.85, emotional_salience: 0.75, institutional_decision: 0.55, public_discourse: 0.80, expert_dominance: 0.10
+- "Should UCSD extend dining hall hours" → personal_impact: 0.80, emotional_salience: 0.70, institutional_decision: 0.55, public_discourse: 0.75, expert_dominance: 0.10
+- "Should UCSD increase mental health funding" → personal_impact: 0.90, emotional_salience: 0.85, institutional_decision: 0.50, public_discourse: 0.80, expert_dominance: 0.15
+
+KEY INSIGHT FOR CAMPUS QUESTIONS:
+Although university administrators make the final call, campus quality-of-life
+questions are PRIMARILY driven by student lived experience. Students are the
+affected population — not a secondary audience. personal_impact and
+emotional_salience should reflect student daily reality, not institutional complexity.
+"Should library be open 24/7?" is as personally salient to a student during finals
+week as "Should minimum wage increase?" is to a low-wage worker.
 
 Respond in this exact JSON format:
 {{
@@ -98,8 +100,6 @@ Respond in this exact JSON format:
         public_discourse       = float(parsed.get("public_discourse_volume", 0.5))
         expert_dominance       = float(parsed.get("expert_dominance", 0.5))
 
-        # Weighted formula — personal impact and emotional salience
-        # are the strongest predictors of public-dominant debate
         public_score = (
             personal_impact        * 0.30 +
             emotional_salience     * 0.25 +
@@ -126,15 +126,8 @@ Respond in this exact JSON format:
         print(f"[TopicClassifier] Primary classification error: {e}")
         return {"public_score": 0.4, "dimensions": {}, "reasoning": "Error", "key_actors": "Unknown"}
 
-async def critique_classification(topic: str, primary: dict) -> float:
-    """
-    Call 2 — Judge reviewer.
-    Only intervenes when the primary classification is clearly wrong.
-    High bar for correction — confirms when reasonable, corrects only when off by >0.20.
 
-    Unlike a critic (who finds flaws), a judge evaluates fairly:
-    "Is this classification accurate enough?" not "What's wrong with it?"
-    """
+async def critique_classification(topic: str, primary: dict) -> float:
     system = """You are an impartial judge reviewing a topic classification.
 Your default position is to CONFIRM the classification unless it is clearly wrong.
 You are NOT looking for flaws — you are asking if the score is reasonable.
@@ -162,12 +155,13 @@ Your job as judge:
 HIGH BAR FOR INTERVENTION — only correct if one of these is true:
 - The topic is clearly institutional but scored above 0.7 (e.g. Fed interest rates at 0.8)
 - The topic is clearly public but scored below 0.3 (e.g. abortion rights at 0.2)
-- A critical dimension is obviously wrong (e.g. expert_dominance 0.9 for a topic that ordinary people clearly dominate)
+- A campus quality-of-life question scored below 0.50 — these directly affect
+  students' daily lives and should always score at least 0.50
+- A critical dimension is obviously wrong
 
 DO NOT correct for:
 - Minor disagreements (you'd score 0.65, it scored 0.68 — that's fine)
 - Stylistic differences in reasoning
-- Wanting to make it "more precise"
 - Emotional salience on economic topics — high salience does NOT always mean high public score
 
 Respond in this exact JSON format:
@@ -197,28 +191,16 @@ Respond in this exact JSON format:
     except Exception as e:
         print(f"[TopicClassifier] Judge error: {e} — keeping original score")
         return primary["public_score"]
-    
-async def classify_topic(topic: str) -> dict:
-    """
-    Main classifier with continuous spectrum + reflection loop.
 
-    Call 1: Rate 5 dimensions → compute public_score
-    Call 2: Critic reviews → corrects if major flaw found
-    Final: Calculate inst/pub ratio from corrected score
-    """
+
+async def classify_topic(topic: str) -> dict:
     print(f"[TopicClassifier] Classifying: {topic}")
 
-    # Call 1 — primary classification
     primary = await classify_topic_primary(topic)
     original_score = primary["public_score"]
-
-    # Call 2 — reflection critic
     final_score = await critique_classification(topic, primary)
-
-    # Calculate final split
     inst_ratio, pub_ratio = calculate_split(final_score)
 
-    # Determine label for logging
     if final_score < 0.35:
         label = "institutional"
     elif final_score < 0.65:

@@ -14,19 +14,7 @@ from backend.agents.stakeholder_identifier import identify_stakeholders
 
 api = Blueprint("api", __name__)
 
-# ── In-memory store (Phase 1) ─────────────────────────────────────
 simulations = {}
-
-# ── Harmful topic guard ───────────────────────────────────────────
-# Assembly simulates policy debates — not arguments for violence,
-# abuse, or criminality. These topics cause LLMs to refuse generation,
-# producing 0 agents and a ZeroDivisionError crash downstream.
-# Block them cleanly before the simulation thread starts.
-#
-# Research basis: Content safety taxonomies (Weidinger et al. 2021,
-# Google DeepMind) classify requests that solicit harmful content
-# as categorically different from policy debates — no legitimate
-# simulation use case requires debating these.
 
 BLOCKED_TERMS = [
     "rape", "sexual assault", "child abuse", "pedophilia", "child porn",
@@ -35,23 +23,50 @@ BLOCKED_TERMS = [
     "mass shooting how", "school shooting", "bomb making",
 ]
 
+# ── Human-readable error messages ────────────────────────────────
+# Maps internal failure causes to messages users actually understand.
+# Shown in the frontend when status="failed".
+ERROR_MESSAGES = {
+    "thin_data": "We couldn't find enough real-world data on this topic. Try a broader or more well-known question.",
+    "no_agents": "Assembly couldn't generate stakeholders for this topic. Try rephrasing your question or adding more context.",
+    "harmful":   "This topic cannot be simulated. Assembly is designed for policy and social debates.",
+    "generic":   "Something went wrong with this simulation. Please try again or rephrase your question.",
+}
+
 def is_harmful_topic(topic: str) -> bool:
-    """
-    Returns True if topic contains terms that are categorically
-    outside the scope of policy debate simulation.
-    Uses whole-word matching to avoid false positives.
-    """
     topic_lower = topic.lower()
     for term in BLOCKED_TERMS:
-        # Match as substring — these terms are unambiguous in context
         if term in topic_lower:
             return True
     return False
 
+def classify_error(error: Exception, context: dict = None) -> str:
+    """
+    Map an exception to a human-readable error category.
+    Returns a key from ERROR_MESSAGES.
+    """
+    error_str = str(error).lower()
 
-# ── Helper ────────────────────────────────────────────────────────
+    if "division by zero" in error_str or "zerodivision" in error_str:
+        return "no_agents"
+
+    if "list index out of range" in error_str or "index out of range" in error_str:
+        return "no_agents"
+
+    if context:
+        inst_chunks = context.get("inst_chunks", 1)
+        pub_chunks  = context.get("pub_chunks", 1)
+        if inst_chunks < 5 and pub_chunks < 5:
+            return "thin_data"
+
+        total_agents = context.get("total_agents", 1)
+        if total_agents == 0:
+            return "no_agents"
+
+    return "generic"
+
+
 def run_async(coro):
-    """Run async functions from Flask's sync context."""
     try:
         loop = asyncio.get_event_loop()
         if loop.is_closed():
@@ -63,95 +78,124 @@ def run_async(coro):
     return loop.run_until_complete(coro)
 
 
-# ── 1. Start simulation ───────────────────────────────────────────
 import threading
 
 @api.route("/api/simulation/start", methods=["POST"])
 def start_simulation():
     try:
         body = request.get_json()
-        topic = body.get("topic")
+        topic     = body.get("topic")
         num_agents = body.get("num_agents", 10)
         num_rounds = body.get("num_rounds", 3)
-        pdf_paths = body.get("uploads", [])
+        pdf_paths  = body.get("uploads", [])
+        context    = body.get("context", "")
 
         if not topic:
             return jsonify({"error": "topic is required"}), 400
 
-        # ── Harmful topic guard ───────────────────────────────────
-        # Check BEFORE starting the thread — return 400 immediately
-        # so the frontend gets a clean error instead of a silent crash.
         if is_harmful_topic(topic):
             print(f"[API] Blocked harmful topic: {topic}")
-            return jsonify({
-                "error": "This topic cannot be simulated. Assembly is designed for policy and social debates."
-            }), 400
+            return jsonify({"error": ERROR_MESSAGES["harmful"]}), 400
 
         simulation_id = f"sim_{uuid.uuid4().hex[:8]}"
 
         simulations[simulation_id] = {
             "simulation_id": simulation_id,
             "topic": topic,
+            "context": context,
             "status": "running",
             "agents_created": 0,
             "graph_summary": {},
             "rounds": [],
             "final_agents": [],
-            "report": {}
+            "report": {},
+            "error": None,
+            "error_message": None,
         }
 
         def run_simulation():
+            error_context = {}
+
             try:
                 print(f"\n[API] Starting simulation {simulation_id} on: {topic}")
+                if context:
+                    print(f"[API] Context provided: {context[:100]}...")
 
                 # Step 1 — Classify topic
                 from backend.agents.topic_classifier import classify_topic
                 classification = run_async(classify_topic(topic))
 
                 inst_count = max(3, round(num_agents * classification["institutional_ratio"]))
-                pub_count = max(2, num_agents - inst_count)
-
+                pub_count  = max(2, num_agents - inst_count)
                 print(f"[API] Agent split: {inst_count} institutional, {pub_count} public")
 
-                # Step 2 — Ingest both sources in parallel
-                inst_chunks, pub_chunks = run_async(ingest(topic, pdf_paths))
+                # Step 2 — Ingest
+                inst_chunks, pub_chunks = run_async(ingest(topic, pdf_paths, context=context))
 
-                # Step 3 — Build two separate graphs
+                # ── Thin data guard ───────────────────────────────
+                # If Tavily finds almost nothing, fail early with a
+                # clean message instead of crashing downstream.
+                error_context["inst_chunks"] = len(inst_chunks)
+                error_context["pub_chunks"]  = len(pub_chunks)
+
+                if len(inst_chunks) < 5 and len(pub_chunks) < 5:
+                    print(f"[API] Thin data detected — only {len(inst_chunks)} inst + {len(pub_chunks)} pub chunks")
+                    simulations[simulation_id]["status"] = "failed"
+                    simulations[simulation_id]["error"] = "thin_data"
+                    simulations[simulation_id]["error_message"] = ERROR_MESSAGES["thin_data"]
+                    return
+
+                # Step 3 — Build graphs
                 G_inst = run_async(build_graph(inst_chunks, graph_source="institutional"))
-                G_pub = run_async(build_graph(pub_chunks, graph_source="public")) if pub_chunks else G_inst
+                G_pub  = run_async(build_graph(pub_chunks, graph_source="public")) if pub_chunks else G_inst
                 graph_summary = get_graph_summary(G_inst)
 
-                # Step 4 — Generate institutional agents
+                # Step 4 — Identify stakeholders
                 from backend.agents.stakeholder_identifier import identify_stakeholders
-                # identify_stakeholders returns (stakeholders, keyword_signal) tuple.
-                # keyword_signal flows to generate_public_agents for three-tier
-                # enforcement (Noelle-Neumann 1974 / Haidt 2012 tier system).
-                stakeholders, keyword_signal = run_async(identify_stakeholders(topic, G_inst, inst_count, G_pub, pub_chunks=pub_chunks))
+                stakeholders, keyword_signal = run_async(identify_stakeholders(
+                    topic, G_inst, inst_count, G_pub,
+                    pub_chunks=pub_chunks,
+                    context=context
+                ))
                 actual_inst_count = len(stakeholders)
-                inst_agents = run_async(generate_personas(topic, G_inst, actual_inst_count, stakeholders))
+                inst_agents = run_async(generate_personas(
+                    topic, G_inst, actual_inst_count, stakeholders,
+                    context=context
+                ))
 
-                # Step 5 — Generate public agents
-                # Pass keyword_signal so pattern extractor knows which tier to use.
-                # Tier 1 (>90%): moral consensus — no balance enforcement
-                # Tier 2 (30-70%): genuine split — full silent majority enforcement
-                # Tier 3 (70-90%): moderate — gentle correction
+                # Step 5 — Public agents
                 from backend.agents.public_agent_generator import generate_public_agents
-                pub_agents = run_async(generate_public_agents(topic, G_pub, pub_count, keyword_signal=keyword_signal))
+                pub_agents = run_async(generate_public_agents(
+                    topic, G_pub, pub_count,
+                    keyword_signal=keyword_signal,
+                    context=context
+                ))
 
-                # Step 6 — Tag agents with their graph type
+                # Step 6 — Tag graph type
                 for a in inst_agents:
                     a["graph_type"] = "institutional"
                 for a in pub_agents:
                     a["graph_type"] = "public"
 
-                # Step 7 — Merge all agents
+                # Step 7 — Merge
                 all_agents = inst_agents + pub_agents
+                error_context["total_agents"] = len(all_agents)
                 print(f"[API] Total agents: {len(all_agents)} ({len(inst_agents)} institutional, {len(pub_agents)} public)")
 
-                # Step 8 — Run debate
+                # ── Zero agents guard ─────────────────────────────
+                # If no agents were generated the debate will crash.
+                # Fail cleanly here instead.
+                if len(all_agents) == 0:
+                    print(f"[API] Zero agents generated — failing cleanly")
+                    simulations[simulation_id]["status"] = "failed"
+                    simulations[simulation_id]["error"] = "no_agents"
+                    simulations[simulation_id]["error_message"] = ERROR_MESSAGES["no_agents"]
+                    return
+
+                # Step 8 — Debate
                 debate_result = run_async(run_debate(topic, all_agents, G_inst, num_rounds, G_pub))
 
-                # Step 9 — Generate report
+                # Step 9 — Report
                 report = run_async(generate_report(
                     topic=topic,
                     simulation_id=simulation_id,
@@ -175,8 +219,11 @@ def start_simulation():
                 import traceback
                 print(f"[API] Simulation {simulation_id} failed: {e}")
                 traceback.print_exc()
+
+                error_key = classify_error(e, error_context)
                 simulations[simulation_id]["status"] = "failed"
-                simulations[simulation_id]["error"] = str(e)
+                simulations[simulation_id]["error"] = error_key
+                simulations[simulation_id]["error_message"] = ERROR_MESSAGES[error_key]
 
         thread = threading.Thread(target=run_simulation)
         thread.daemon = True
@@ -203,11 +250,11 @@ def get_simulation_status(simulation_id):
         "simulation_id": simulation_id,
         "status": sim["status"],
         "agents_created": sim.get("agents_created", 0),
-        "error": sim.get("error", None)
+        "error": sim.get("error", None),
+        "error_message": sim.get("error_message", None),
     }), 200
 
 
-# ── 2. Get debate rounds ──────────────────────────────────────────
 @api.route("/api/simulation/<simulation_id>/debate", methods=["GET"])
 def get_debate(simulation_id):
     sim = simulations.get(simulation_id)
@@ -220,7 +267,6 @@ def get_debate(simulation_id):
     }), 200
 
 
-# ── 3. Get agent memory ───────────────────────────────────────────
 @api.route("/api/agent/<agent_id>/memory", methods=["GET"])
 def get_agent_memory(agent_id):
     memory = []
@@ -254,7 +300,6 @@ def get_agent_memory(agent_id):
     }), 200
 
 
-# ── 4. Inject live event ──────────────────────────────────────────
 @api.route("/api/inject", methods=["POST"])
 def inject_event():
     try:
@@ -274,14 +319,11 @@ def inject_event():
 
         reactions = []
         for agent in final_agents:
-            old_opinion = agent["opinion"]
-            old_score = agent["score"]
-
             reactions.append({
                 "agent_id": agent["id"],
                 "name": agent["name"],
-                "opinion_before": old_opinion,
-                "opinion_after": f"Considering: {event}. {old_opinion}",
+                "opinion_before": agent["opinion"],
+                "opinion_after": f"Considering: {event}. {agent['opinion']}",
                 "delta": 0.0,
                 "shifted": False
             })
@@ -295,7 +337,6 @@ def inject_event():
         return jsonify({"error": str(e)}), 500
 
 
-# ── 5. Branch simulation ──────────────────────────────────────────
 @api.route("/api/branch", methods=["POST"])
 def branch_simulation():
     try:
@@ -308,7 +349,6 @@ def branch_simulation():
             return jsonify({"error": "simulation not found"}), 404
 
         branch_id = f"branch_{uuid.uuid4().hex[:8]}"
-
         branched_rounds = sim["rounds"][:from_tick]
         branched_agents = branched_rounds[-1]["agents"] if branched_rounds else []
 
@@ -335,7 +375,6 @@ def branch_simulation():
         return jsonify({"error": str(e)}), 500
 
 
-# ── 6. Get report ─────────────────────────────────────────────────
 @api.route("/api/report/<simulation_id>", methods=["GET"])
 def get_report(simulation_id):
     sim = simulations.get(simulation_id)
@@ -345,7 +384,6 @@ def get_report(simulation_id):
     return jsonify(sim["report"]), 200
 
 
-# ── 7. Get sentiment history ──────────────────────────────────────
 @api.route("/api/sentiment/history/<simulation_id>", methods=["GET"])
 def get_sentiment_history(simulation_id):
     sim = simulations.get(simulation_id)
@@ -360,20 +398,8 @@ def get_sentiment_history(simulation_id):
     ), 200
 
 
-# ── 8. Store correction (call after validating against real polls) ─
 @api.route("/api/correction/store", methods=["POST"])
 def store_prediction_correction():
-    """
-    Store a prediction error after comparing simulation output to
-    real polling data. This feeds the reflexion correction memory.
-
-    Body: {
-        "topic": "...",
-        "predicted": {"for": 0.70, "against": 0.15, "neutral": 0.15},
-        "actual":    {"for": 0.45, "against": 0.54, "neutral": 0.08},
-        "root_cause": "optional human explanation"
-    }
-    """
     try:
         from backend.agents.correction_store import store_correction
         body = request.get_json()

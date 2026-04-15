@@ -10,7 +10,7 @@ import networkx as nx
 
 # ── Deffuant Model Parameters ─────────────────────────────────────
 BASE_MU = 0.3
-CONFIDENCE_THRESHOLD = 3.0          # Change 2: raised from 2.0 — enables FOR/AGAINST interaction
+CONFIDENCE_THRESHOLD = 3.0
 MAX_EVIDENCE_MULTIPLIER = 1.5
 
 # ── Emotional Contagion Parameters ────────────────────────────────
@@ -46,10 +46,7 @@ MAX_RESISTANCE = 0.95
 
 
 def safe_parse_json(raw: str) -> dict:
-    """
-    Robust JSON parser with 4 fallback strategies.
-    Grounded in Ouyang et al. 2022 — systematic LLM output failure modes.
-    """
+    """Robust JSON parser with 4 fallback strategies."""
     if not raw:
         return {}
     try:
@@ -116,6 +113,18 @@ def apply_emotional_contagion(
     public_opponents: list[dict],
     old_score: float
 ) -> tuple[float, float, str | None]:
+    """
+    Asymmetric emotional contagion — Kelman 1958.
+    Public agents influence institutional agents through personal testimony.
+    
+    Fix 2: Neutral public agents cannot emotionally drag passionate advocates.
+    A neutral rideshare driver's ambivalence should not move a student government
+    rep who deeply believes in 24/7 library access. Emotional contagion requires
+    a strong position from the source — neutrals have low identification pull.
+    
+    Grounded in Kelman 1958 — identification requires the source to hold
+    a clear, committed position. Neutral sources don't trigger identification.
+    """
     agent_type = agent.get("agent_type", "institutional")
     if agent_type == "public":
         return old_score, 0.0, None
@@ -135,6 +144,16 @@ def apply_emotional_contagion(
     best_pull = 0.0
 
     for opp in reachable:
+        # Fix 2 — neutral agents cannot drag passionate advocates
+        # A neutral source (score 4.0-6.0) cannot pull a strongly
+        # committed agent (score <3.5 or >6.5) toward the middle.
+        # Neutrals can only nudge other neutrals or mild positions.
+        opp_stance = opp.get("stance", "neutral")
+        if opp_stance == "neutral":
+            # Neutral source: only reaches agents within 2.5 of center
+            if abs(old_score - 5.0) > 2.5:
+                continue  # skip — agent is too committed to be moved by neutral testimony
+
         intensity = opp.get("emotional_intensity", "medium")
         intensity_mult = EMOTIONAL_INTENSITY_MULTIPLIER.get(intensity, 1.0)
         gap = abs(old_score - opp["score"])

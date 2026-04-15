@@ -9,30 +9,16 @@ from backend.utils.llm_client import call_llm_json
 from backend.utils.graph_utils import get_most_influential, get_nodes_by_type, query_graph
 import networkx as nx
 
-# ── Score ranges ──────────────────────────────────────────────────
-# Change 2: Narrowed ranges to reduce initial polarization.
-#
-# OLD ranges:  for=(7.0, 8.8)  against=(1.5, 3.0)
-# NEW ranges:  for=(6.5, 8.0)  against=(2.0, 3.5)
-#
-# Why this matters with Deffuant threshold=3.0:
-# Old: lowest FOR (7.0) vs highest AGAINST (3.0) = gap 4.0 > 3.0 → no interaction
-# New: lowest FOR (6.5) vs highest AGAINST (3.5) = gap 3.0 = threshold → can interact
-#
-# Agents on the edges of each camp can now influence neutrals and
-# occasionally each other — producing realistic 15-20% shift rates
-# on genuinely contested topics.
 SCORE_RANGE = {
-    "for":     (6.5, 8.0),  # was (7.0, 8.8)
-    "against": (2.0, 3.5),  # was (1.5, 3.0)
-    "neutral": (4.2, 5.8),  # unchanged
+    "for":     (6.5, 8.0),
+    "against": (2.0, 3.5),
+    "neutral": (4.2, 5.8),
 }
 
 MAX_NEUTRAL_RATIO = 0.15
 
 
 def safe_parse_json(raw: str) -> dict:
-    """Robust JSON parser with multiple fallback strategies."""
     if not raw:
         return {}
     try:
@@ -64,10 +50,22 @@ def safe_parse_json(raw: str) -> dict:
     return {}
 
 
-def enforce_neutral_cap(patterns: list[dict]) -> list[dict]:
+def enforce_neutral_cap(
+    patterns: list[dict],
+    keyword_signal: dict = None
+) -> list[dict]:
     """
     Cap neutral patterns at MAX_NEUTRAL_RATIO of total.
-    Excess redistributed to FOR/AGAINST — not deleted.
+    
+    Fix 1: Convert excess neutrals toward the direction the keyword
+    signal supports — not toward whichever side currently has fewer
+    patterns. This prevents neutral cap from adding AGAINST agents
+    on topics where the signal clearly shows FOR dominance.
+    
+    Research basis:
+    - Converse 1964: genuine neutrals rare on salient topics
+    - Perez et al. 2022: LLMs over-generate neutrals due to RLHF bias
+    - Fix: use real data signal to determine conversion direction
     """
     total = len(patterns)
     if total == 0:
@@ -86,11 +84,25 @@ def enforce_neutral_cap(patterns: list[dict]) -> list[dict]:
     print(f"[PublicAgentGenerator] Neutral cap: {len(neutral_patterns)} neutral patterns "
           f"exceeds {MAX_NEUTRAL_RATIO*100:.0f}% cap — converting {excess} to for/against")
 
-    to_convert        = neutral_patterns[:excess]
+    to_convert         = neutral_patterns[:excess]
     remaining_neutrals = neutral_patterns[excess:]
 
+    # Fix 1 — use keyword signal to determine conversion direction
+    # If signal shows FOR > AGAINST → convert toward FOR
+    # If signal shows AGAINST > FOR → convert toward AGAINST
+    # If no signal → fall back to balancing pattern counts
+    if keyword_signal:
+        signal_for     = keyword_signal.get("for", 0.33)
+        signal_against = keyword_signal.get("against", 0.33)
+        convert_to_for = signal_for >= signal_against
+        print(f"[PublicAgentGenerator] Neutral conversion direction: "
+              f"{'FOR' if convert_to_for else 'AGAINST'} "
+              f"(signal: {signal_for*100:.0f}% for / {signal_against*100:.0f}% against)")
+    else:
+        convert_to_for = len(for_patterns) <= len(against_patterns)
+
     for pattern in to_convert:
-        if len(for_patterns) <= len(against_patterns):
+        if convert_to_for:
             pattern["stance"] = "for"
             pattern["emotional_driver"] = (
                 pattern.get("emotional_driver", "") +
@@ -114,7 +126,8 @@ def enforce_neutral_cap(patterns: list[dict]) -> list[dict]:
 async def extract_opinion_patterns(
     topic: str,
     G,
-    keyword_signal: dict = None
+    keyword_signal: dict = None,
+    context: str = ""
 ) -> list[dict]:
     """
     Extract recurring public opinion patterns from the public sentiment graph.
@@ -142,6 +155,7 @@ async def extract_opinion_patterns(
         for_pct     = keyword_signal.get("for", 0.33)
         against_pct = keyword_signal.get("against", 0.33)
         dominant    = max(for_pct, against_pct)
+        minority    = min(for_pct, against_pct)
 
         if dominant > 0.90:
             tier = 1
@@ -149,12 +163,16 @@ async def extract_opinion_patterns(
             min_against = 0
             print(f"[PublicAgentGenerator] Tier 1 — moral consensus "
                   f"({dominant*100:.0f}% dominant) — no balance enforcement")
-        elif dominant > 0.70:
+
+        elif dominant > 0.70 or minority < 0.15:
             tier = 3
             min_for = 1
             min_against = 1
+            reason = "dominant >70%" if dominant > 0.70 else f"minority {minority*100:.0f}% < 15% threshold"
             print(f"[PublicAgentGenerator] Tier 3 — moderate consensus "
-                  f"({dominant*100:.0f}% dominant) — gentle correction")
+                  f"({for_pct*100:.0f}% for / {against_pct*100:.0f}% against) "
+                  f"— {reason} — gentle correction")
+
         else:
             tier = 2
             min_for = 2
@@ -173,7 +191,8 @@ Generate patterns that reflect the genuine overwhelming majority position."""
     elif tier == 3:
         balance_instruction = """
 MODERATE CONSENSUS: A clear majority position exists but a genuine minority also exists.
-Generate at least 1 pattern representing the minority position."""
+Generate at least 1 pattern representing the minority position.
+Do not force equal balance — reflect the actual distribution."""
 
     else:
         balance_instruction = """
@@ -194,12 +213,14 @@ Common silent majorities:
 
 Do NOT let online discourse bias you toward generating only FOR patterns."""
 
+    context_line = f"\nAdditional context: {context}" if context else ""
+
     system = """You are analyzing public discourse to identify recurring opinion patterns.
 Extract distinct viewpoint clusters representing how different types of real people think.
 These must be everyday people with lived experience — NOT executives or policy officials.
 Respond in valid JSON only."""
 
-    prompt = f"""Topic: {topic}
+    prompt = f"""Topic: {topic}{context_line}
 
 Public discourse content:
 Claims and opinions found:
@@ -291,7 +312,8 @@ Generate the missing patterns. Focus on demographics UNDERREPRESENTED in online 
             except Exception as e:
                 print(f"[PublicAgentGenerator] Balance correction error: {e}")
 
-        patterns = enforce_neutral_cap(patterns)
+        # Fix 1 — pass keyword_signal so neutral cap converts in correct direction
+        patterns = enforce_neutral_cap(patterns, keyword_signal=keyword_signal)
 
         final_for     = sum(1 for p in patterns if p.get("stance") == "for")
         final_against = sum(1 for p in patterns if p.get("stance") == "against")
@@ -312,7 +334,8 @@ async def generate_public_agent(
     agent_index: int,
     existing_names: list[str],
     existing_personas: list[dict],
-    G
+    G,
+    context: str = ""
 ) -> dict:
     """Generate a demographic agent grounded in a real public opinion pattern."""
     stance = pattern.get("stance", "neutral")
@@ -333,6 +356,8 @@ async def generate_public_agent(
         for e in evidence
     ])
 
+    context_line = f"\nAdditional context about this topic: {context}" if context else ""
+
     system = """You are generating a realistic everyday person for a debate simulation.
 This is NOT a CEO, academic, or policy official.
 This person's opinion comes entirely from lived personal experience.
@@ -341,7 +366,7 @@ Respond in valid JSON only."""
 
     prompt = f"""Generate a realistic public persona for this debate.
 
-Topic: {topic}
+Topic: {topic}{context_line}
 
 This person represents: {pattern['demographic']}
 Their core belief: {pattern['core_belief']}
@@ -425,12 +450,17 @@ async def generate_public_agents(
     topic: str,
     G,
     num_agents: int,
-    keyword_signal: dict = None
+    keyword_signal: dict = None,
+    context: str = ""
 ) -> list[dict]:
     """Main function — extract opinion patterns and generate public demographic agents."""
     print(f"[PublicAgentGenerator] Generating {num_agents} public agents for: {topic}")
 
-    patterns = await extract_opinion_patterns(topic, G, keyword_signal=keyword_signal)
+    patterns = await extract_opinion_patterns(
+        topic, G,
+        keyword_signal=keyword_signal,
+        context=context
+    )
 
     if not patterns:
         print("[PublicAgentGenerator] No patterns found — skipping public agents")
@@ -462,7 +492,8 @@ async def generate_public_agents(
                 agent_index=len(all_agents),
                 existing_names=existing_names.copy(),
                 existing_personas=existing_personas.copy(),
-                G=G
+                G=G,
+                context=context
             )
             if agent:
                 existing_names.append(agent["name"])

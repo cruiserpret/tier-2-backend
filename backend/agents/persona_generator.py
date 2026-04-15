@@ -10,15 +10,11 @@ import networkx as nx
 
 STANCE_MAP = {0: "strongly against", 1: "strongly for", 2: "neutral"}
 
-# ── Score ranges with clear separation from neutral zone ──────────
-# derive_stance in debate_engine: ≤3.5 = against, ≥6.5 = for, else neutral
-# Old ranges had "against" going up to 5.5 — agents drifted to neutral immediately
-# New ranges keep a buffer so agents hold their starting stance across rounds
 SCORE_RANGE = {
     "strongly against": (1.0, 2.5),
-    "against":          (1.5, 3.0),  # was (1.5, 3.5) — buffer from 3.5 threshold
-    "neutral":          (4.2, 5.8),  # was (4.0, 6.0) — tighter middle band
-    "for":              (7.0, 8.5),  # was (6.5, 8.5) — buffer from 6.5 threshold
+    "against":          (1.5, 3.0),
+    "neutral":          (4.2, 5.8),
+    "for":              (7.0, 8.5),
     "strongly for":     (8.0, 9.5),
 }
 
@@ -27,7 +23,8 @@ async def generate_single_persona(
     G: nx.DiGraph,
     agent_index: int,
     existing_names: list[str],
-    stakeholder: dict = None
+    stakeholder: dict = None,
+    context: str = ""
 ) -> dict:
     """Generate a single agent persona grounded in a real stakeholder."""
 
@@ -45,6 +42,8 @@ async def generate_single_persona(
     ])
 
     existing_names_str = ", ".join(existing_names) if existing_names else "none"
+
+    context_line = f"\nAdditional context about this topic: {context}" if context else ""
 
     if stakeholder:
         stance_tendency = stakeholder.get("stance", "neutral")
@@ -74,7 +73,7 @@ Always respond in valid JSON."""
 
     prompt = f"""Create a realistic debate persona for agent {agent_index + 1}.
 
-Topic: {topic}
+Topic: {topic}{context_line}
 
 Stakeholder context:
 {stakeholder_context}
@@ -115,7 +114,6 @@ Rules:
         import random
         score = round(random.uniform(score_min, score_max), 1)
 
-        # Normalize stance
         stance = stance_tendency
         if stance in ["strongly against", "against"]:
             stance = "against"
@@ -151,9 +149,10 @@ Rules:
 
 async def generate_personas(
     topic: str,
-    G: nx.DiGraph,
-    num_agents: int = 20,
-    stakeholders: list[dict] = None
+    G,
+    num_agents: int,
+    stakeholders: list,
+    context: str = ""
 ) -> list[dict]:
     print(f"[PersonaGenerator] Generating {num_agents} personas for topic: {topic}")
 
@@ -163,7 +162,9 @@ async def generate_personas(
     for i in range(num_agents):
         await asyncio.sleep(0.5)
         stakeholder = stakeholders[i] if stakeholders and i < len(stakeholders) else None
-        persona = await generate_single_persona(topic, G, i, existing_names.copy(), stakeholder)
+        persona = await generate_single_persona(
+            topic, G, i, existing_names.copy(), stakeholder, context=context
+        )
         if persona:
             existing_names.append(persona["name"])
             valid_personas.append(persona)

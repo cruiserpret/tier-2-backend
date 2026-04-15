@@ -534,7 +534,8 @@ async def identify_stakeholders(
     G,
     num_agents: int = 10,
     G_pub=None,
-    pub_chunks: list = None
+    pub_chunks=None,
+    context: str = ""  # NEW
 ) -> tuple[list, dict]:
     """
     Main entry point.
@@ -573,6 +574,11 @@ async def identify_stakeholders(
         f"- {n['name']}: {n.get('description', '')[:120]} [cited {n.get('citations', 1)}x]"
         for n in influential[:20]
     ])
+
+    # Inject context into graph_context so stakeholder selection is grounded
+    if context:
+        graph_context = f"Additional context: {context}\n\n" + graph_context
+        print(f"[StakeholderIdentifier] Context injected into graph context")
 
     raw_stakeholders = await classify_and_position_entities(topic, all_entities, graph_context)
 
