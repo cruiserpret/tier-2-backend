@@ -15,10 +15,13 @@ MAX_EVIDENCE_MULTIPLIER = 1.5
 
 # ── Emotional Contagion Parameters ────────────────────────────────
 # Kelman 1958 — identification-based influence operates independently
-# of rational persuasion. Public agents influence through personal
-# testimony. Institutional agents cannot counter this with logic alone.
+# of rational persuasion. Multi-source: up to 3 public agents
+# contribute collectively, weighted by intensity and proximity.
+# Math: same total scale (MU=0.08) but nudge reflects center of
+# mass of multiple voices — more realistic collective pressure.
 EMOTIONAL_CONTAGION_REACH = 4.0
 EMOTIONAL_CONTAGION_MU = 0.08
+EMOTIONAL_CONTAGION_MAX_SOURCES = 3
 EMOTIONAL_INTENSITY_MULTIPLIER = {
     "high":   1.5,
     "medium": 1.0,
@@ -26,6 +29,10 @@ EMOTIONAL_INTENSITY_MULTIPLIER = {
 }
 
 # ── Confirmation Bias Parameters ──────────────────────────────────
+# Institutional agents: category-based (stable organizational positions)
+# Public agents: intensity-based — Kelman 1958 + Petty & Cacioppo 1986
+# People who have LIVED an experience resist abstract counter-arguments.
+# High emotional intensity → high confirmation bias → harder to shift.
 CONFIRMATION_BIAS_BY_CATEGORY = {
     "government":         0.65,
     "international_body": 0.60,
@@ -37,6 +44,11 @@ CONFIRMATION_BIAS_BY_CATEGORY = {
     "affected_community": 0.40,
     "academic":           0.20,
     "consumer":           0.15,
+}
+CONFIRMATION_BIAS_BY_INTENSITY = {
+    "high":   0.60,   # Deep personal stake — very hard to shift with logic
+    "medium": 0.45,   # Some personal stake — moderately resistant
+    "low":    0.25,   # Mild interest — relatively open to persuasion
 }
 
 # ── Backfire Effect Parameters ────────────────────────────────────
@@ -79,6 +91,21 @@ def safe_parse_json(raw: str) -> dict:
 
 
 def get_confirmation_bias(agent: dict) -> float:
+    """
+    Dynamic confirmation bias by agent type.
+
+    Institutional: category-based (organizational inertia, institutional positions)
+    Public: intensity-based (Kelman 1958 — lived experience creates conviction)
+
+    Prediction: high-intensity public agents (students fighting for library hours)
+    will hold their positions firmly even when institutional agents push back.
+    Low-intensity public agents (mildly curious observers) will shift more readily.
+    This produces more realistic debate dynamics where passionate voices hold firm.
+    """
+    if agent.get("agent_type") == "public":
+        intensity = agent.get("emotional_intensity", "medium")
+        return CONFIRMATION_BIAS_BY_INTENSITY.get(intensity, 0.45)
+
     category = agent.get("stakeholder_category", "civil_society")
     return CONFIRMATION_BIAS_BY_CATEGORY.get(category, 0.35)
 
@@ -114,16 +141,19 @@ def apply_emotional_contagion(
     old_score: float
 ) -> tuple[float, float, str | None]:
     """
-    Asymmetric emotional contagion — Kelman 1958.
-    Public agents influence institutional agents through personal testimony.
-    
-    Fix 2: Neutral public agents cannot emotionally drag passionate advocates.
-    A neutral rideshare driver's ambivalence should not move a student government
-    rep who deeply believes in 24/7 library access. Emotional contagion requires
-    a strong position from the source — neutrals have low identification pull.
-    
-    Grounded in Kelman 1958 — identification requires the source to hold
-    a clear, committed position. Neutral sources don't trigger identification.
+    Multi-source emotional contagion — Kelman 1958 + social influence theory.
+
+    Previous logic: find 1 best public agent, apply single nudge.
+    New logic: find up to 3 reachable passionate public agents,
+    compute weighted aggregate nudge toward their center of mass.
+
+    Why this is more accurate:
+    - A room with 6 FOR students creates more collective pressure than 1 strong voice
+    - The aggregate target is the weighted center of mass of reachable sources
+    - Math preserves the same scale (MU=0.08) — no amplification, just smoother
+
+    Neutral agents still cannot move committed advocates.
+    Kelman 1958: identification requires the SOURCE to hold a committed position.
     """
     agent_type = agent.get("agent_type", "institutional")
     if agent_type == "public":
@@ -140,41 +170,46 @@ def apply_emotional_contagion(
     if not reachable:
         return old_score, 0.0, None
 
-    best_contagion = None
-    best_pull = 0.0
-
+    scored = []
     for opp in reachable:
-        # Fix 2 — neutral agents cannot drag passionate advocates
-        # A neutral source (score 4.0-6.0) cannot pull a strongly
-        # committed agent (score <3.5 or >6.5) toward the middle.
-        # Neutrals can only nudge other neutrals or mild positions.
         opp_stance = opp.get("stance", "neutral")
-        if opp_stance == "neutral":
-            # Neutral source: only reaches agents within 2.5 of center
-            if abs(old_score - 5.0) > 2.5:
-                continue  # skip — agent is too committed to be moved by neutral testimony
+        # Neutral sources cannot pull committed agents — no identification basis
+        if opp_stance == "neutral" and abs(old_score - 5.0) > 2.5:
+            continue
 
         intensity = opp.get("emotional_intensity", "medium")
         intensity_mult = EMOTIONAL_INTENSITY_MULTIPLIER.get(intensity, 1.0)
         gap = abs(old_score - opp["score"])
         pull = intensity_mult / (gap + 0.1)
-        if pull > best_pull:
-            best_pull = pull
-            best_contagion = opp
+        scored.append((opp, pull))
 
-    if not best_contagion:
+    if not scored:
         return old_score, 0.0, None
 
-    emotional_delta = EMOTIONAL_CONTAGION_MU * (best_contagion["score"] - old_score)
+    scored.sort(key=lambda x: x[1], reverse=True)
+    top_sources = scored[:EMOTIONAL_CONTAGION_MAX_SOURCES]
+
+    # Weighted center of mass of top sources
+    total_pull = sum(pull for _, pull in top_sources)
+    weighted_target = sum(
+        opp["score"] * pull for opp, pull in top_sources
+    ) / total_pull
+
+    emotional_delta = EMOTIONAL_CONTAGION_MU * (weighted_target - old_score)
     new_score = round(max(1.0, min(10.0, old_score + emotional_delta)), 2)
     actual_delta = abs(new_score - old_score)
 
+    best_source = top_sources[0][0]
+    num_sources = len(top_sources)
+
     if actual_delta > 0.01:
+        extra = f" +{num_sources - 1} others" if num_sources > 1 else ""
         print(f"[DebateEngine] Emotional contagion: {agent['name']} nudged by "
-              f"{best_contagion['name']} ({best_contagion.get('emotional_intensity', 'medium')} intensity) "
+              f"{best_source['name']}{extra} "
+              f"({best_source.get('emotional_intensity', 'medium')} intensity) "
               f"delta={actual_delta:.3f}")
 
-    return new_score, actual_delta, best_contagion["name"]
+    return new_score, actual_delta, best_source["name"]
 
 
 def calculate_evidence_multiplier(evidence: list[dict]) -> float:
@@ -222,12 +257,36 @@ async def run_single_agent_round(
     keywords = agent.get("key_beliefs", []) + agent.get("known_entities", [])
     evidence = query_graph(G, keywords, top_n=5)
 
-    evidence_context = "\n".join([
-        f"- {e['name']}: {e['description'][:150]} [source: {e['source'][:60]}] (cited {e['citations']}x)"
-        for e in evidence
-    ])
+    # ── Evidence context with fallback ────────────────────────────
+    # When graph evidence is unavailable (thin data, hyper-local topics),
+    # agents fall back to their stated key_beliefs and persona grounding.
+    # This prevents pure imagination arguments while remaining realistic.
+    # Prediction: argument quality improves on thin-data topics because
+    # agents argue from stated positions rather than hallucinating facts.
+    if evidence:
+        evidence_lines = "\n".join([
+            f"- {e['name']}: {e['description'][:150]} "
+            f"[source: {e['source'][:60]}] (cited {e['citations']}x)"
+            for e in evidence
+        ])
+        evidence_section = f"Evidence from real sources:\n{evidence_lines}"
+    else:
+        beliefs = agent.get("key_beliefs", [])
+        if beliefs:
+            belief_lines = "\n".join(f"- {b}" for b in beliefs[:3])
+            evidence_section = (
+                "No external evidence found for this specific topic. "
+                "Ground your argument in your direct knowledge:\n" + belief_lines
+            )
+        else:
+            evidence_section = (
+                f"No external evidence available. Draw on your expertise as "
+                f"{agent.get('profession', 'a stakeholder')} in this area."
+            )
 
     opponents = [a for a in all_agents if a["id"] != agent["id"]]
+    opponents_with_args = [o for o in opponents if o.get("last_argument")]
+
     opponent_context = "\n".join([
         f"- {o['name']} ({o['stance']}, score {o['score']}): {o['opinion']}"
         + (f"\n  → Last argument: \"{o['last_argument']}\"" if o.get('last_argument') else "")
@@ -250,11 +309,12 @@ async def run_single_agent_round(
     elif opponents:
         target_opponent = max(opponents, key=lambda o: abs(agent["score"] - o["score"]))
 
+    # Only show target argument in round 2+ when arguments actually exist
     target_argument = ""
-    if target_opponent and target_opponent.get("last_argument"):
+    if target_opponent and target_opponent.get("last_argument") and round_num > 1:
         target_argument = (
-            f"\n\nYou MUST directly respond to this specific argument from {target_opponent['name']}:\n"
-            f"\"{target_opponent['last_argument']}\""
+            f"\n\nYou MUST directly respond to this specific argument from "
+            f"{target_opponent['name']}:\n\"{target_opponent['last_argument']}\""
         )
 
     base_evidence_multiplier = calculate_evidence_multiplier(evidence)
@@ -312,16 +372,22 @@ async def run_single_agent_round(
     stance_changed = new_stance != agent.get("stance", "neutral")
     shifted = stance_changed or (delta > 0.10)
 
+    # ── Backfire effect — reset only on STANCE CHANGE ─────────────
+    # Previous: reset attacks_received whenever delta > 0.10 (shifted=True)
+    # Fix: reset ONLY when agent actually flips their position (stance_changed)
+    # Reason: an agent nudged slightly (delta 0.12, no stance flip) should
+    # remain entrenched. Only a real position change breaks the backfire cycle.
+    # Prediction: more realistic entrenchment on genuinely divisive topics.
     attacks_received = agent.get("attacks_received", 0)
-    if being_attacked and not shifted:
+    if being_attacked and not stance_changed:
         attacks_received += 1
-    elif shifted:
+    elif stance_changed:
         attacks_received = 0
 
     system = """You are simulating a realistic human debater grounded in real evidence.
 Your opinion shift has already been mathematically calculated.
 Your job is to generate realistic argument text that reflects this outcome.
-You must directly engage with what specific opponents said — not generic statements.
+You must engage specifically — no generic statements.
 Respond in valid JSON only."""
 
     opponent_name = influential_opponent['name'] if influential_opponent else 'the group'
@@ -334,15 +400,50 @@ Respond in valid JSON only."""
     emotional_note = ""
     if contagion_source:
         emotional_note = (
-            f"\nIMPORTANT: You were emotionally affected by {contagion_source}'s "
-            f"personal testimony. Acknowledge this in your argument — not as a full "
-            f"position change, but as a moment of genuine human recognition."
+            f"\nIMPORTANT: You were emotionally moved by {contagion_source}'s "
+            f"personal testimony. Acknowledge this as a moment of genuine human "
+            f"recognition — not a position change, but real empathy."
         )
+
+    # Round 1: opening statement (no prior arguments exist)
+    # Round 2+: direct response requiring new content — prevents boilerplate
+    if round_num == 1:
+        debate_instruction = """ROUND 1 — OPENING STATEMENT:
+No previous arguments have been made. Make a strong, specific opening statement.
+Reference specific facts, data, or your personal/organizational experience.
+Do NOT reference other debaters — make your own case from your own position."""
+
+    elif opponents_with_args:
+        debate_instruction = f"""ROUND {round_num} — DIRECT RESPONSE:
+You MUST do ALL THREE of these or your response is invalid:
+
+1. NAME a specific opponent and quote or closely paraphrase their exact argument
+   from this round. Do not reference generic "opponents" — name them.
+
+2. Either:
+   (a) Concede ONE narrow, specific point to your strongest opponent — not your
+       core position, but one specific sub-point where they have merit, OR
+   (b) Introduce ONE new piece of evidence or fact not mentioned in any previous
+       round that strengthens your position
+
+3. Restate your core position using COMPLETELY FRESH language.
+   BANNED PHRASES — never use these:
+   "my conviction remains", "my stance is unchanged", "my position remains",
+   "remains unshaken", "remains unwavering", "remains unaltered",
+   "fundamentally unchanged", "has only been reinforced"
+
+Real debates evolve every round. Even when you hold firm, your THINKING
+deepens and your LANGUAGE sharpens. Show that evolution."""
+
+    else:
+        debate_instruction = f"""ROUND {round_num} — ARGUMENT:
+Make a specific argument grounded in the evidence available.
+Use fresh language — do not repeat phrases from your previous statements."""
 
     prompt = f"""You are {agent['name']}, representing {agent.get('stakeholder_name', 'yourself')}.
 Background: {agent['persona']}
-Persuasion resistance: {effective_resistance} (0=easily convinced, 1=never)
-Confirmation bias: {get_confirmation_bias(agent)} (how much you discount opposing evidence)
+Persuasion resistance: {effective_resistance:.2f} (0=easily convinced, 1=never)
+Confirmation bias: {get_confirmation_bias(agent):.2f} (how much you discount opposing evidence)
 
 Topic: {topic}
 Round: {round_num}
@@ -352,12 +453,13 @@ Your current position:
 - Score: {old_score}/10
 - Stance: {agent['stance']}
 
-Evidence available from real sources:
-{evidence_context}
+{evidence_section}
 
 What other debaters said:
 {opponent_context}
 {target_argument}
+
+{debate_instruction}
 
 Mathematical outcome (already decided):
 - Your new score: {new_score}/10
@@ -366,16 +468,13 @@ Mathematical outcome (already decided):
 - You {"are being repeatedly challenged and digging in harder" if attacks_received > BACKFIRE_THRESHOLD else "are engaging with the debate openly"}
 {emotional_note}
 
-Generate argument text that reflects this outcome naturally.
-If you have a target argument above, your response MUST explicitly reference it by name.
-
 Respond in this exact JSON format:
 {{
-    "argument": "your argument this round citing specific evidence and directly referencing the target opponent if provided",
-    "responding_to": "{target_opponent['name'] if target_opponent else opponent_name}",
+    "argument": "your argument this round — specific, grounded, not generic",
+    "responding_to": "{target_opponent['name'] if (target_opponent and round_num > 1) else opponent_name}",
     "new_opinion": "your updated opinion in 2 sentences reflecting score {new_score}",
     "shift_reason": "why you {'moved slightly' if shifted else 'held firm'} on this issue",
-    "key_evidence_used": ["evidence point 1", "evidence point 2"]
+    "key_evidence_used": ["specific evidence point 1", "specific evidence point 2"]
 }}"""
 
     try:
@@ -451,7 +550,8 @@ async def run_debate(
     print(f"[DebateEngine] Starting debate on: {topic}")
     print(f"[DebateEngine] {len(agents)} agents, {num_rounds} rounds")
     print(f"[DebateEngine] Deffuant params: mu={BASE_MU}, threshold={CONFIDENCE_THRESHOLD}")
-    print(f"[DebateEngine] Emotional contagion: reach={EMOTIONAL_CONTAGION_REACH}, mu={EMOTIONAL_CONTAGION_MU}")
+    print(f"[DebateEngine] Emotional contagion: reach={EMOTIONAL_CONTAGION_REACH}, "
+          f"mu={EMOTIONAL_CONTAGION_MU}, max_sources={EMOTIONAL_CONTAGION_MAX_SOURCES}")
 
     all_rounds = []
     current_agents = agents.copy()

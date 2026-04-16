@@ -10,13 +10,66 @@ import networkx as nx
 
 STANCE_MAP = {0: "strongly against", 1: "strongly for", 2: "neutral"}
 
-SCORE_RANGE = {
-    "strongly against": (1.0, 2.5),
-    "against":          (1.5, 3.0),
-    "neutral":          (4.2, 5.8),
-    "for":              (7.0, 8.5),
-    "strongly for":     (8.0, 9.5),
+SCORE_RANGE_BASE = {
+    "for":     {"min": 7.0, "max": 8.5},
+    "against": {"min": 1.5, "max": 3.0},
+    "neutral": {"min": 4.2, "max": 5.8},
 }
+
+
+def get_score_range(stance: str, relevance_score: float = 0.75) -> tuple[float, float]:
+    base = SCORE_RANGE_BASE.get(stance, SCORE_RANGE_BASE["neutral"])
+    if stance == "for":
+        center = base["min"] + (relevance_score * (base["max"] - base["min"]))
+        return (max(base["min"], center - 0.4), min(base["max"], center + 0.4))
+    elif stance == "against":
+        center = base["max"] - (relevance_score * (base["max"] - base["min"]))
+        return (max(base["min"], center - 0.4), min(base["max"], center + 0.4))
+    else:
+        return (base["min"], base["max"])
+
+
+def is_product_entity(stakeholder: dict) -> bool:
+    """
+    Detect if a stakeholder represents an inanimate product rather than
+    a human actor. Products cannot hold opinions or have interests.
+
+    Bug 1 fix: Added human institution indicators that override product detection.
+    Previously "UCSD Information Technology Services" was flagged because it
+    contains "service" — but it's a human institution not a product.
+    "Community College System Administrators" was flagged because of "system".
+
+    Logic: only flag as product if product signal present AND no human
+    institution signal present. Human institution indicators take priority.
+
+    Prediction: eliminates false positives on government/academic bodies
+    while still catching genuine products like "Mobile Order app".
+    """
+    name = stakeholder.get("name", "").lower()
+
+    product_indicators = [
+        " app", "mobile order", " platform ", " software",
+        " tool ", " website", " bot ", " api ", " algorithm"
+    ]
+
+    # Human institution indicators — override product detection
+    # These indicate a real organization with people, not a product
+    human_indicators = [
+        "administrator", "director", "department", "office",
+        "council", "committee", "board", "union", "association",
+        "staff", "faculty", "services", "division", "bureau",
+        "agency", "institute", "center", "programme", "program",
+        "authority", "ministry", "commission", "coalition",
+        "foundation", "organization", "organisation", "network",
+        "alliance", "partnership", "task force", "working group"
+    ]
+
+    has_product_signal = any(ind in f" {name} " for ind in product_indicators)
+    has_human_signal   = any(ind in name for ind in human_indicators)
+
+    # Only flag as product if product signal AND no human institution signal
+    return has_product_signal and not has_human_signal
+
 
 async def generate_single_persona(
     topic: str,
@@ -27,12 +80,11 @@ async def generate_single_persona(
     context: str = ""
 ) -> dict:
     """Generate a single agent persona grounded in a real stakeholder."""
-
     influential_nodes = get_most_influential(G, top_n=15)
     claims = get_nodes_by_type(G, "claim")
 
     graph_context = "\n".join([
-        f"- {n['name']} (cited {n['citations']}x, influence: {n['influence_score']:.3f}): {n.get('description', '')[:100]}"
+        f"- {n['name']} (cited {n['citations']}x): {n.get('description', '')[:100]}"
         for n in influential_nodes
     ])
 
@@ -42,30 +94,55 @@ async def generate_single_persona(
     ])
 
     existing_names_str = ", ".join(existing_names) if existing_names else "none"
-
-    context_line = f"\nAdditional context about this topic: {context}" if context else ""
+    context_line = f"\nAdditional context: {context}" if context else ""
 
     if stakeholder:
-        stance_tendency = stakeholder.get("stance", "neutral")
-        persuasion_resistance = stakeholder.get("persuasion_resistance", 0.5)
-        stakeholder_context = f"""You are generating an agent representing: {stakeholder['name']}
+        if is_product_entity(stakeholder):
+            original_name = stakeholder["name"]
+            stakeholder_context = f"""The entity "{original_name}" is a product or platform.
+Do NOT generate a persona for the product itself.
+Instead, generate a persona for either:
+- The COMPANY or ORGANIZATION that created/operates it (if the company has clear interests)
+- The PRIMARY USER GROUP of this product (if users are the real stakeholders here)
+Choose whichever makes more sense for this specific topic.
+Their stance is: {stakeholder.get('stance', 'neutral')}
+Their interests: {stakeholder.get('stake', 'Direct stake in this outcome')}"""
+            stakeholder_name = f"Users/Operators of {original_name}"
+            stakeholder_category = stakeholder.get("category", "affected_community")
+            print(f"[PersonaGenerator] Entity discrimination: '{original_name}' → "
+                  f"generating user/company representative")
+        else:
+            stance_tendency = stakeholder.get("stance", "neutral")
+            persuasion_resistance = stakeholder.get("persuasion_resistance", 0.5)
+            stakeholder_context = f"""You are generating an agent representing: {stakeholder['name']}
 Category: {stakeholder['category']}
 Their real-world position: {stakeholder['real_position']}
 Why they care: {stakeholder['stake']}
-Their known stance on this topic: {stance_tendency}
-Persuasion resistance: {persuasion_resistance} (0=easily convinced, 1=never convinced)"""
-        stakeholder_name = stakeholder["name"]
-        stakeholder_category = stakeholder["category"]
+Their stance: {stance_tendency}
+Persuasion resistance: {persuasion_resistance} (0=easily convinced, 1=never)"""
+            stakeholder_name = stakeholder["name"]
+            stakeholder_category = stakeholder["category"]
+
+        stance_tendency = stakeholder.get("stance", "neutral")
+        relevance_score = stakeholder.get("relevance_score", 0.75)
+        persuasion_resistance = stakeholder.get("persuasion_resistance", 0.5)
     else:
         forced = STANCE_MAP[agent_index % 3]
         stance_tendency = forced
+        relevance_score = 0.70
         persuasion_resistance = 0.5
         stakeholder_context = f"Generate a unique persona with stance: {forced}"
         stakeholder_name = None
         stakeholder_category = "individual"
 
-    score_range = SCORE_RANGE.get(stance_tendency, (4.2, 5.8))
-    score_min, score_max = score_range
+    if stance_tendency in ["strongly against", "against"]:
+        stance = "against"
+    elif stance_tendency in ["strongly for", "for"]:
+        stance = "for"
+    else:
+        stance = "neutral"
+
+    score_min, score_max = get_score_range(stance, relevance_score)
 
     system = """You are designing a realistic human persona for a debate simulation.
 The persona must represent the given stakeholder grounded in real knowledge graph data.
@@ -78,13 +155,13 @@ Topic: {topic}{context_line}
 Stakeholder context:
 {stakeholder_context}
 
-Real-world knowledge graph:
+Real-world knowledge graph (use these facts to ground the persona):
 {graph_context}
 
-Key claims:
+Key claims circulating about this topic:
 {claims_context}
 
-Names already used: {existing_names_str}
+Names already used (do not repeat): {existing_names_str}
 
 Respond in this exact JSON format:
 {{
@@ -93,17 +170,19 @@ Respond in this exact JSON format:
     "profession": "specific job title reflecting the stakeholder",
     "location": "city, country",
     "persona": "2-3 sentences about their background and why they hold their position",
-    "initial_opinion": "their specific opinion citing real facts from the knowledge graph",
-    "key_beliefs": ["belief grounded in graph", "belief grounded in graph"],
-    "known_entities": ["entity1", "entity2", "entity3"]
+    "initial_opinion": "their specific opinion citing real facts from the knowledge graph above",
+    "key_beliefs": ["specific belief grounded in graph data", "specific belief grounded in graph data"],
+    "known_entities": ["entity1 from the graph", "entity2 from the graph"]
 }}
 
 Rules:
 - If the stakeholder is a well-known organization, use their ACTUAL real-world representative
-  (e.g. Meta -> Mark Zuckerberg, European Union -> Ursula von der Leyen, OpenAI -> Sam Altman)
+  (e.g. ByteDance → Shou Zi Chew, European Commission → Ursula von der Leyen)
 - Only invent a name if the stakeholder has no single known representative
-- No "Dr." prefix unless the real person actually uses it
-- Name must be unique — not in: {existing_names_str}"""
+- initial_opinion MUST reference specific facts or entities from the knowledge graph above
+- key_beliefs must be grounded in real graph data, not generic positions
+- Name must be unique — not in: {existing_names_str}
+- No "Dr." prefix unless the real person actually uses it"""
 
     try:
         import re
@@ -113,14 +192,6 @@ Rules:
 
         import random
         score = round(random.uniform(score_min, score_max), 1)
-
-        stance = stance_tendency
-        if stance in ["strongly against", "against"]:
-            stance = "against"
-        elif stance in ["strongly for", "for"]:
-            stance = "for"
-        else:
-            stance = "neutral"
 
         return {
             "id": f"agent_{uuid.uuid4().hex[:8]}",

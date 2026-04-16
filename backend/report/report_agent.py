@@ -7,32 +7,28 @@ from backend.utils.llm_client import call_llm_json
 from backend.utils.graph_utils import get_most_influential
 import networkx as nx
 
-# ── Round Summarizer ──────────────────────────────────────────────
 
 async def summarize_round(round_data: dict, round_num: int) -> dict:
-    """
-    Compress a debate round into a structured summary.
-    Used to give the report agent full context without hitting token limits.
-    """
     agents = round_data["agents"]
     total = len(agents)
-    
+
     shifted = [a for a in agents if a.get("opinion_delta", 0) > 0.3]
-    held = [a for a in agents if a.get("opinion_delta", 0) <= 0.3]
-    
+    held    = [a for a in agents if a.get("opinion_delta", 0) <= 0.3]
+
     avg_delta = sum(a.get("opinion_delta", 0) for a in agents) / total if total > 0 else 0
-    
+
     stance_dist = {"for": 0, "against": 0, "neutral": 0}
     for a in agents:
         stance = a.get("stance", "neutral")
         stance_dist[stance] = stance_dist.get(stance, 0) + 1
 
     agent_summaries = "\n".join([
-        f"- {a['name']} ({a.get('stakeholder_name', 'individual')}): score={a['score']} stance={a['stance']} delta={a.get('opinion_delta', 0):.2f}"
+        f"- {a['name']} ({a.get('stakeholder_name', 'individual')}): "
+        f"score={a['score']} stance={a['stance']} delta={a.get('opinion_delta', 0):.2f}"
         for a in agents
     ])
     shifted_names = [a["name"] for a in shifted]
-    held_names = [a["name"] for a in held]
+    held_names    = [a["name"] for a in held]
 
     system = """You are summarizing a debate round for a simulation report.
 Be precise and factual. Reference specific agents and arguments.
@@ -68,58 +64,72 @@ Respond in this exact JSON format:
             "round": round_num,
             "key_development": f"Round {round_num} completed",
             "dominant_argument": "",
-            "who_shifted": [a["name"] for a in shifted],
+            "who_shifted": shifted_names,
             "why_they_shifted": "",
-            "who_held": [a["name"] for a in held],
+            "who_held": held_names,
             "stance_distribution": stance_dist,
             "avg_delta": round(avg_delta, 3)
         }
 
+
 async def summarize_all_rounds(rounds: list[dict]) -> list[dict]:
-    """Summarize all rounds in parallel."""
     tasks = [summarize_round(r, r["round"]) for r in rounds]
     summaries = await asyncio.gather(*tasks)
     return list(summaries)
 
-# ── Verdict Calculator ────────────────────────────────────────────
 
 def calculate_verdict(final_agents: list[dict], rounds: list[dict]) -> dict:
     """
     Mathematically derive verdict confidence.
 
-    confidence = (stance_concentration × 0.50) +
-                 (score_separation     × 0.35) +
-                 (shift_convergence    × 0.15)
+    Bug 2 fix: Stance concentration now excludes neutrals from denominator.
 
-    Research basis for weight change (Pransh, April 2026):
-    Old weights gave shift_convergence 30%. On entrenched topics
-    (abortion, gun control) agents correctly hold firm — near-zero
-    shifts is realistic human behavior, not a simulation failure.
-    Penalising it with 30% produced artificially low confidence
-    (25-35%) on topics with genuine strong consensus.
+    Previous logic: stance_concentration = dominant_count / total
+    Problem: with 10 FOR, 5 AGAINST, 5 NEUTRAL out of 20 —
+    concentration = 10/20 = 50% even though among decided agents
+    it's 10/15 = 67%. Neutrals reflect genuine uncertainty, not opposition.
+    They were diluting confidence on topics with clear majorities.
 
-    New weights: stance_concentration dominates at 50%.
-    A simulation where 12 FOR agents hold at score 8.0 across 3
-    rounds now gets high confidence — correctly.
-    shift_convergence demoted to 15% — it still matters but doesn't
-    tank the score when polarisation is the real-world truth.
+    Fix: calculate concentration from decided agents only.
+    Neutrals are reported separately and used in the trajectory analysis
+    but don't penalize the confidence of a clear majority verdict.
 
-    score_separation — how far dominant group's avg score is from
-    neutral (5.0). A group at 8.0 is more decided than one at 6.0.
+    Research basis: Krosnick 1988 — attitude importance predicts
+    opinion stability. Neutrals have low attitude importance by definition
+    and should not reduce the signal from committed agents.
+
+    Prediction: minimum wage simulation confidence rises from ~40%
+    to ~55-60% — correctly reflecting that 9 FOR vs 5 AGAINST
+    is a meaningful majority even with 6 neutrals.
     """
     total = len(final_agents)
     if total == 0:
-        return {"confidence": 0, "dominant_stance": "neutral", "verdict_strength": "inconclusive"}
+        return {
+            "confidence": 0,
+            "dominant_stance": "neutral",
+            "verdict_strength": "inconclusive"
+        }
 
-    # Stance counts
     stance_counts = {"for": 0, "against": 0, "neutral": 0}
     for a in final_agents:
         s = a.get("stance", "neutral")
         stance_counts[s] = stance_counts.get(s, 0) + 1
 
     dominant_stance = max(stance_counts, key=stance_counts.get)
-    dominant_count = stance_counts[dominant_stance]
-    stance_concentration = dominant_count / total
+    dominant_count  = stance_counts[dominant_stance]
+    neutral_count   = stance_counts.get("neutral", 0)
+
+    # Bug 2 fix — exclude neutrals from concentration denominator
+    decided_count = total - neutral_count
+    if decided_count > 0 and dominant_stance != "neutral":
+        # Among agents who have taken a position, how dominant is the majority?
+        stance_concentration = dominant_count / decided_count
+    else:
+        # Fallback if everyone is neutral or neutral is dominant
+        stance_concentration = dominant_count / total
+
+    print(f"[ReportAgent] Stance concentration: {dominant_count}/{decided_count} "
+          f"decided agents ({neutral_count} neutral excluded from denominator)")
 
     # Score separation — how far dominant group is from neutral (5.0)
     dominant_agents = [a for a in final_agents if a.get("stance") == dominant_stance]
@@ -135,14 +145,13 @@ def calculate_verdict(final_agents: list[dict], rounds: list[dict]) -> dict:
 
     for r in rounds:
         for a in r["agents"]:
-            delta = a.get("opinion_delta", 0)
+            delta  = a.get("opinion_delta", 0)
             stance = a.get("stance", "neutral")
             if delta > 0.10 and stance == dominant_stance:
                 total_convergent_shifts += 1
 
     shift_convergence = min(total_convergent_shifts / total_agent_rounds, 1.0)
 
-    # Final confidence — updated weights (Pransh April 2026)
     confidence = (
         stance_concentration * 0.50 +
         score_separation     * 0.35 +
@@ -150,7 +159,6 @@ def calculate_verdict(final_agents: list[dict], rounds: list[dict]) -> dict:
     )
     confidence_pct = round(confidence * 100, 1)
 
-    # Strength label
     if confidence_pct >= 65:
         strength = "strong"
     elif confidence_pct >= 40:
@@ -158,24 +166,23 @@ def calculate_verdict(final_agents: list[dict], rounds: list[dict]) -> dict:
     else:
         strength = "contested"
 
-    # Minority
     minority_stances = {k: v for k, v in stance_counts.items() if k != dominant_stance}
-    minority_stance = max(minority_stances, key=minority_stances.get)
+    minority_stance  = max(minority_stances, key=minority_stances.get)
 
     return {
-        "dominant_stance": dominant_stance,
-        "dominant_count": dominant_count,
-        "minority_stance": minority_stance,
-        "minority_count": stance_counts[minority_stance],
-        "neutral_count": stance_counts["neutral"],
-        "confidence_pct": confidence_pct,
-        "verdict_strength": strength,
+        "dominant_stance":      dominant_stance,
+        "dominant_count":       dominant_count,
+        "minority_stance":      minority_stance,
+        "minority_count":       stance_counts[minority_stance],
+        "neutral_count":        neutral_count,
+        "decided_count":        decided_count,
+        "confidence_pct":       confidence_pct,
+        "verdict_strength":     strength,
         "stance_concentration": round(stance_concentration, 3),
-        "shift_convergence": round(shift_convergence, 3),
-        "score_separation": round(score_separation, 3),
+        "shift_convergence":    round(shift_convergence, 3),
+        "score_separation":     round(score_separation, 3),
     }
 
-# ── Main Report Generator ─────────────────────────────────────────
 
 async def generate_report(
     topic: str,
@@ -184,43 +191,37 @@ async def generate_report(
     final_agents: list[dict],
     G: nx.DiGraph
 ) -> dict:
-    """
-    God's Eye View report with round summaries and mathematically-backed verdict.
-    """
     print(f"[ReportAgent] Generating God's Eye View for simulation {simulation_id}")
 
-    # Step 1 — Summarize all rounds
     print(f"[ReportAgent] Summarizing {len(rounds)} rounds...")
     round_summaries = await summarize_all_rounds(rounds)
 
-    # Step 2 — Calculate verdict mathematically
     verdict_data = calculate_verdict(final_agents, rounds)
 
-    # Step 3 — Find who shifted and who held
     first_round_agents = {a["id"]: a for a in rounds[0]["agents"]} if rounds else {}
 
     agents_shifted = []
-    agents_held = []
+    agents_held    = []
 
     for agent in final_agents:
         first_state = first_round_agents.get(agent["id"])
         if not first_state:
-            shifted = agent.get("shifted", False)
+            shifted       = agent.get("shifted", False)
             initial_stance = agent["stance"]
         else:
             initial_stance = first_state["stance"]
-            final_stance = agent["stance"]
+            final_stance   = agent["stance"]
             shifted = (initial_stance != final_stance) or agent.get("shifted", False)
 
         summary = {
-            "agent_id": agent["id"],
-            "name": agent["name"],
-            "stakeholder": agent.get("stakeholder_name", "individual"),
-            "shifted": shifted,
+            "agent_id":      agent["id"],
+            "name":          agent["name"],
+            "stakeholder":   agent.get("stakeholder_name", "individual"),
+            "shifted":       shifted,
             "initial_stance": initial_stance,
-            "final_stance": agent["stance"],
-            "final_score": agent["score"],
-            "key_moment": agent.get("shift_reason", "held firm throughout")
+            "final_stance":  agent["stance"],
+            "final_score":   agent["score"],
+            "key_moment":    agent.get("shift_reason", "held firm throughout")
         }
 
         if shifted:
@@ -228,20 +229,18 @@ async def generate_report(
         else:
             agents_held.append(summary)
 
-    # Step 4 — Graph insights
-    top_entities = get_most_influential(G, top_n=3)
+    top_entities  = get_most_influential(G, top_n=3)
     graph_context = "\n".join([
         f"- {e['name']} (influence: {e['influence_score']:.3f}, cited {e['citations']}x)"
         for e in top_entities
     ])
 
-    # Step 5 — Build round summary context for LLM
     round_context = "\n".join([
-        f"Round {s['round']}: {s['key_development']} | shifts: {len(s['who_shifted'])} | avg delta: {s['avg_delta']}"
+        f"Round {s['round']}: {s['key_development']} | "
+        f"shifts: {len(s['who_shifted'])} | avg delta: {s['avg_delta']}"
         for s in round_summaries
     ])
 
-    # Step 6 — LLM generates verdict text + trajectory
     system = """You are the God's Eye View analyst for a multi-agent debate simulation.
 You have seen the complete debate through structured round summaries.
 Generate a precise, evidence-backed analysis.
@@ -251,13 +250,15 @@ Respond in valid JSON only."""
 
 Topic: {topic}
 Total agents: {len(final_agents)}
+Decided agents: {verdict_data['decided_count']} ({verdict_data['neutral_count']} neutral)
 Agents shifted: {len(agents_shifted)}
 Agents held: {len(agents_held)}
 
 Verdict data (mathematically calculated):
 - Dominant stance: {verdict_data['dominant_stance']} ({verdict_data['dominant_count']} agents)
 - Minority stance: {verdict_data['minority_stance']} ({verdict_data['minority_count']} agents)
-- Confidence: {verdict_data['confidence_pct']}%
+- Neutral agents: {verdict_data['neutral_count']}
+- Confidence: {verdict_data['confidence_pct']}% (among decided agents)
 - Verdict strength: {verdict_data['verdict_strength']}
 
 Round summaries:
@@ -269,7 +270,7 @@ Most influential knowledge graph entities:
 Generate the God's Eye View in this exact JSON format:
 {{
     "summary": "2-3 sentence executive summary of what happened in the debate",
-    "predicted_trajectory": "specific prediction of real-world outcome based on debate dynamics, cite dominant arguments",
+    "predicted_trajectory": "specific prediction of real-world outcome based on debate dynamics",
     "verdict_statement": "one clear declarative sentence verdict on the proposition",
     "decisive_factor": "the single argument or piece of evidence that most shaped the outcome",
     "minority_position": "why the minority held firm and what that means for real-world implementation",
@@ -279,106 +280,106 @@ Generate the God's Eye View in this exact JSON format:
 }}"""
 
     try:
-        result = await call_llm_json(prompt, system)
+        result    = await call_llm_json(prompt, system)
         synthesis = json.loads(result)
     except Exception as e:
         print(f"[ReportAgent] LLM synthesis error: {e}")
         synthesis = {
-            "summary": "Debate completed.",
+            "summary":              "Debate completed.",
             "predicted_trajectory": "Unable to generate trajectory.",
-            "verdict_statement": "Outcome inconclusive.",
-            "decisive_factor": "",
-            "minority_position": "",
+            "verdict_statement":    "Outcome inconclusive.",
+            "decisive_factor":      "",
+            "minority_position":    "",
             "real_world_implication": "",
-            "actionable_insight": "",
-            "consensus_level": "medium"
+            "actionable_insight":   "",
+            "consensus_level":      "medium"
         }
 
-    # Step 7 — Sentiment per round
     sentiment_ticks = []
     for round_data in rounds:
         agents_in_round = round_data["agents"]
         total = len(agents_in_round)
         if total == 0:
             continue
-        positive = sum(1 for a in agents_in_round if a["stance"] == "for") / total
+        positive = sum(1 for a in agents_in_round if a["stance"] == "for")    / total
         negative = sum(1 for a in agents_in_round if a["stance"] == "against") / total
-        neutral = sum(1 for a in agents_in_round if a["stance"] == "neutral") / total
+        neutral  = sum(1 for a in agents_in_round if a["stance"] == "neutral") / total
         sentiment_ticks.append({
-            "tick": round_data["round"],
+            "tick":     round_data["round"],
             "positive": round(positive, 2),
-            "neutral": round(neutral, 2),
+            "neutral":  round(neutral,  2),
             "negative": round(negative, 2)
         })
 
-    # Step 8 — Decisive arguments
     argument_influence = {}
     for agent in final_agents:
         if agent.get("shifted") and agent.get("last_argument"):
             key = agent.get("last_argument", "")[:100]
             if key not in argument_influence:
                 argument_influence[key] = {
-                    "argument": agent.get("last_argument", ""),
+                    "argument":         agent.get("last_argument", ""),
                     "influenced_agents": [],
-                    "evidence_used": agent.get("key_evidence_used", [])
+                    "evidence_used":    agent.get("key_evidence_used", [])
                 }
             argument_influence[key]["influenced_agents"].append(agent["id"])
 
     decisive_arguments = [
         {
-            "agent_id": final_agents[0]["id"] if final_agents else "unknown",
-            "argument": v["argument"],
+            "agent_id":         final_agents[0]["id"] if final_agents else "unknown",
+            "argument":         v["argument"],
             "influenced_agents": v["influenced_agents"],
-            "evidence_used": v["evidence_used"]
+            "evidence_used":    v["evidence_used"]
         }
         for v in argument_influence.values()
     ][:5]
 
-    # Step 9 — Assemble final report
     report = {
         "simulation_id": simulation_id,
-        "topic": topic,
+        "topic":         topic,
 
-        "summary": synthesis.get("summary", ""),
+        "summary":              synthesis.get("summary", ""),
         "predicted_trajectory": synthesis.get("predicted_trajectory", ""),
         "verdict": {
-            "statement": synthesis.get("verdict_statement", ""),
-            "confidence_pct": verdict_data["confidence_pct"],
-            "strength": verdict_data["verdict_strength"],
-            "dominant_stance": verdict_data["dominant_stance"],
-            "dominant_count": verdict_data["dominant_count"],
-            "minority_stance": verdict_data["minority_stance"],
-            "minority_count": verdict_data["minority_count"],
-            "decisive_factor": synthesis.get("decisive_factor", ""),
-            "minority_position": synthesis.get("minority_position", ""),
+            "statement":            synthesis.get("verdict_statement", ""),
+            "confidence_pct":       verdict_data["confidence_pct"],
+            "strength":             verdict_data["verdict_strength"],
+            "dominant_stance":      verdict_data["dominant_stance"],
+            "dominant_count":       verdict_data["dominant_count"],
+            "minority_stance":      verdict_data["minority_stance"],
+            "minority_count":       verdict_data["minority_count"],
+            "neutral_count":        verdict_data["neutral_count"],
+            "decided_count":        verdict_data["decided_count"],
+            "decisive_factor":      synthesis.get("decisive_factor", ""),
+            "minority_position":    synthesis.get("minority_position", ""),
             "real_world_implication": synthesis.get("real_world_implication", ""),
         },
 
-        "actionable_insight": synthesis.get("actionable_insight", ""),
-        "consensus_level": synthesis.get("consensus_level", "medium"),
-        "agents_shifted": len(agents_shifted),
-        "agents_held": len(agents_held),
-        "decisive_arguments": decisive_arguments,
+        "actionable_insight":  synthesis.get("actionable_insight", ""),
+        "consensus_level":     synthesis.get("consensus_level", "medium"),
+        "agents_shifted":      len(agents_shifted),
+        "agents_held":         len(agents_held),
+        "decisive_arguments":  decisive_arguments,
         "agent_summaries": [
             {
-                "agent_id": a["agent_id"],
-                "name": a["name"],
+                "agent_id":    a["agent_id"],
+                "name":        a["name"],
                 "stakeholder": a["stakeholder"],
-                "shifted": a["shifted"],
+                "shifted":     a["shifted"],
                 "final_stance": a["final_stance"],
-                "key_moment": a["key_moment"]
+                "key_moment":  a["key_moment"]
             }
             for a in agents_shifted + agents_held
         ],
         "round_summaries": round_summaries,
         "sentiment_history": {
             "simulation_id": simulation_id,
-            "ticks": sentiment_ticks
+            "ticks":         sentiment_ticks
         }
     }
 
     print(f"[ReportAgent] Report complete. "
           f"{len(agents_shifted)} shifted, {len(agents_held)} held. "
-          f"Verdict: {verdict_data['dominant_stance']} ({verdict_data['confidence_pct']}% confidence)")
+          f"Verdict: {verdict_data['dominant_stance']} "
+          f"({verdict_data['confidence_pct']}% confidence)")
 
     return report

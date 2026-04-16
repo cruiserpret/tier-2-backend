@@ -123,10 +123,10 @@ def start_simulation():
 
                 # Step 1 — Classify topic
                 from backend.agents.topic_classifier import classify_topic
-                classification = run_async(classify_topic(topic))
+                classification = run_async(classify_topic(topic, context=context))
 
-                inst_count = max(3, round(num_agents * classification["institutional_ratio"]))
-                pub_count  = max(2, num_agents - inst_count)
+                inst_count = min(6, max(3, round(num_agents * classification["institutional_ratio"])))
+                pub_count  = num_agents - inst_count
                 print(f"[API] Agent split: {inst_count} institutional, {pub_count} public")
 
                 # Step 2 — Ingest

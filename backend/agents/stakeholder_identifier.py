@@ -7,7 +7,6 @@ from backend.utils.llm_client import call_llm_json
 from backend.utils.graph_utils import get_most_influential, get_nodes_by_type
 import networkx as nx
 
-# ── Reflexion correction memory ───────────────────────────────────
 try:
     from backend.agents.correction_store import get_correction_context
     CORRECTION_STORE_AVAILABLE = True
@@ -48,11 +47,15 @@ CATEGORY_NORMALIZER = {
     "who": "international_body", "wto": "international_body",
 }
 
-MAX_CATEGORY_SHARE = 0.30
+# ── Diversity parameters ──────────────────────────────────────────
+# Raised from 0.30 to 0.35 — less aggressive category enforcement.
+# Reason: campus questions have all legitimate stakeholders in
+# civil_society/academic. 30% cap was cutting real stakeholders
+# to fill irrelevant investor/international_body slots.
+MAX_CATEGORY_SHARE = 0.35
 MIN_AGENTS = 5
-CALIBRATION_THRESHOLD = 0.15
+CALIBRATION_THRESHOLD = 0.10
 
-# ── Base stance keyword lexicons ──────────────────────────────────
 FOR_KEYWORDS = [
     "should be legal", "support", "favor", "advocate", "endorse",
     "in favor", "pro-", "right to", "rights to", "access to",
@@ -93,6 +96,31 @@ NEUTRAL_KEYWORDS = [
     "personal choice", "neither support nor oppose",
 ]
 
+CAMPUS_TOPIC_SIGNALS = [
+    "ucsd", "university", "campus", "college", "student",
+    "library", "dining", "dormitory", "tuition", "financial aid",
+    "geisel", "triton", "rady", "price center"
+]
+
+
+def is_campus_topic(topic: str) -> bool:
+    topic_lower = topic.lower()
+    return any(sig in topic_lower for sig in CAMPUS_TOPIC_SIGNALS)
+
+
+def correction_is_relevant(topic: str, correction_context: str) -> bool:
+    if not correction_context:
+        return False
+    topic_is_campus = is_campus_topic(topic)
+    correction_mentions_campus = any(
+        sig in correction_context.lower() for sig in CAMPUS_TOPIC_SIGNALS
+    )
+    if topic_is_campus and not correction_mentions_campus:
+        print(f"[StakeholderIdentifier] Correction store: skipping national policy "
+              f"corrections for campus topic")
+        return False
+    return True
+
 
 def normalize_category(raw: str) -> str:
     clean = raw.lower().strip().replace(" ", "_").replace("-", "_")
@@ -106,32 +134,21 @@ def normalize_category(raw: str) -> str:
     return "civil_society"
 
 
-async def generate_topic_keywords(topic: str) -> tuple[list, list]:
-    """
-    Generate topic-specific stance keywords for THIS exact proposition.
-    Mohammad et al. 2016 — stance detection must be target-dependent.
-    """
+async def generate_topic_keywords(topic: str, context: str = "") -> tuple[list, list]:
     system = """You are an expert in stance detection and NLP.
 Generate proposition-specific stance keywords for this exact debate topic.
 Respond in valid JSON only."""
 
-    prompt = f"""For this specific proposition: "{topic}"
+    context_line = f'\nContext: "{context}"' if context else ""
+
+    prompt = f"""For this specific proposition: "{topic}"{context_line}
 
 Generate 10 FOR keywords and 10 AGAINST keywords that someone would use
-when specifically supporting or opposing THIS proposition — not just the
-general concept behind it.
+when specifically supporting or opposing THIS proposition.
 
-Think about the specific framing:
-- What words signal support for THIS specific action/policy/law?
-- What words signal opposition to THIS specific action/policy/law?
-
-Examples for "Should the federal government mandate a 4-day work week":
-- FOR: "federal law", "mandate", "legally require", "workers need protection"
-- AGAINST: "let employers decide", "market forces", "government shouldn't mandate"
-
-Examples for "Should the US ban TikTok":
-- FOR: "national security threat", "ban the app", "chinese espionage"
-- AGAINST: "first amendment", "free speech", "unconstitutional"
+Examples for "Should UCSD open Sixth Market 24/7":
+- FOR: "open all night", "24/7 access", "students need", "late night hunger"
+- AGAINST: "staffing costs", "security concerns", "low demand", "not worth it"
 
 Respond in this exact JSON format:
 {{
@@ -142,8 +159,8 @@ Respond in this exact JSON format:
 }}
 
 Rules:
-- Keywords must be specific to THIS proposition, not generic
-- Keep each keyword short (1-4 words) so they match within raw text
+- Keywords must be specific to THIS proposition
+- Keep each keyword short (1-4 words)
 - Do not repeat generic words like "support" or "oppose"
 - Focus on the specific ACTION being proposed"""
 
@@ -158,7 +175,7 @@ Rules:
               f"{len(topic_for)} for, {len(topic_against)} against")
         return topic_for, topic_against
     except Exception as e:
-        print(f"[StakeholderIdentifier] Topic keyword generation failed: {e} — using base keywords only")
+        print(f"[StakeholderIdentifier] Topic keyword generation failed: {e}")
         return [], []
 
 
@@ -167,10 +184,6 @@ def classify_claim_stance(
     topic_for_keywords: list = None,
     topic_against_keywords: list = None
 ) -> str:
-    """
-    Classify a single claim's stance using base + topic-specific keywords.
-    Returns "for", "against", "neutral", or None (no signal).
-    """
     text = claim_text.lower()
     all_for     = FOR_KEYWORDS + (topic_for_keywords or [])
     all_against = AGAINST_KEYWORDS + (topic_against_keywords or [])
@@ -196,37 +209,35 @@ def extract_sentiment_from_chunks(
     topic_against_keywords: list = None
 ) -> dict:
     """
-    ── Change 3: Keyword matching on RAW CHUNK TEXT ─────────────────
-    Previously we matched keywords against LLM-extracted claim node
-    summaries from the graph. This caused a 68% fallback rate because
-    extracted nodes paraphrase the original text — the actual words
-    people used are lost in extraction.
-
-    Example:
-      Raw chunk: "we need sensible gun reform to protect our kids"
-      Extracted node: "gun violence requires policy intervention"
-      Keyword "gun reform" matches raw text but NOT extracted node.
-
-    Fix: run keyword matching directly on pub_chunks[i]['text'] BEFORE
-    graph extraction. This gives us the original words, not paraphrases.
-
-    This replaces extract_public_sentiment_distribution when pub_chunks
-    is available. Falls back to graph-based extraction if not.
-
-    Result: keyword hit rate goes from ~30% to ~70%+ because we're
-    matching against real human language, not LLM summaries.
+    Forum chunks (Reddit/Quora) weighted 2x — real human stance expression.
+    Institutional analysis chunks weighted 0.5x — measured language inflates neutral.
+    Hampton et al. 2014 (Pew) — weighting corrects for forum oversample
+    while preserving their higher signal quality.
     """
     if not pub_chunks:
         return None
 
-    for_count = against_count = neutral_count = 0
+    for_count = against_count = neutral_count = 0.0
     keyword_hits = fallback_hits = 0
+    total_weight = 0.0
 
     for chunk in pub_chunks:
-        # Use raw text — the original words, not extracted summaries
         raw_text = chunk.get("text", "")
         if not raw_text:
             continue
+
+        source_url = chunk.get("source", "")
+        is_forum = chunk.get("is_forum", False) or \
+                   "reddit.com" in source_url or \
+                   "quora.com" in source_url
+
+        chunk_type = chunk.get("chunk_type", "public")
+        if is_forum:
+            weight = 2.0
+        elif chunk_type == "institutional":
+            weight = 0.5
+        else:
+            weight = 1.0
 
         stance = classify_claim_stance(
             raw_text,
@@ -236,22 +247,14 @@ def extract_sentiment_from_chunks(
 
         if stance is not None:
             keyword_hits += 1
-            if stance == "for":       for_count += 1
-            elif stance == "against": against_count += 1
-            else:                     neutral_count += 1
+            if stance == "for":       for_count += weight
+            elif stance == "against": against_count += weight
+            else:                     neutral_count += weight
         else:
             fallback_hits += 1
-            # Fallback: use sentiment_strength as a weak proxy
-            # High sentiment_strength = emotionally charged = likely taking a side
-            # This is weaker than keyword matching but better than ignoring
-            ss = chunk.get("sentiment_strength", 0.0)
-            if ss > 0.5:
-                # High emotional intensity — count as weak FOR signal
-                # (online emotional discourse skews toward advocates)
-                for_count += 0  # don't assume direction — skip
-                neutral_count += 1
-            else:
-                neutral_count += 1
+            neutral_count += weight * 0.5
+
+        total_weight += weight
 
     total = for_count + against_count + neutral_count
     if total == 0:
@@ -261,7 +264,7 @@ def extract_sentiment_from_chunks(
         "for":           round(for_count / total, 2),
         "against":       round(against_count / total, 2),
         "neutral":       round(neutral_count / total, 2),
-        "total_signal":  total,
+        "total_signal":  len(pub_chunks),
         "keyword_hits":  keyword_hits,
         "fallback_hits": fallback_hits,
     }
@@ -270,7 +273,8 @@ def extract_sentiment_from_chunks(
           f"for: {distribution['for']*100:.0f}% / "
           f"against: {distribution['against']*100:.0f}% / "
           f"neutral: {distribution['neutral']*100:.0f}% "
-          f"({total} chunks: {keyword_hits} keyword-matched, {fallback_hits} fallback)")
+          f"({len(pub_chunks)} chunks: {keyword_hits} keyword-matched, "
+          f"{fallback_hits} fallback, forum-weighted)")
 
     return distribution
 
@@ -280,10 +284,7 @@ def extract_public_sentiment_distribution(
     topic_for_keywords: list = None,
     topic_against_keywords: list = None
 ) -> dict:
-    """
-    Graph-based fallback — used when raw pub_chunks not available.
-    Kept for backward compatibility.
-    """
+    """Graph-based fallback — used when raw pub_chunks not available."""
     if G_pub is None:
         return None
 
@@ -325,7 +326,7 @@ def extract_public_sentiment_distribution(
     if total == 0:
         return None
 
-    distribution = {
+    return {
         "for":           round(for_count / total, 2),
         "against":       round(against_count / total, 2),
         "neutral":       round(neutral_count / total, 2),
@@ -333,14 +334,6 @@ def extract_public_sentiment_distribution(
         "keyword_hits":  keyword_hits,
         "fallback_hits": fallback_hits,
     }
-
-    print(f"[StakeholderIdentifier] Public stance signal (graph nodes) — "
-          f"for: {distribution['for']*100:.0f}% / "
-          f"against: {distribution['against']*100:.0f}% / "
-          f"neutral: {distribution['neutral']*100:.0f}% "
-          f"({total} claims: {keyword_hits} keyword-matched, {fallback_hits} fallback)")
-
-    return distribution
 
 
 def get_current_distribution(stakeholders: list[dict]) -> dict:
@@ -358,7 +351,7 @@ async def request_missing_stakeholders(
     topic, missing_stances, num_needed, graph_context, existing_names
 ):
     system = """You are identifying additional stakeholders whose interests are being overlooked.
-These must be REAL, SPECIFIC entities with genuine stakes in this topic.
+These must be REAL, SPECIFIC organizations or groups of people with genuine stakes.
 Respond in valid JSON only."""
     existing_str = ", ".join(existing_names) if existing_names else "none"
     prompt = f"""Topic: {topic}
@@ -407,10 +400,6 @@ async def calibrate_distribution(
     topic_for_keywords=None, topic_against_keywords=None,
     keyword_signal=None
 ):
-    """
-    Compare current stakeholder distribution to public signal.
-    Uses pre-computed keyword_signal if available.
-    """
     public_dist = keyword_signal or extract_public_sentiment_distribution(
         G_pub,
         topic_for_keywords=topic_for_keywords,
@@ -462,27 +451,109 @@ async def calibrate_distribution(
     return stakeholders
 
 
-async def classify_and_position_entities(topic, entities, graph_context):
+async def classify_and_position_entities(
+    topic, entities, graph_context, missing_stances: list = None
+):
+    """
+    Identify stakeholders from the institutional graph.
+
+    Government representation fix: Think tanks and advocacy groups dominate
+    citation counts in news articles — they publish more, get quoted more,
+    score higher in PageRank. This causes government bodies (Congress, regulatory
+    agencies, independent analysis bodies) to be underrepresented even when they
+    have direct decision-making power over the outcome.
+
+    Fix: inject explicit government body check before stakeholder selection.
+    The LLM is instructed to find legislative, regulatory, enforcement, and
+    analysis bodies first — then fill remaining slots with advocacy/industry.
+
+    Generalizes to every topic:
+    - Minimum wage → Congress, Department of Labor, CBO, Federal Reserve
+    - UCSD housing → UC Regents, City Planning Department, State Legislature
+    - TikTok ban → US Congress, FCC, CFIUS, Department of Justice
+    - Campus library hours → UCSD Chancellor, UC System Board of Regents, AS Senate
+    """
     entity_list = "\n".join([
-        f"- {e['name']} (influence: {e.get('influence_score', 0):.3f}, citations: {e.get('citations', 1)})"
+        f"- {e['name']} (influence: {e.get('influence_score', 0):.3f}, "
+        f"citations: {e.get('citations', 1)})"
         for e in entities[:35]
     ])
+
     system = """You are an expert at identifying stakeholders and their real-world positions.
 Derive stance from INTERESTS, not public statements or news sentiment.
 Respond in valid JSON only."""
+
     proposition = topic if "?" in topic else f"{topic}?"
+
+    missing_instruction = ""
+    if missing_stances:
+        missing_instruction = f"""
+CRITICAL: Real-world data shows these stances are underrepresented: {', '.join(missing_stances).upper()}
+You MUST include stakeholders representing these positions.
+For AGAINST: look for entities with operational, financial, safety, or resource concerns.
+For FOR: look for entities who benefit directly or advocate for this change.
+These voices exist in every real debate — find them in the entity list above."""
+
     prompt = f"""Proposition: {proposition}
 - "for" = entity SUPPORTS the proposition
 - "against" = entity OPPOSES the proposition
-- "neutral" = genuinely mixed position
+- "neutral" = entity has GENUINELY CONFLICTING interests (rare — see below)
 
-Entities: {entity_list}
-Context: {graph_context}
+Entities from knowledge graph:
+{entity_list}
 
-Ensure genuine diversity — at least one FOR, one AGAINST, one NEUTRAL minimum.
-Maximum 15 stakeholders. Only real organizations with genuine stakes.
+Context:
+{graph_context}
+{missing_instruction}
+
+STEP 1 — GOVERNMENT BODIES FIRST (do this before anything else):
+For this specific topic, identify which of these government body types exist
+and have real decision-making power or direct jurisdiction:
+
+1. LEGISLATIVE body — who votes on this? (Congress, Parliament, City Council,
+   Student Government, University Board of Regents)
+2. REGULATORY/ENFORCEMENT agency — who enforces or implements this?
+   (Department of Labor, FCC, FDA, Campus Facilities, Planning Department)
+3. INDEPENDENT ANALYSIS body — who provides neutral expert assessment?
+   (Congressional Budget Office, GAO, University Research Office, CBO)
+4. EXECUTIVE DEPARTMENT — who has direct administrative responsibility?
+   (Secretary of Labor, University Chancellor, Mayor's Office)
+
+These bodies MUST be included if they have genuine decision-making power.
+Do NOT skip them because think tanks or advocacy groups have higher citation
+counts — citations reflect who talks most, not who decides most.
+
+STEP 2 — STAKEHOLDER DEFINITION:
+A valid stakeholder must be an organization, institution, or named group
+of people with REAL INTERESTS in the outcome.
+
+VALID stakeholders:
+- Government bodies identified in Step 1
+- Named organizations with financial, operational, or social stakes
+- Named companies with contractual or competitive interest
+- Community groups directly affected — including informal ones
+  (e.g. "Late Night Students", "UCSD Graduate Workers")
+- Staff unions and worker groups
+
+INVALID stakeholders — DO NOT include:
+- Software applications, mobile apps, digital tools, websites
+  → include the COMPANY or USERS instead
+- Abstract technology concepts, algorithms, datasets
+- Anonymous unnamed aggregates with no real organizational form
+
+STEP 3 — NEUTRAL DEFINITION:
+Only assign neutral if the entity has GENUINELY CONFLICTING interests.
+Example valid neutral: Congressional Budget Office — mandated to provide
+nonpartisan analysis, not take policy positions.
+Example invalid neutral: An organization that "sees both sides."
+Derive from institutional mandate and interests, not public statements.
+
+Ensure at least one FOR, one AGAINST, one NEUTRAL stakeholder.
+Maximum 15 stakeholders. Prioritize government bodies from Step 1,
+then industry/advocacy, then community groups.
 
 {{"stakeholders": [{{"name": "...", "category": "tech_company/government/civil_society/academic/labor_union/consumer/media/investor/affected_community/international_body", "fundamental_interests": "...", "real_position": "...", "stance": "for/against/neutral", "stake": "...", "relevance_score": 0.85}}]}}"""
+
     try:
         result = await call_llm_json(prompt, system)
         parsed = json.loads(result)
@@ -492,9 +563,64 @@ Maximum 15 stakeholders. Only real organizations with genuine stakes.
         return []
 
 
-def enforce_diversity(stakeholders, num_agents):
+def enforce_stance_diversity(stakeholders: list[dict]) -> list[dict]:
+    """
+    Guarantee at least one stakeholder of each stance before category caps.
+
+    Problem this fixes: diversity enforcement (category caps) was running
+    first and sometimes removing the only AGAINST stakeholder to fill
+    an irrelevant investor slot. The result was 0 AGAINST institutionals
+    even when the signal clearly showed AGAINST sentiment exists.
+
+    Fix: select the highest-relevance representative of each stance first.
+    These are GUARANTEED to survive category caps. Remaining slots fill
+    from highest-relevance after that.
+
+    Prediction: every simulation will have at least 1 FOR, 1 AGAINST,
+    1 NEUTRAL institutional agent before any other diversity enforcement.
+    """
+    stances_present = {s.get("stance") for s in stakeholders}
+    required_stances = {"for", "against", "neutral"}
+
+    if required_stances.issubset(stances_present):
+        return stakeholders  # already have all three
+
+    sorted_by_relevance = sorted(
+        stakeholders,
+        key=lambda x: x.get("relevance_score", 0.5),
+        reverse=True
+    )
+
+    guaranteed = {}
+    for s in sorted_by_relevance:
+        stance = s.get("stance")
+        if stance in required_stances and stance not in guaranteed:
+            guaranteed[stance] = s
+
+    guaranteed_list = list(guaranteed.values())
+    guaranteed_ids = {id(s) for s in guaranteed_list}
+    remaining = [s for s in sorted_by_relevance if id(s) not in guaranteed_ids]
+
+    missing = required_stances - set(guaranteed.keys())
+    if missing:
+        print(f"[StakeholderIdentifier] Stance diversity: missing {missing} "
+              f"— will be added via calibration")
+
+    return guaranteed_list + remaining
+
+
+def enforce_diversity(stakeholders: list[dict], num_agents: int) -> list[dict]:
+    """
+    Apply category caps after stance diversity is guaranteed.
+    Cap raised to 35% (from 30%) — less aggressive, prevents cutting
+    legitimate same-category stakeholders on campus questions.
+    """
     max_per_category = max(1, int(num_agents * MAX_CATEGORY_SHARE))
-    sorted_s = sorted(stakeholders, key=lambda x: x.get("relevance_score", 0.5), reverse=True)
+    sorted_s = sorted(
+        stakeholders,
+        key=lambda x: x.get("relevance_score", 0.5),
+        reverse=True
+    )
     category_counts = {}
     selected = []
     for s in sorted_s:
@@ -514,7 +640,7 @@ async def fill_to_count(stakeholders, num_agents, topic, graph_context):
     additional = await request_more_unique_stakeholders(topic, stakeholders, needed, graph_context)
     filled = stakeholders + additional
     if len(filled) < num_agents:
-        print(f"[StakeholderIdentifier] Still need {num_agents - len(filled)} — using representatives as last resort")
+        print(f"[StakeholderIdentifier] Still need {num_agents - len(filled)} — using representatives")
         i = 0
         unique_count = len(stakeholders)
         while len(filled) < num_agents and unique_count > 0:
@@ -535,31 +661,27 @@ async def identify_stakeholders(
     num_agents: int = 10,
     G_pub=None,
     pub_chunks=None,
-    context: str = ""  # NEW
+    context: str = ""
 ) -> tuple[list, dict]:
     """
     Main entry point.
-
     Returns (enriched_stakeholders, keyword_signal) as a tuple.
 
-    ── Change 3: pub_chunks parameter ───────────────────────────────
-    When pub_chunks is provided, keyword matching runs on RAW CHUNK
-    TEXT before graph extraction instead of LLM-extracted claim nodes.
-
-    This fixes the 68% fallback rate that was causing inverted signals
-    on topics like gun control where pro-reform discourse uses the same
-    constitutional language as anti-reform discourse.
-
-    Raw text: "we need sensible gun reform to protect our kids"
-    → keywords match directly → correct FOR signal
-
-    Extracted node: "gun violence requires policy intervention"
-    → keywords miss → falls back to sentiment tags → wrong signal
+    Pipeline:
+    1. Generate topic-specific keywords (with context)
+    2. Compute keyword signal from pub_chunks BEFORE classification
+       so we know which stances are missing
+    3. Classify entities WITH missing stance instruction
+    4. enforce_stance_diversity — guarantees 1 of each stance
+    5. enforce_diversity — category caps (35%, applied after stance guarantee)
+    6. Correction store injection (gated by topic relevance)
+    7. Calibrate distribution against keyword signal
+    8. Fill to count if needed
     """
     num_agents = max(num_agents, MIN_AGENTS)
     print(f"[StakeholderIdentifier] Identifying stakeholders for: {topic} ({num_agents} agents)")
 
-    topic_for_kw, topic_against_kw = await generate_topic_keywords(topic)
+    topic_for_kw, topic_against_kw = await generate_topic_keywords(topic, context=context)
 
     influential = get_most_influential(G, top_n=40)
     orgs = get_nodes_by_type(G, "org")
@@ -575,12 +697,42 @@ async def identify_stakeholders(
         for n in influential[:20]
     ])
 
-    # Inject context into graph_context so stakeholder selection is grounded
     if context:
         graph_context = f"Additional context: {context}\n\n" + graph_context
         print(f"[StakeholderIdentifier] Context injected into graph context")
 
-    raw_stakeholders = await classify_and_position_entities(topic, all_entities, graph_context)
+    # ── Compute signal BEFORE classification ─────────────────────
+    # So we can tell the LLM which stances to find in the entity list.
+    # Prediction: pre-classification injection prevents 0% AGAINST on
+    # lopsided topics by explicitly requesting AGAINST entities first.
+    pre_signal = None
+    if pub_chunks:
+        pre_signal = extract_sentiment_from_chunks(
+            pub_chunks,
+            topic_for_keywords=topic_for_kw,
+            topic_against_keywords=topic_against_kw
+        )
+    elif G_pub is not None:
+        pre_signal = extract_public_sentiment_distribution(
+            G_pub,
+            topic_for_keywords=topic_for_kw,
+            topic_against_keywords=topic_against_kw
+        )
+
+    missing_stances = []
+    if pre_signal:
+        if pre_signal.get("against", 0) > 0.10:
+            missing_stances.append("against")
+        if pre_signal.get("for", 0) > 0.10:
+            missing_stances.append("for")
+        if missing_stances:
+            print(f"[StakeholderIdentifier] Pre-classification: ensuring "
+                  f"stances {missing_stances} are represented")
+
+    raw_stakeholders = await classify_and_position_entities(
+        topic, all_entities, graph_context,
+        missing_stances=missing_stances
+    )
 
     if not raw_stakeholders:
         raw_stakeholders = [
@@ -597,37 +749,36 @@ async def identify_stakeholders(
     for s in raw_stakeholders:
         s["category"] = normalize_category(s.get("category", "civil_society"))
 
-    diverse = enforce_diversity(raw_stakeholders, num_agents)
+    # ── Stance diversity first, then category caps ────────────────
+    # enforce_stance_diversity guarantees 1 FOR, 1 AGAINST, 1 NEUTRAL
+    # before enforce_diversity applies category caps.
+    # This prevents category enforcement from removing the only AGAINST agent.
+    diverse = enforce_stance_diversity(raw_stakeholders)
+    diverse = enforce_diversity(diverse, num_agents)
 
-    # ── Reflexion correction context ──────────────────────────────
+    # ── Correction store — gated by topic relevance ───────────────
     correction_context = get_correction_context(topic)
-    if correction_context:
+    if correction_context and correction_is_relevant(topic, correction_context):
         graph_context = graph_context + "\n\n" + correction_context
+        print(f"[StakeholderIdentifier] Correction store: injecting relevant corrections")
+    elif correction_context:
+        print(f"[StakeholderIdentifier] Correction store: skipped — topic domain mismatch")
 
-    # ── Keyword signal — raw chunks preferred over graph nodes ────
-    # Change 3: if pub_chunks provided, match on raw text.
-    # Otherwise fall back to graph-based extraction.
-    keyword_signal = None
-    if G_pub is not None or pub_chunks:
-        if pub_chunks:
-            # Primary path — raw chunk text matching (Change 3)
-            keyword_signal = extract_sentiment_from_chunks(
-                pub_chunks,
-                topic_for_keywords=topic_for_kw,
-                topic_against_keywords=topic_against_kw
-            )
-            print(f"[StakeholderIdentifier] Using raw chunk text matching "
-                  f"({len(pub_chunks)} chunks)")
-        
-        if keyword_signal is None and G_pub is not None:
-            # Fallback — graph node matching
-            keyword_signal = extract_public_sentiment_distribution(
-                G_pub,
-                topic_for_keywords=topic_for_kw,
-                topic_against_keywords=topic_against_kw
-            )
-            print(f"[StakeholderIdentifier] Fell back to graph node matching")
+    keyword_signal = pre_signal
 
+    if keyword_signal:
+        diverse = await calibrate_distribution(
+            diverse, topic, G_pub, graph_context,
+            topic_for_keywords=topic_for_kw,
+            topic_against_keywords=topic_against_kw,
+            keyword_signal=keyword_signal
+        )
+    elif G_pub is not None:
+        keyword_signal = extract_public_sentiment_distribution(
+            G_pub,
+            topic_for_keywords=topic_for_kw,
+            topic_against_keywords=topic_against_kw
+        )
         if keyword_signal:
             diverse = await calibrate_distribution(
                 diverse, topic, G_pub, graph_context,
@@ -642,13 +793,41 @@ async def identify_stakeholders(
 
     enriched = []
     for s in filled:
-        category = s.get("category", "civil_society")
-        defaults = STAKEHOLDER_CATEGORIES.get(category, STAKEHOLDER_CATEGORIES["civil_society"])
+        category  = s.get("category", "civil_society")
+        defaults  = STAKEHOLDER_CATEGORIES.get(
+            category, STAKEHOLDER_CATEGORIES["civil_society"]
+        )
+        relevance = s.get("relevance_score", 0.75)
+
+        # Bug 4 fix — modulate persuasion resistance by relevance score
+        # Krosnick 1988: issue importance predicts attitude stability.
+        # High relevance = high personal stake = harder to move.
+        # Low relevance = tangential interest = more open to persuasion.
+        #
+        # Formula: multiplier ranges from 0.85 (low relevance) to 1.26 (high)
+        # relevance=0.50 → multiplier 1.08 → mild boost
+        # relevance=0.75 → multiplier 1.19 → moderate entrenchment
+        # relevance=0.90 → multiplier 1.26 → strong entrenchment
+        # Capped at 0.90 to prevent agents from becoming completely immovable.
+        #
+        # Prediction: Thomas Garrett (La Jolla real estate broker, relevance 0.85)
+        # gets resistance 0.40 × 1.23 = 0.49 instead of flat 0.40 — holds firmer.
+        # A low-relevance filler (Rural Community Associations, relevance 0.50)
+        # gets resistance 0.40 × 1.08 = 0.43 — slightly more open.
+        resistance_multiplier  = 0.85 + (relevance * 0.45)
+        modulated_resistance   = round(
+            min(0.90, defaults["persuasion_resistance"] * resistance_multiplier), 2
+        )
+
         enriched.append({
             **s,
-            "persuasion_resistance": defaults["persuasion_resistance"],
-            "influence_weight": defaults["influence_weight"]
+            "persuasion_resistance": modulated_resistance,
+            "influence_weight":      defaults["influence_weight"]
         })
+
+        print(f"[StakeholderIdentifier] {s['name']} — resistance: "
+              f"{defaults['persuasion_resistance']} → {modulated_resistance} "
+              f"(relevance {relevance:.2f})")
 
     final_dist = get_current_distribution(enriched)
     print(f"[StakeholderIdentifier] Final: {len(enriched)} stakeholders — "

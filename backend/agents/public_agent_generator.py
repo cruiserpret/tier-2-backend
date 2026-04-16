@@ -9,9 +9,24 @@ from backend.utils.llm_client import call_llm_json
 from backend.utils.graph_utils import get_most_influential, get_nodes_by_type, query_graph
 import networkx as nx
 
+# ── Standard score ranges ─────────────────────────────────────────
 SCORE_RANGE = {
     "for":     (6.5, 8.0),
     "against": (2.0, 3.5),
+    "neutral": (4.2, 5.8),
+}
+
+# ── Tier 3 compressed score ranges ───────────────────────────────
+# When Tier 3 fires (lopsided topic), minority agents start closer
+# to the neutral zone so they can interact with neutral agents via
+# Deffuant. Without this, minority at 2.0 vs neutral at 4.5 =
+# gap 2.5 which is within threshold — but majority at 7.5 vs
+# minority at 2.0 = gap 5.5 which exceeds threshold entirely.
+# Compressing minority range to 3.0-3.5 ensures debate is possible.
+# Research: Deffuant et al. 2000 — interaction only within threshold.
+TIER3_MINORITY_SCORE_RANGE = {
+    "against": (3.0, 3.5),   # closer to neutral zone
+    "for":     (6.5, 7.0),   # closer to neutral zone
     "neutral": (4.2, 5.8),
 }
 
@@ -55,25 +70,17 @@ def enforce_neutral_cap(
     keyword_signal: dict = None
 ) -> list[dict]:
     """
-    Cap neutral patterns at MAX_NEUTRAL_RATIO of total.
-    
-    Fix 1: Convert excess neutrals toward the direction the keyword
-    signal supports — not toward whichever side currently has fewer
-    patterns. This prevents neutral cap from adding AGAINST agents
-    on topics where the signal clearly shows FOR dominance.
-    
-    Research basis:
-    - Converse 1964: genuine neutrals rare on salient topics
-    - Perez et al. 2022: LLMs over-generate neutrals due to RLHF bias
-    - Fix: use real data signal to determine conversion direction
+    Cap neutral patterns at MAX_NEUTRAL_RATIO.
+    Convert excess toward direction keyword signal supports.
+    Converse 1964, Perez et al. 2022.
     """
     total = len(patterns)
     if total == 0:
         return patterns
 
-    neutral_patterns = [p for p in patterns if p.get("stance") == "neutral"]
-    for_patterns     = [p for p in patterns if p.get("stance") == "for"]
-    against_patterns = [p for p in patterns if p.get("stance") == "against"]
+    neutral_patterns  = [p for p in patterns if p.get("stance") == "neutral"]
+    for_patterns      = [p for p in patterns if p.get("stance") == "for"]
+    against_patterns  = [p for p in patterns if p.get("stance") == "against"]
 
     max_allowed_neutral = max(1, int(total * MAX_NEUTRAL_RATIO))
 
@@ -81,23 +88,19 @@ def enforce_neutral_cap(
         return patterns
 
     excess = len(neutral_patterns) - max_allowed_neutral
-    print(f"[PublicAgentGenerator] Neutral cap: {len(neutral_patterns)} neutral patterns "
-          f"exceeds {MAX_NEUTRAL_RATIO*100:.0f}% cap — converting {excess} to for/against")
+    print(f"[PublicAgentGenerator] Neutral cap: {len(neutral_patterns)} patterns "
+          f"exceeds {MAX_NEUTRAL_RATIO*100:.0f}% cap — converting {excess}")
 
-    to_convert         = neutral_patterns[:excess]
+    to_convert        = neutral_patterns[:excess]
     remaining_neutrals = neutral_patterns[excess:]
 
-    # Fix 1 — use keyword signal to determine conversion direction
-    # If signal shows FOR > AGAINST → convert toward FOR
-    # If signal shows AGAINST > FOR → convert toward AGAINST
-    # If no signal → fall back to balancing pattern counts
     if keyword_signal:
         signal_for     = keyword_signal.get("for", 0.33)
         signal_against = keyword_signal.get("against", 0.33)
         convert_to_for = signal_for >= signal_against
-        print(f"[PublicAgentGenerator] Neutral conversion direction: "
+        print(f"[PublicAgentGenerator] Neutral conversion: "
               f"{'FOR' if convert_to_for else 'AGAINST'} "
-              f"(signal: {signal_for*100:.0f}% for / {signal_against*100:.0f}% against)")
+              f"(signal {signal_for*100:.0f}%/{signal_against*100:.0f}%)")
     else:
         convert_to_for = len(for_patterns) <= len(against_patterns)
 
@@ -123,15 +126,85 @@ def enforce_neutral_cap(
     return converted
 
 
+def derive_affected_population(context: str) -> str:
+    """
+    Derives who is affected by this topic from the context string.
+    Used to constrain public agent demographics to relevant people.
+
+    This is NOT hardcoded — it returns a natural language description
+    that the LLM uses to reason about who to generate.
+    Returns empty string if context provides no population signal.
+
+    Generalizes to any topic:
+    - Campus context → students and campus-adjacent people
+    - Product context → potential users of that product
+    - City context → residents of that city
+    - Industry context → workers in that industry
+    """
+    if not context:
+        return ""
+
+    context_lower = context.lower()
+
+    # Campus / university signals
+    campus_signals = [
+        "ucsd", "university", "campus", "college", "student",
+        "dorm", "dining", "library", "triton", "geisel", "rady",
+        "undergraduate", "graduate", "faculty", "quarter", "finals"
+    ]
+    if any(sig in context_lower for sig in campus_signals):
+        return (
+            "The affected population for this topic is university students, "
+            "graduate students, faculty, and campus-adjacent staff. "
+            "Generate personas who are students (undergrad or grad), "
+            "university employees, or people directly connected to campus life. "
+            "Geography should be the city where this campus is located."
+        )
+
+    # Product / startup signals
+    product_signals = [
+        "product", "app", "tool", "software", "service", "price",
+        "subscription", "users", "customers", "market", "startup",
+        "shopify", "seller", "store", "brand", "ecommerce"
+    ]
+    if any(sig in context_lower for sig in product_signals):
+        return (
+            "The affected population for this topic is potential users or customers "
+            "of this specific product or service. Generate personas who would "
+            "realistically use, buy, or be affected by this product. "
+            "Their profession and lifestyle should make them a plausible user."
+        )
+
+    # Geographic signals — extract city/region for location grounding
+    geo_signals = ["in ", "at ", "near ", "around ", "city of ", "county of "]
+    for sig in geo_signals:
+        if sig in context_lower:
+            return (
+                f"The affected population lives in or near the area described in the context. "
+                f"Generate personas whose location is relevant to this specific situation. "
+                f"Do not generate people from unrelated geographies."
+            )
+
+    # Default: use context as general constraint
+    return (
+        f"Generate personas who are directly affected by the situation described: {context[:200]}. "
+        f"Their age, profession, and location must make sense given this specific context."
+    )
+
+
 async def extract_opinion_patterns(
     topic: str,
     G,
     keyword_signal: dict = None,
-    context: str = ""
-) -> list[dict]:
+    context: str = "",
+    num_agents: int = 10
+) -> tuple[list[dict], int]:
     """
     Extract recurring public opinion patterns from the public sentiment graph.
     Three-tier enforcement based on keyword signal strength.
+
+    Returns (patterns, tier) — tier passed to generate_public_agents
+    for score range selection and agent allocation.
     """
     claims = get_nodes_by_type(G, "claim")
     influential = get_most_influential(G, top_n=15)
@@ -164,11 +237,11 @@ async def extract_opinion_patterns(
             print(f"[PublicAgentGenerator] Tier 1 — moral consensus "
                   f"({dominant*100:.0f}% dominant) — no balance enforcement")
 
-        elif dominant > 0.70 or minority < 0.15:
+        elif dominant > 0.70 or minority <= 0.15:
             tier = 3
             min_for = 1
             min_against = 1
-            reason = "dominant >70%" if dominant > 0.70 else f"minority {minority*100:.0f}% < 15% threshold"
+            reason = "dominant >70%" if dominant > 0.70 else f"minority {minority*100:.0f}% <= 15%"
             print(f"[PublicAgentGenerator] Tier 3 — moderate consensus "
                   f"({for_pct*100:.0f}% for / {against_pct*100:.0f}% against) "
                   f"— {reason} — gentle correction")
@@ -189,10 +262,18 @@ Do NOT generate artificial opposition — it would be factually wrong.
 Generate patterns that reflect the genuine overwhelming majority position."""
 
     elif tier == 3:
-        balance_instruction = """
-MODERATE CONSENSUS: A clear majority position exists but a genuine minority also exists.
-Generate at least 1 pattern representing the minority position.
-Do not force equal balance — reflect the actual distribution."""
+        # P3 fix: make Tier 3 minority size explicit in the prompt
+        minority_signal_pct = int(min(for_pct if against_pct > for_pct else against_pct, 1.0) * 100) if keyword_signal else 15
+        balance_instruction = f"""
+MODERATE CONSENSUS: A clear majority position exists. A genuine minority also exists
+but represents only about {minority_signal_pct}% of real public opinion.
+
+Generate patterns that reflect this asymmetry:
+- The majority position should have 3-5 patterns
+- The minority position should have exactly 1 pattern
+- Do NOT give the minority equal weight — it is genuinely smaller
+- The minority pattern should represent the most common real objection,
+  not a forced contrarian view"""
 
     else:
         balance_instruction = """
@@ -209,18 +290,21 @@ Common silent majorities:
 - Minimum wage: small business owners worried about margins
 - Drug legalization: suburban parents, religious communities
 - UBI: middle-class taxpayers who don't want to fund it
-- 4-day work week: employers in retail, healthcare, manufacturing
 
 Do NOT let online discourse bias you toward generating only FOR patterns."""
 
     context_line = f"\nAdditional context: {context}" if context else ""
+
+    # P1 — derive affected population from context for demographic constraint
+    population_constraint = derive_affected_population(context)
+    population_line = f"\n\nAFFECTED POPULATION: {population_constraint}" if population_constraint else ""
 
     system = """You are analyzing public discourse to identify recurring opinion patterns.
 Extract distinct viewpoint clusters representing how different types of real people think.
 These must be everyday people with lived experience — NOT executives or policy officials.
 Respond in valid JSON only."""
 
-    prompt = f"""Topic: {topic}{context_line}
+    prompt = f"""Topic: {topic}{context_line}{population_line}
 
 Public discourse content:
 Claims and opinions found:
@@ -239,10 +323,12 @@ CORE RULES:
    "32-year-old freelance graphic designer in Chicago who lost 40% of income"
 2. Each demographic must be genuinely different — different age, profession, location
 3. Sample argument must sound like a real Reddit comment — personal, specific, emotional
+4. If AFFECTED POPULATION is specified above — ALL demographics must fit that population.
+   Do not generate people outside the affected population.
 
 NEUTRAL PATTERNS — STRICT DEFINITION (Converse 1964):
 A neutral pattern is ONLY valid if the person has GENUINELY CONFLICTING personal interests.
-Valid: A pharmacist who supports access but fears losing prescription revenue.
+Valid: A campus pharmacist who wants extended hours but fears security issues.
 Invalid: Someone who "sees both sides" or wants "a balanced approach".
 
 Respond in this exact JSON format:
@@ -283,13 +369,15 @@ Respond in this exact JSON format:
             if needs_more_against:
                 missing.append(f"against (need {min_against}, have {against_count})")
 
-            print(f"[PublicAgentGenerator] Tier {tier} minimum not met: {missing} — requesting additional patterns")
+            print(f"[PublicAgentGenerator] Tier {tier} minimum not met: {missing} — requesting")
 
             balance_prompt = f"""Topic: "{topic}"
+{f'Context: {context}' if context else ''}
+{f'Affected population: {population_constraint}' if population_constraint else ''}
 Current patterns: {for_count} for / {against_count} against / {neutral_count} neutral
 Need additional: {', '.join(missing)}
 
-Generate the missing patterns. Focus on demographics UNDERREPRESENTED in online discourse.
+Generate the missing patterns. Must fit the affected population if specified.
 
 {{"patterns": [
     {{
@@ -308,11 +396,10 @@ Generate the missing patterns. Focus on demographics UNDERREPRESENTED in online 
                 balance_parsed = safe_parse_json(balance_result)
                 additional = balance_parsed.get("patterns", [])
                 patterns.extend(additional)
-                print(f"[PublicAgentGenerator] Added {len(additional)} patterns to meet Tier {tier} minimums")
+                print(f"[PublicAgentGenerator] Added {len(additional)} patterns")
             except Exception as e:
                 print(f"[PublicAgentGenerator] Balance correction error: {e}")
 
-        # Fix 1 — pass keyword_signal so neutral cap converts in correct direction
         patterns = enforce_neutral_cap(patterns, keyword_signal=keyword_signal)
 
         final_for     = sum(1 for p in patterns if p.get("stance") == "for")
@@ -321,11 +408,11 @@ Generate the missing patterns. Focus on demographics UNDERREPRESENTED in online 
         print(f"[PublicAgentGenerator] Final patterns: "
               f"{final_for} for / {final_against} against / {final_neutral} neutral")
 
-        return patterns
+        return patterns, tier
 
     except Exception as e:
         print(f"[PublicAgentGenerator] Pattern extraction error: {e}")
-        return []
+        return [], tier
 
 
 async def generate_public_agent(
@@ -335,13 +422,27 @@ async def generate_public_agent(
     existing_names: list[str],
     existing_personas: list[dict],
     G,
-    context: str = ""
+    context: str = "",
+    tier: int = 2,
+    is_minority: bool = False
 ) -> dict:
-    """Generate a demographic agent grounded in a real public opinion pattern."""
-    stance = pattern.get("stance", "neutral")
-    score_range = SCORE_RANGE.get(stance, (4.2, 5.8))
-    emotional_intensity = pattern.get("emotional_intensity", "medium")
+    """
+    Generate a demographic agent grounded in a real public opinion pattern.
 
+    P1: context drives demographic constraints via derive_affected_population.
+    P3: minority agents in Tier 3 use compressed score range for debate interaction.
+    """
+    stance = pattern.get("stance", "neutral")
+
+    # P3 — Tier 3 minority agents use compressed score range
+    # so they are within Deffuant threshold of neutral agents
+    if tier == 3 and is_minority and stance in TIER3_MINORITY_SCORE_RANGE:
+        score_range = TIER3_MINORITY_SCORE_RANGE[stance]
+        print(f"[PublicAgentGenerator] Tier 3 minority range: {stance} → {score_range}")
+    else:
+        score_range = SCORE_RANGE.get(stance, (4.2, 5.8))
+
+    emotional_intensity = pattern.get("emotional_intensity", "medium")
     existing_names_str = ", ".join(existing_names) if existing_names else "none"
 
     existing_demographics_str = "\n".join([
@@ -356,7 +457,13 @@ async def generate_public_agent(
         for e in evidence
     ])
 
-    context_line = f"\nAdditional context about this topic: {context}" if context else ""
+    # P1 — derive affected population constraint from context
+    population_constraint = derive_affected_population(context)
+    context_line = f"\nAdditional context: {context}" if context else ""
+    population_line = (
+        f"\n\nCRITICAL — AFFECTED POPULATION: {population_constraint}"
+        if population_constraint else ""
+    )
 
     system = """You are generating a realistic everyday person for a debate simulation.
 This is NOT a CEO, academic, or policy official.
@@ -366,7 +473,7 @@ Respond in valid JSON only."""
 
     prompt = f"""Generate a realistic public persona for this debate.
 
-Topic: {topic}{context_line}
+Topic: {topic}{context_line}{population_line}
 
 This person represents: {pattern['demographic']}
 Their core belief: {pattern['core_belief']}
@@ -375,28 +482,31 @@ Emotional intensity: {emotional_intensity}
 Their stance: {stance}
 How they actually talk about this: {pattern['sample_argument']}
 
-Relevant context:
+Relevant context from real sources:
 {evidence_context}
 
 Names already used (do not repeat): {existing_names_str}
 
-CRITICAL — Demographics already used (generate someone genuinely different):
+Demographics already used (generate someone genuinely different):
 {existing_demographics_str}
 
 Respond in this exact JSON format:
 {{
     "name": "realistic full name",
     "age": 34,
-    "profession": "specific job title — different from all existing personas above",
-    "location": "city, state/country — different from all existing personas above",
+    "profession": "specific job title",
+    "location": "city, state/country",
     "persona": "2-3 sentences — their specific life situation and experience",
     "initial_opinion": "their opinion in 2 sentences — first person, emotional, specific",
     "key_beliefs": ["personal belief from lived experience 1", "personal belief 2"],
-    "known_entities": ["relevant topic they personally encountered"]
+    "known_entities": ["relevant entity they personally encountered"]
 }}
 
 Rules:
 - Regular person only — no executives, academics, politicians
+- If AFFECTED POPULATION is specified above — this person MUST belong to that population.
+  A UCSD campus question must generate a student, campus employee, or San Diego resident.
+  A product question must generate a plausible user of that product.
 - Must be genuinely different from all existing demographics listed above
 - initial_opinion must sound like a real person talking, NOT a policy statement
 - Name must not be in: {existing_names_str}"""
@@ -415,6 +525,20 @@ Rules:
         intensity_resistance = {"high": 0.45, "medium": 0.35, "low": 0.25}
         persuasion_resistance = intensity_resistance.get(emotional_intensity, 0.35)
 
+        # P8 — influence_weight scales with emotional intensity
+        # Kelman 1958: identification-based influence scales with source conviction.
+        # A highly passionate person moves others more than a mildly interested one.
+        # Generalizes to every topic — not campus specific.
+        intensity_influence = {"high": 0.60, "medium": 0.40, "low": 0.25}
+        influence_weight = intensity_influence.get(emotional_intensity, 0.40)
+
+        # Dynamic confirmation bias — scales with emotional intensity
+        # Kelman 1958: people who have deeply lived an experience
+        # are significantly more resistant to abstract counter-arguments.
+        # High intensity = high confirmation bias = very hard to shift.
+        intensity_bias = {"high": 0.60, "medium": 0.45, "low": 0.25}
+        confirmation_bias = intensity_bias.get(emotional_intensity, 0.45)
+
         return {
             "id": f"agent_{uuid.uuid4().hex[:8]}",
             "name": persona.get("name", f"Public Agent {agent_index}"),
@@ -432,9 +556,9 @@ Rules:
             "opinion_delta": 0.0,
             "key_beliefs": persona.get("key_beliefs", []),
             "persuasion_resistance": persuasion_resistance,
-            "influence_weight": 0.40,
+            "influence_weight": influence_weight,
             "known_entities": persona.get("known_entities", []),
-            "confirmation_bias": 0.45,
+            "confirmation_bias": confirmation_bias,
             "emotional_intensity": emotional_intensity,
             "attacks_received": 0,
             "last_argument": "",
@@ -453,23 +577,64 @@ async def generate_public_agents(
     keyword_signal: dict = None,
     context: str = ""
 ) -> list[dict]:
-    """Main function — extract opinion patterns and generate public demographic agents."""
+    """
+    Main function — extract opinion patterns and generate public demographic agents.
+
+    P2 + P9: Uses signal-proportional agent allocation instead of LLM-assigned
+    prevalence weighting. Each stance gets agents proportional to its signal share.
+    This prevents minority stances from getting disproportionate slots AND
+    eliminates the online-volume bias in LLM prevalence assignments.
+
+    Example: signal 36% FOR / 8% AGAINST / 3 FOR patterns / 1 AGAINST pattern
+    Signal-proportional weights: each FOR pattern = 0.36/3 = 0.12, AGAINST = 0.08
+    Result: 5 FOR agents + 1 AGAINST agent out of 6 = 83%/17% (vs 8% signal)
+    Much closer than equal-weight allocation which gives 67%/33%.
+    """
     print(f"[PublicAgentGenerator] Generating {num_agents} public agents for: {topic}")
 
-    patterns = await extract_opinion_patterns(
+    patterns, tier = await extract_opinion_patterns(
         topic, G,
         keyword_signal=keyword_signal,
-        context=context
+        context=context,
+        num_agents=num_agents
     )
 
     if not patterns:
         print("[PublicAgentGenerator] No patterns found — skipping public agents")
         return []
 
-    prevalence_weight = {"high": 3, "medium": 2, "low": 1}
-    weights = [prevalence_weight.get(p.get("prevalence", "medium"), 2) for p in patterns]
-    total_weight = sum(weights)
+    # ── P2 + P9: Signal-proportional agent allocation ─────────────
+    # Replace LLM prevalence weighting with signal-driven weighting.
+    # Distributes agents proportional to real stance signal, not
+    # online volume which oversamples vocal minorities.
+    if keyword_signal:
+        stance_signal = {
+            "for":     keyword_signal.get("for", 0.33),
+            "against": keyword_signal.get("against", 0.33),
+            "neutral": keyword_signal.get("neutral", 0.33),
+        }
+        # Count patterns per stance to distribute signal evenly within stance
+        stance_counts = {}
+        for p in patterns:
+            s = p.get("stance", "neutral")
+            stance_counts[s] = stance_counts.get(s, 0) + 1
 
+        weights = []
+        for p in patterns:
+            s = p.get("stance", "neutral")
+            # Weight = signal_for_stance / num_patterns_of_that_stance
+            w = stance_signal.get(s, 0.33) / max(stance_counts.get(s, 1), 1)
+            weights.append(w)
+
+        print(f"[PublicAgentGenerator] Signal-proportional weights: "
+              f"FOR={stance_signal['for']:.2f} "
+              f"AGAINST={stance_signal['against']:.2f} "
+              f"NEUTRAL={stance_signal['neutral']:.2f}")
+    else:
+        # No signal — equal weighting (safer than LLM prevalence bias)
+        weights = [1.0 for _ in patterns]
+
+    total_weight = sum(weights)
     agent_counts = [
         max(1, round(num_agents * w / total_weight))
         for w in weights
@@ -480,11 +645,20 @@ async def generate_public_agents(
     while sum(agent_counts) < num_agents:
         agent_counts[agent_counts.index(min(agent_counts))] += 1
 
+    # Determine minority stance for Tier 3 score compression (P3)
+    minority_stance = None
+    if tier == 3 and keyword_signal:
+        for_pct     = keyword_signal.get("for", 0.5)
+        against_pct = keyword_signal.get("against", 0.5)
+        minority_stance = "against" if for_pct >= against_pct else "for"
+
     existing_names = []
     existing_personas = []
     all_agents = []
 
     for pattern, count in zip(patterns, agent_counts):
+        is_minority = (tier == 3 and pattern.get("stance") == minority_stance)
+
         for i in range(count):
             agent = await generate_public_agent(
                 topic=topic,
@@ -493,7 +667,9 @@ async def generate_public_agents(
                 existing_names=existing_names.copy(),
                 existing_personas=existing_personas.copy(),
                 G=G,
-                context=context
+                context=context,
+                tier=tier,
+                is_minority=is_minority
             )
             if agent:
                 existing_names.append(agent["name"])

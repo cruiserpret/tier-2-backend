@@ -25,12 +25,31 @@ def safe_parse(raw: str) -> dict:
             pass
     return {}
 
-async def classify_topic_primary(topic: str) -> dict:
+async def classify_topic_primary(topic: str, context: str = "") -> dict:
+    """
+    P5: Context is now passed into the primary classifier.
+    The inst/pub split is decided with full information — not just
+    the topic string. Context about who is affected directly informs
+    personal_impact and emotional_salience scores.
+    """
     system = """You are an expert at understanding who drives public debates.
 Rate this topic on 5 dimensions to determine the institutional/public split.
 Respond in valid JSON only."""
 
-    prompt = f"""Rate this debate topic on 5 dimensions: "{topic}"
+    # P5 — build context line for the classifier prompt
+    context_section = ""
+    if context:
+        context_section = f"""
+
+ADDITIONAL CONTEXT PROVIDED:
+"{context}"
+
+Use this context to better understand who is directly affected by this topic.
+If the context describes students, specific communities, or product users —
+these are the primary affected population and should raise personal_impact
+and emotional_salience scores accordingly."""
+
+    prompt = f"""Rate this debate topic on 5 dimensions: "{topic}"{context_section}
 
 For each dimension, give a score from 0.0 to 1.0:
 
@@ -59,25 +78,28 @@ For each dimension, give a score from 0.0 to 1.0:
    0 = ordinary people's lived experience is the primary evidence
    1 = requires specialized knowledge — economists, lawyers, scientists only
 
-CALIBRATION EXAMPLES — use these to anchor your scores:
+CALIBRATION EXAMPLES:
 
 National policy:
 - "Should the Fed raise interest rates" → personal_impact: 0.2, emotional_salience: 0.1, institutional_decision: 0.95, public_discourse: 0.1, expert_dominance: 0.95
 - "Should abortion be legal" → personal_impact: 0.95, emotional_salience: 0.98, institutional_decision: 0.4, public_discourse: 0.95, expert_dominance: 0.1
 - "Should AI be regulated" → personal_impact: 0.5, emotional_salience: 0.4, institutional_decision: 0.8, public_discourse: 0.5, expert_dominance: 0.7
 
-CAMPUS QUALITY-OF-LIFE QUESTIONS — these are student-driven, not admin-driven:
+CAMPUS QUALITY-OF-LIFE QUESTIONS — student-driven, not admin-driven:
 - "Should Geisel library be open 24/7" → personal_impact: 0.85, emotional_salience: 0.75, institutional_decision: 0.55, public_discourse: 0.80, expert_dominance: 0.10
 - "Should UCSD extend dining hall hours" → personal_impact: 0.80, emotional_salience: 0.70, institutional_decision: 0.55, public_discourse: 0.75, expert_dominance: 0.10
 - "Should UCSD increase mental health funding" → personal_impact: 0.90, emotional_salience: 0.85, institutional_decision: 0.50, public_discourse: 0.80, expert_dominance: 0.15
 
 KEY INSIGHT FOR CAMPUS QUESTIONS:
-Although university administrators make the final call, campus quality-of-life
-questions are PRIMARILY driven by student lived experience. Students are the
-affected population — not a secondary audience. personal_impact and
+Although administrators make the final call, campus quality-of-life questions
+are PRIMARILY driven by student lived experience. personal_impact and
 emotional_salience should reflect student daily reality, not institutional complexity.
-"Should library be open 24/7?" is as personally salient to a student during finals
-week as "Should minimum wage increase?" is to a low-wage worker.
+
+KEY INSIGHT FOR CONTEXT:
+If context describes a specific affected population (students, specific users,
+specific community), raise personal_impact to reflect their direct stake.
+The question "who is most affected?" should guide your scores, not
+"who has formal decision-making power?"
 
 Respond in this exact JSON format:
 {{
@@ -127,16 +149,19 @@ Respond in this exact JSON format:
         return {"public_score": 0.4, "dimensions": {}, "reasoning": "Error", "key_actors": "Unknown"}
 
 
-async def critique_classification(topic: str, primary: dict) -> float:
+async def critique_classification(topic: str, primary: dict, context: str = "") -> float:
+    """Judge reviewer — only intervenes when clearly wrong."""
     system = """You are an impartial judge reviewing a topic classification.
 Your default position is to CONFIRM the classification unless it is clearly wrong.
 You are NOT looking for flaws — you are asking if the score is reasonable.
 Respond in valid JSON only."""
 
     dims = primary.get("dimensions", {})
+    context_line = f'\nContext: "{context}"' if context else ""
+
     prompt = f"""Review this topic classification as an impartial judge.
 
-Topic: "{topic}"
+Topic: "{topic}"{context_line}
 
 Classification to review:
 - public_score: {primary['public_score']} (0=purely institutional, 1=purely public)
@@ -148,19 +173,19 @@ Classification to review:
 - reasoning: {primary.get('reasoning', '')}
 
 Your job as judge:
-1. Ask yourself: "Is this public_score reasonable for this topic?"
-2. If yes — confirm it. Do not change it just because you might score it slightly differently.
+1. Ask yourself: "Is this public_score reasonable for this topic and context?"
+2. If yes — confirm it. Do not change for minor disagreements.
 3. Only intervene if the score is CLEARLY wrong by more than 0.20 points.
 
 HIGH BAR FOR INTERVENTION — only correct if one of these is true:
-- The topic is clearly institutional but scored above 0.7 (e.g. Fed interest rates at 0.8)
-- The topic is clearly public but scored below 0.3 (e.g. abortion rights at 0.2)
-- A campus quality-of-life question scored below 0.50 — these directly affect
-  students' daily lives and should always score at least 0.50
+- The topic is clearly institutional but scored above 0.7
+- The topic is clearly public but scored below 0.3
+- A campus quality-of-life question scored below 0.50
+- Context clearly indicates a highly affected population but personal_impact < 0.6
 - A critical dimension is obviously wrong
 
 DO NOT correct for:
-- Minor disagreements (you'd score 0.65, it scored 0.68 — that's fine)
+- Minor disagreements
 - Stylistic differences in reasoning
 - Emotional salience on economic topics — high salience does NOT always mean high public score
 
@@ -193,12 +218,18 @@ Respond in this exact JSON format:
         return primary["public_score"]
 
 
-async def classify_topic(topic: str) -> dict:
+async def classify_topic(topic: str, context: str = "") -> dict:
+    """
+    Main classifier with continuous spectrum + reflection.
+    P5: context now flows through both primary and judge calls.
+    """
     print(f"[TopicClassifier] Classifying: {topic}")
+    if context:
+        print(f"[TopicClassifier] Context: {context[:80]}...")
 
-    primary = await classify_topic_primary(topic)
+    primary = await classify_topic_primary(topic, context=context)
     original_score = primary["public_score"]
-    final_score = await critique_classification(topic, primary)
+    final_score = await critique_classification(topic, primary, context=context)
     inst_ratio, pub_ratio = calculate_split(final_score)
 
     if final_score < 0.35:

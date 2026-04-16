@@ -241,19 +241,19 @@ async def ingest(
     pdf_paths: list[str] = [],
     context: str = ""
 ) -> tuple[list[dict], list[dict]]:
-    """
-    Main ingestion function.
-    context — optional additional information about the topic.
-              For UCSD questions: "This is a UCSD campus policy question"
-              For startups: product description, price point, target user
-    Returns (institutional_chunks, public_chunks).
-    """
     inst_queries = build_institutional_queries(topic, context)
-    pub_queries = build_public_queries(topic, context)
+    pub_queries  = build_public_queries(topic, context)
     domain_boost = get_domain_boost(topic, context)
 
-    # Domain boost applies to public queries — that's where local discourse lives
-    inst_tasks = [search_web(q, num_results=8) for q in inst_queries]
+    # Fix 2 — institutional queries also get domain boost on UCSD/campus topics
+    # This ensures the institutional graph captures admin/operational perspectives
+    # from UCSD-specific sources, not just generic university articles.
+    # Domain boost on institutional is lighter — we still want broad institutional
+    # coverage, so we only boost (not restrict) to UCSD sources.
+    inst_tasks = [
+        search_web(q, num_results=8, domain_boost=domain_boost if domain_boost else None)
+        for q in inst_queries
+    ]
     pub_tasks = [
         search_web(q, num_results=10, domain_boost=domain_boost if domain_boost else None)
         for q in pub_queries
@@ -263,10 +263,10 @@ async def ingest(
     all_results = await asyncio.gather(*inst_tasks, *pub_tasks, *pdf_tasks)
 
     num_inst = len(inst_tasks)
-    num_pub = len(pub_tasks)
+    num_pub  = len(pub_tasks)
 
-    inst_raw = all_results[:num_inst]
-    pub_raw = all_results[num_inst:num_inst + num_pub]
+    inst_raw    = all_results[:num_inst]
+    pub_raw     = all_results[num_inst:num_inst + num_pub]
     pdf_results = all_results[num_inst + num_pub:]
 
     seen_inst = set()
@@ -280,8 +280,10 @@ async def ingest(
     print(f"[Ingestor] {len(inst_chunks)} institutional chunks | {len(pub_chunks)} public chunks for: {topic}")
     if context:
         print(f"[Ingestor] Context used: {context[:80]}...")
+    if domain_boost:
+        print(f"[Ingestor] Domain boost applied to both inst + public queries")
 
-    forum_chunks = sum(1 for c in pub_chunks if c.get("is_forum", False))
+    forum_chunks   = sum(1 for c in pub_chunks if c.get("is_forum", False))
     high_sentiment = sum(1 for c in pub_chunks if c.get("sentiment_strength", 0) > 0.3)
     print(f"[Ingestor] Forum chunks (Reddit/Quora): {forum_chunks}/{len(pub_chunks)}")
     print(f"[Ingestor] High sentiment signal chunks: {high_sentiment}/{len(pub_chunks)}")
