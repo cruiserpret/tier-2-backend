@@ -6,4 +6,5 @@ networkx
 pymupdf
 python-dotenv
 tavily-python
-pydanticgunicorn
+pydantic
+gunicorn
