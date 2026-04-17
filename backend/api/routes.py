@@ -1,6 +1,7 @@
 import asyncio
 import uuid
 import json
+import pathlib
 from flask import Blueprint, request, jsonify
 import sys
 import os
@@ -14,8 +15,28 @@ from backend.agents.stakeholder_identifier import identify_stakeholders
 
 api = Blueprint("api", __name__)
 
+# ── Tier 1 in-memory store ────────────────────────────────────────
 simulations = {}
 
+# ── Tier 2 persistence ───────────────────────────────────────────
+SIM_STORE = pathlib.Path("/tmp/dtc_simulations.json")
+
+def _load_dtc_sims():
+    try:
+        return json.loads(SIM_STORE.read_text())
+    except Exception:
+        return {}
+
+def _save_dtc_sims():
+    try:
+        SIM_STORE.write_text(json.dumps(dtc_simulations, default=str))
+    except Exception as e:
+        print(f"[API] Failed to persist simulations: {e}")
+
+# Load on startup
+dtc_simulations = _load_dtc_sims()
+
+# ── Harmful topic guard ───────────────────────────────────────────
 BLOCKED_TERMS = [
     "rape", "sexual assault", "child abuse", "pedophilia", "child porn",
     "child sexual", "molest", "genocide", "ethnic cleansing",
@@ -23,9 +44,6 @@ BLOCKED_TERMS = [
     "mass shooting how", "school shooting", "bomb making",
 ]
 
-# ── Human-readable error messages ────────────────────────────────
-# Maps internal failure causes to messages users actually understand.
-# Shown in the frontend when status="failed".
 ERROR_MESSAGES = {
     "thin_data": "We couldn't find enough real-world data on this topic. Try a broader or more well-known question.",
     "no_agents": "Assembly couldn't generate stakeholders for this topic. Try rephrasing your question or adding more context.",
@@ -41,28 +59,19 @@ def is_harmful_topic(topic: str) -> bool:
     return False
 
 def classify_error(error: Exception, context: dict = None) -> str:
-    """
-    Map an exception to a human-readable error category.
-    Returns a key from ERROR_MESSAGES.
-    """
     error_str = str(error).lower()
-
     if "division by zero" in error_str or "zerodivision" in error_str:
         return "no_agents"
-
     if "list index out of range" in error_str or "index out of range" in error_str:
         return "no_agents"
-
     if context:
         inst_chunks = context.get("inst_chunks", 1)
         pub_chunks  = context.get("pub_chunks", 1)
         if inst_chunks < 5 and pub_chunks < 5:
             return "thin_data"
-
         total_agents = context.get("total_agents", 1)
         if total_agents == 0:
             return "no_agents"
-
     return "generic"
 
 
@@ -80,11 +89,15 @@ def run_async(coro):
 
 import threading
 
+# ══════════════════════════════════════════════════════════════════
+# TIER 1 ROUTES
+# ══════════════════════════════════════════════════════════════════
+
 @api.route("/api/simulation/start", methods=["POST"])
 def start_simulation():
     try:
         body = request.get_json()
-        topic     = body.get("topic")
+        topic      = body.get("topic")
         num_agents = body.get("num_agents", 10)
         num_rounds = body.get("num_rounds", 3)
         pdf_paths  = body.get("uploads", [])
@@ -115,13 +128,11 @@ def start_simulation():
 
         def run_simulation():
             error_context = {}
-
             try:
                 print(f"\n[API] Starting simulation {simulation_id} on: {topic}")
                 if context:
                     print(f"[API] Context provided: {context[:100]}...")
 
-                # Step 1 — Classify topic
                 from backend.agents.topic_classifier import classify_topic
                 classification = run_async(classify_topic(topic, context=context))
 
@@ -129,12 +140,8 @@ def start_simulation():
                 pub_count  = num_agents - inst_count
                 print(f"[API] Agent split: {inst_count} institutional, {pub_count} public")
 
-                # Step 2 — Ingest
                 inst_chunks, pub_chunks = run_async(ingest(topic, pdf_paths, context=context))
 
-                # ── Thin data guard ───────────────────────────────
-                # If Tavily finds almost nothing, fail early with a
-                # clean message instead of crashing downstream.
                 error_context["inst_chunks"] = len(inst_chunks)
                 error_context["pub_chunks"]  = len(pub_chunks)
 
@@ -145,12 +152,10 @@ def start_simulation():
                     simulations[simulation_id]["error_message"] = ERROR_MESSAGES["thin_data"]
                     return
 
-                # Step 3 — Build graphs
                 G_inst = run_async(build_graph(inst_chunks, graph_source="institutional"))
                 G_pub  = run_async(build_graph(pub_chunks, graph_source="public")) if pub_chunks else G_inst
                 graph_summary = get_graph_summary(G_inst)
 
-                # Step 4 — Identify stakeholders
                 from backend.agents.stakeholder_identifier import identify_stakeholders
                 stakeholders, keyword_signal = run_async(identify_stakeholders(
                     topic, G_inst, inst_count, G_pub,
@@ -163,7 +168,6 @@ def start_simulation():
                     context=context
                 ))
 
-                # Step 5 — Public agents
                 from backend.agents.public_agent_generator import generate_public_agents
                 pub_agents = run_async(generate_public_agents(
                     topic, G_pub, pub_count,
@@ -171,20 +175,15 @@ def start_simulation():
                     context=context
                 ))
 
-                # Step 6 — Tag graph type
                 for a in inst_agents:
                     a["graph_type"] = "institutional"
                 for a in pub_agents:
                     a["graph_type"] = "public"
 
-                # Step 7 — Merge
                 all_agents = inst_agents + pub_agents
                 error_context["total_agents"] = len(all_agents)
                 print(f"[API] Total agents: {len(all_agents)} ({len(inst_agents)} institutional, {len(pub_agents)} public)")
 
-                # ── Zero agents guard ─────────────────────────────
-                # If no agents were generated the debate will crash.
-                # Fail cleanly here instead.
                 if len(all_agents) == 0:
                     print(f"[API] Zero agents generated — failing cleanly")
                     simulations[simulation_id]["status"] = "failed"
@@ -192,10 +191,8 @@ def start_simulation():
                     simulations[simulation_id]["error_message"] = ERROR_MESSAGES["no_agents"]
                     return
 
-                # Step 8 — Debate
                 debate_result = run_async(run_debate(topic, all_agents, G_inst, num_rounds, G_pub))
 
-                # Step 9 — Report
                 report = run_async(generate_report(
                     topic=topic,
                     simulation_id=simulation_id,
@@ -219,7 +216,6 @@ def start_simulation():
                 import traceback
                 print(f"[API] Simulation {simulation_id} failed: {e}")
                 traceback.print_exc()
-
                 error_key = classify_error(e, error_context)
                 simulations[simulation_id]["status"] = "failed"
                 simulations[simulation_id]["error"] = error_key
@@ -245,7 +241,6 @@ def get_simulation_status(simulation_id):
     sim = simulations.get(simulation_id)
     if not sim:
         return jsonify({"error": "simulation not found"}), 404
-
     return jsonify({
         "simulation_id": simulation_id,
         "status": sim["status"],
@@ -260,7 +255,6 @@ def get_debate(simulation_id):
     sim = simulations.get(simulation_id)
     if not sim:
         return jsonify({"error": "simulation not found"}), 404
-
     return jsonify({
         "simulation_id": simulation_id,
         "rounds": sim["rounds"]
@@ -306,17 +300,13 @@ def inject_event():
         body = request.get_json()
         simulation_id = body.get("simulation_id")
         event = body.get("event")
-
         sim = simulations.get(simulation_id)
         if not sim:
             return jsonify({"error": "simulation not found"}), 404
-
         if not event:
             return jsonify({"error": "event is required"}), 400
-
         final_agents = sim["final_agents"]
         current_tick = len(sim["rounds"]) + 1
-
         reactions = []
         for agent in final_agents:
             reactions.append({
@@ -327,12 +317,7 @@ def inject_event():
                 "delta": 0.0,
                 "shifted": False
             })
-
-        return jsonify({
-            "injected_at_tick": current_tick,
-            "reactions": reactions
-        }), 200
-
+        return jsonify({"injected_at_tick": current_tick, "reactions": reactions}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -343,15 +328,12 @@ def branch_simulation():
         body = request.get_json()
         simulation_id = body.get("simulation_id")
         from_tick = body.get("from_tick")
-
         sim = simulations.get(simulation_id)
         if not sim:
             return jsonify({"error": "simulation not found"}), 404
-
         branch_id = f"branch_{uuid.uuid4().hex[:8]}"
         branched_rounds = sim["rounds"][:from_tick]
         branched_agents = branched_rounds[-1]["agents"] if branched_rounds else []
-
         simulations[branch_id] = {
             "simulation_id": branch_id,
             "topic": sim["topic"],
@@ -363,14 +345,12 @@ def branch_simulation():
             "branched_at_tick": from_tick,
             "report": {}
         }
-
         return jsonify({
             "branch_id": branch_id,
             "parent_simulation_id": simulation_id,
             "branched_at_tick": from_tick,
             "status": "running"
         }), 200
-
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -380,7 +360,6 @@ def get_report(simulation_id):
     sim = simulations.get(simulation_id)
     if not sim:
         return jsonify({"error": "simulation not found"}), 404
-
     return jsonify(sim["report"]), 200
 
 
@@ -389,7 +368,6 @@ def get_sentiment_history(simulation_id):
     sim = simulations.get(simulation_id)
     if not sim:
         return jsonify({"error": "simulation not found"}), 404
-
     return jsonify(
         sim["report"].get("sentiment_history", {
             "simulation_id": simulation_id,
@@ -403,27 +381,21 @@ def store_prediction_correction():
     try:
         from backend.agents.correction_store import store_correction
         body = request.get_json()
-
         topic      = body.get("topic")
         predicted  = body.get("predicted")
         actual     = body.get("actual")
         root_cause = body.get("root_cause", "")
-
         if not all([topic, predicted, actual]):
             return jsonify({"error": "topic, predicted, and actual are required"}), 400
-
         store_correction(topic, predicted, actual, root_cause)
         return jsonify({"status": "stored", "topic": topic}), 200
-
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
 
 # ══════════════════════════════════════════════════════════════════
 # TIER 2 DTC ROUTES
 # ══════════════════════════════════════════════════════════════════
-
-dtc_simulations = {}
-
 
 def _parse_dtc_body(body: dict) -> dict:
     errors = []
@@ -473,6 +445,8 @@ def dtc_start_simulation():
             "product_name": parsed["product_name"], "price": parsed["price"],
             "agents_created": 0, "rounds": [], "report": {}, "error": None,
         }
+        _save_dtc_sims()
+
         def run_dtc_pipeline():
             try:
                 from backend.dtc.dtc_ingestor import run_market_ingestion, ProductBrief
@@ -486,23 +460,35 @@ def dtc_start_simulation():
                 )
                 num_agents = max(4, min(12, parsed["num_agents"]))
                 print(f"\n[API] DTC simulation {simulation_id} starting: {product.name}")
+
                 intel = run_async(run_market_ingestion(product, num_agents))
                 dtc_simulations[simulation_id]["intel_complete"] = True
+                _save_dtc_sims()
+
                 agents = run_async(generate_buyer_personas(intel, num_agents))
                 dtc_simulations[simulation_id]["agents_created"] = len(agents)
+                _save_dtc_sims()
+
                 debate = run_async(run_market_debate(agents, intel, simulation_id))
                 dtc_simulations[simulation_id]["rounds"] = [
                     {"round": r.round, "agents": r.agents} for r in debate.rounds
                 ]
+                _save_dtc_sims()
+
                 report = run_async(generate_market_report(intel, debate, simulation_id))
                 dtc_simulations[simulation_id]["report"] = report
                 dtc_simulations[simulation_id]["status"] = "complete"
+                _save_dtc_sims()
+
                 print(f"[API] DTC simulation {simulation_id} complete")
+
             except Exception as e:
                 import traceback
                 traceback.print_exc()
                 dtc_simulations[simulation_id]["status"] = "failed"
                 dtc_simulations[simulation_id]["error"] = str(e)
+                _save_dtc_sims()
+
         threading.Thread(target=run_dtc_pipeline, daemon=True).start()
         return jsonify({"simulation_id": simulation_id, "status": "running",
                         "message": f"DTC simulation started for {parsed['product_name']}"}), 200
