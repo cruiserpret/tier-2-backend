@@ -417,3 +417,130 @@ def store_prediction_correction():
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+# ══════════════════════════════════════════════════════════════════
+# TIER 2 DTC ROUTES
+# ══════════════════════════════════════════════════════════════════
+
+dtc_simulations = {}
+
+
+def _parse_dtc_body(body: dict) -> dict:
+    errors = []
+    product_name = body.get("product_name", "").strip()
+    if not product_name:
+        errors.append("product_name is required")
+    description = body.get("product_description", "").strip()
+    if not description:
+        errors.append("product_description is required")
+    try:
+        price = float(body.get("price", 0))
+        if price <= 0:
+            errors.append("price must be greater than 0")
+    except (TypeError, ValueError):
+        errors.append("price must be a number")
+        price = 0.0
+    if errors:
+        return {"errors": errors}
+    raw_competitors = body.get("competitors", [])
+    competitors = []
+    for c in raw_competitors:
+        if isinstance(c, str) and c.strip():
+            competitors.append({"name": c.strip(), "asin": ""})
+        elif isinstance(c, dict) and c.get("name", "").strip():
+            competitors.append({"name": c.get("name", "").strip(), "asin": c.get("asin", "").strip()})
+    return {
+        "product_name": product_name, "description": description,
+        "price": price, "category": body.get("category", "general"),
+        "demographic": body.get("demographic", ""),
+        "competitors": competitors, "num_agents": int(body.get("num_agents", 6)),
+        "errors": [],
+    }
+
+
+@api.route("/api/dtc/simulation/start", methods=["POST"])
+def dtc_start_simulation():
+    try:
+        body = request.get_json()
+        if not body:
+            return jsonify({"error": "Request body required"}), 400
+        parsed = _parse_dtc_body(body)
+        if parsed.get("errors"):
+            return jsonify({"error": " | ".join(parsed["errors"])}), 400
+        simulation_id = f"sim_dtc_{uuid.uuid4().hex[:8]}"
+        dtc_simulations[simulation_id] = {
+            "simulation_id": simulation_id, "status": "running",
+            "product_name": parsed["product_name"], "price": parsed["price"],
+            "agents_created": 0, "rounds": [], "report": {}, "error": None,
+        }
+        def run_dtc_pipeline():
+            try:
+                from backend.dtc.dtc_ingestor import run_market_ingestion, ProductBrief
+                from backend.dtc.buyer_persona_generator import generate_buyer_personas
+                from backend.dtc.market_debate_engine import run_market_debate
+                from backend.dtc.market_report_agent import generate_market_report
+                product = ProductBrief(
+                    name=parsed["product_name"], description=parsed["description"],
+                    price=parsed["price"], category=parsed["category"],
+                    demographic=parsed["demographic"], competitors=parsed["competitors"],
+                )
+                num_agents = max(4, min(12, parsed["num_agents"]))
+                print(f"\n[API] DTC simulation {simulation_id} starting: {product.name}")
+                intel = run_async(run_market_ingestion(product, num_agents))
+                dtc_simulations[simulation_id]["intel_complete"] = True
+                agents = run_async(generate_buyer_personas(intel, num_agents))
+                dtc_simulations[simulation_id]["agents_created"] = len(agents)
+                debate = run_async(run_market_debate(agents, intel, simulation_id))
+                dtc_simulations[simulation_id]["rounds"] = [
+                    {"round": r.round, "agents": r.agents} for r in debate.rounds
+                ]
+                report = run_async(generate_market_report(intel, debate, simulation_id))
+                dtc_simulations[simulation_id]["report"] = report
+                dtc_simulations[simulation_id]["status"] = "complete"
+                print(f"[API] DTC simulation {simulation_id} complete")
+            except Exception as e:
+                import traceback
+                traceback.print_exc()
+                dtc_simulations[simulation_id]["status"] = "failed"
+                dtc_simulations[simulation_id]["error"] = str(e)
+        threading.Thread(target=run_dtc_pipeline, daemon=True).start()
+        return jsonify({"simulation_id": simulation_id, "status": "running",
+                        "message": f"DTC simulation started for {parsed['product_name']}"}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@api.route("/api/dtc/simulation/<simulation_id>/status", methods=["GET"])
+def dtc_get_status(simulation_id):
+    sim = dtc_simulations.get(simulation_id)
+    if not sim:
+        return jsonify({"error": "Simulation not found"}), 404
+    return jsonify({"simulation_id": simulation_id, "status": sim.get("status", "running"),
+                    "agents_created": sim.get("agents_created", 0),
+                    "error": sim.get("error"), "error_message": sim.get("error")}), 200
+
+
+@api.route("/api/dtc/simulation/<simulation_id>/debate", methods=["GET"])
+def dtc_get_debate(simulation_id):
+    sim = dtc_simulations.get(simulation_id)
+    if not sim:
+        return jsonify({"error": "Simulation not found"}), 404
+    return jsonify({"simulation_id": simulation_id, "rounds": sim.get("rounds", [])}), 200
+
+
+@api.route("/api/dtc/simulation/<simulation_id>/report", methods=["GET"])
+def dtc_get_report(simulation_id):
+    sim = dtc_simulations.get(simulation_id)
+    if not sim:
+        return jsonify({"error": "Simulation not found"}), 404
+    if sim.get("status") != "complete":
+        return jsonify({"error": "Report not ready", "status": sim.get("status", "running")}), 404
+    report = sim.get("report", {})
+    if not report:
+        return jsonify({"error": "Report generation failed"}), 500
+    return jsonify(report), 200
+
+
+@api.route("/api/dtc/health", methods=["GET"])
+def dtc_health():
+    return jsonify({"status": "ok", "mode": "dtc", "simulations": len(dtc_simulations)}), 200
