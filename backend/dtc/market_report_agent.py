@@ -101,7 +101,7 @@ BEHAVIORAL_COMPENSATION_FLOOR_SATURATED = 0.40
 
 # Non-saturated market values (works for Olipop, Liquid Death)
 BEHAVIORAL_COMPENSATION_COEF_NONSATURATED = 0.25
-BEHAVIORAL_COMPENSATION_FLOOR_NONSATURATED = 0.35
+BEHAVIORAL_COMPENSATION_FLOOR_NONSATURATED = 0.55  # calibrated against Olipop ground truth
 
 # Compound penalty applies when subscription + saturation both detected
 COMPOUND_PENALTY_MULTIPLIER = 0.80
