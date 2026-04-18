@@ -76,18 +76,21 @@ CATEGORY_PENALTY_COEFFICIENT = {
 # CALIBRATED — Incumbent review count thresholds per category.
 # Research foundation: Morwitz et al. (2007) showed review count correlates
 # with market penetration. Specific cutoffs are empirical from validation.
+# GM3.4 FIX 1.6: Raised thresholds to match real market dominance criteria
+# Rationale: 4,740 reviews (Poppi) is a healthy challenger, NOT saturation.
+# True dominance looks like Stanley (90K), Apple Watch (100K+), Gillette (15K+)
 CATEGORY_INCUMBENT_THRESHOLD = {
-    "fashion_apparel":    5000,
-    "food_beverage":      3000,
-    "home_lifestyle":     10000,
-    "beauty_skincare":    5000,
-    "supplements_health": 4000,
-    "electronics_tech":   1500,   # CALIBRATED: fragmented variants
-    "fitness_sports":     3000,
-    "pet_products":       3000,
-    "baby_kids":          3000,
-    "saas_software":      500,
-    "general":            5000,
+    "fashion_apparel":    15000,   # was 5000 — true incumbents like Gap/Levi's
+    "food_beverage":      20000,   # was 3000 — Red Bull/Monster-tier only
+    "home_lifestyle":     20000,   # was 10000 — legacy brands like Thermos
+    "beauty_skincare":    15000,   # was 5000 — Cetaphil/CeraVe tier
+    "supplements_health": 12000,   # was 4000 — Centrum/One A Day tier
+    "electronics_tech":   10000,   # was 1500 — true wearable dominance
+    "fitness_sports":     10000,
+    "pet_products":       10000,
+    "baby_kids":          10000,
+    "saas_software":      2000,
+    "general":            15000,
 }
 
 # CALIBRATED — Curated list of known dominant brands per category.
