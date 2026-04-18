@@ -94,18 +94,18 @@ PURCHASE_PATTERNS = [
 # CALIBRATED: Behavioral compensation coefficient (was 0.4, now 0.25)
 # Rationale: YETI test showed 0.4 over-softens when AGAINST is extreme.
 # 0.25 provides gentler correction that preserves deflation signal.
-BEHAVIORAL_COMPENSATION_COEF = 0.20
+BEHAVIORAL_COMPENSATION_COEF = 0.15
 
 # CALIBRATED: Behavioral compensation floor (was 0.25, now 0.35)
 # Rationale: Prevents effective_deflation from dropping below 0.35 even
 # when AGAINST is 100%. Protects against over-softening.
-BEHAVIORAL_COMPENSATION_FLOOR = 0.38
+BEHAVIORAL_COMPENSATION_FLOOR = 0.40
 
 # CALIBRATED: Compound penalty multiplier for sub + saturation
 # Rationale: Hims test showed we need extra ~33% deflation when both fire.
 # 0.65 = 35% additional reduction when subscription + saturation co-occur.
 # Research basis: Inkpen & Beamish (1997) compound friction model.
-COMPOUND_PENALTY_MULTIPLIER = 0.70
+COMPOUND_PENALTY_MULTIPLIER = 0.80
 
 
 async def _llm(session, prompt, max_tokens=800):
