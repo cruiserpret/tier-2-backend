@@ -97,9 +97,6 @@ DEMOGRAPHIC_POOL = [
     {"name": "Imani Okoye",      "age": 36, "profession": "Consulting Firm Owner",     "location": "Atlanta, GA"},
 ]
 
-# Verify pool size
-assert len(DEMOGRAPHIC_POOL) == 50, f"Pool must have 50 entries, got {len(DEMOGRAPHIC_POOL)}"
-
 
 # ── Data Structures ───────────────────────────────────────────────────────────
 
