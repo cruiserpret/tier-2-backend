@@ -1,12 +1,12 @@
 """
-backend/dtc/dtc_ingestor.py — GODMODE FINAL
+backend/dtc/dtc_ingestor.py — GODMODE 3 FINAL
 
-All fixes applied:
- - Fashion threshold lowered to 1.2x (was 1.5x — fashion is price-sensitive)
- - bought_last_month fallback to total_reviews/10 when missing
- - Switching penalty now fires on review-based market share too
- - Price premium penalty scaled more aggressively for apparel
- - Supports 4-50 agents
+MAJOR FIXES:
+1. Multi-signal market dominance detection (not just price)
+2. Review volume asymmetry = incumbent signal (10x gap)
+3. Cult brand penalty for saturated categories
+4. Hardcore resistor scales with dominant competitor strength
+5. Category reclassification helper
 """
 
 import asyncio
@@ -27,37 +27,38 @@ from backend.dtc.reddit_ingestor import (
 )
 
 
-# ── GODMODE: Category-Specific Price Sensitivity Thresholds ──────────────────
-# Lower threshold = penalty fires earlier = more aggressive for price-sensitive
-# categories. Fashion & food are highly price-elastic. Supplements/beauty less so.
+# ── Category Thresholds ──────────────────────────────────────────────────────
 CATEGORY_PRICE_THRESHOLD = {
-    "fashion_apparel":    1.15,  # Quince-style disruption is real — fire early
+    "fashion_apparel":    1.15,
     "food_beverage":      1.25,
-    "home_lifestyle":     1.30,
+    "home_lifestyle":     1.20,  # tightened (was 1.30)
     "beauty_skincare":    1.35,
     "supplements_health": 1.40,
     "electronics_tech":   1.40,
-    "fitness_sports":     1.30,
-    "saas_software":      1.50,  # B2B less price-sensitive
+    "fitness_sports":     1.20,  # tightened
+    "saas_software":      1.50,
     "pet_products":       1.35,
-    "baby_kids":          1.50,  # necessity, less elastic
-    "general":            1.35,
+    "baby_kids":          1.50,
+    "general":            1.30,
 }
 
-# Category-specific penalty coefficients (steeper for elastic categories)
 CATEGORY_PENALTY_COEFFICIENT = {
-    "fashion_apparel":    0.18,   # 80% more aggressive
+    "fashion_apparel":    0.18,
     "food_beverage":      0.15,
-    "home_lifestyle":     0.12,
+    "home_lifestyle":     0.15,  # raised (was 0.12)
     "beauty_skincare":    0.10,
     "supplements_health": 0.10,
     "electronics_tech":   0.10,
-    "fitness_sports":     0.12,
+    "fitness_sports":     0.15,  # raised
     "saas_software":      0.08,
     "pet_products":       0.11,
     "baby_kids":          0.07,
-    "general":            0.10,
+    "general":            0.12,
 }
+
+# NEW: Review volume threshold for "dominant incumbent" detection
+INCUMBENT_REVIEW_THRESHOLD = 10000   # 10K+ reviews = category leader
+INCUMBENT_ASYMMETRY_RATIO = 5        # 5x more reviews than nearest = dominant
 
 
 # ── Data Structures ───────────────────────────────────────────────────────────
@@ -108,6 +109,9 @@ class MarketIntelligence:
     dominant_competitor:   str = ""
     dominant_bought:       int = 0
     dominant_rating:       float = 0.0
+    dominant_reviews:      int = 0      # NEW
+    is_saturated_market:   bool = False # NEW
+    cult_brand_penalty:    float = 0.0  # NEW
     switching_cost_penalty: float = 0.0
 
     agent_for_ratio:     float = 0.0
@@ -122,37 +126,54 @@ class MarketIntelligence:
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
 def _effective_market_share(comp: CompetitorProfile) -> int:
-    """
-    GODMODE: bought_last_month fallback.
-    Some Amazon listings don't return bought_activity. Fall back to review volume
-    as a proxy for market penetration (10 reviews ~ 1 bought/month heuristic).
-    """
+    """bought_last_month with review fallback."""
     if comp.bought_last_month > 0:
         return comp.bought_last_month
     if comp.total_reviews > 0:
-        return max(10, comp.total_reviews // 10)  # min 10 so non-zero
+        return max(10, comp.total_reviews // 10)
     return 0
 
 
-# ── Competitor Gap Analysis ───────────────────────────────────────────────────
+def _detect_saturated_market(competitors: list[CompetitorProfile]) -> tuple[bool, int]:
+    """
+    NEW: Detect if market has a dominant incumbent via review volume asymmetry.
+    Returns (is_saturated, dominant_review_count)
+    """
+    review_counts = [c.total_reviews for c in competitors if c.found_on_amazon and c.total_reviews > 0]
+    if not review_counts:
+        return False, 0
 
-def _build_competitor_gaps(
-    product:     ProductBrief,
-    competitors: list[CompetitorProfile]
-) -> list[CompetitorGap]:
+    review_counts.sort(reverse=True)
+    dominant_reviews = review_counts[0]
+
+    # Condition 1: Dominant has 10K+ reviews (mass-market incumbent)
+    if dominant_reviews < INCUMBENT_REVIEW_THRESHOLD:
+        return False, dominant_reviews
+
+    # Condition 2: Dominant has 5x+ more reviews than nearest competitor
+    if len(review_counts) > 1:
+        second = review_counts[1]
+        if second > 0 and (dominant_reviews / second) >= INCUMBENT_ASYMMETRY_RATIO:
+            return True, dominant_reviews
+
+    # Only one competitor or single dominant — still saturated if 10K+
+    return dominant_reviews >= INCUMBENT_REVIEW_THRESHOLD, dominant_reviews
+
+
+# ── Gap Analysis ──────────────────────────────────────────────────────────────
+
+def _build_competitor_gaps(product, competitors):
     gaps = []
     total_market = sum(_effective_market_share(c) for c in competitors if c.found_on_amazon)
 
     for comp in competitors:
         if not comp.found_on_amazon:
             continue
-
         signal = compute_weighted_signal(comp.reviews, comp.star_distribution)
         eff_share = _effective_market_share(comp)
         market_share = (eff_share / total_market) if total_market > 0 else 0
 
         top_praise = [t.get("label", "") for t in comp.review_topics[:5] if t.get("label")]
-
         top_complaints = []
         for review in comp.reviews:
             if review.star_rating <= 2:
@@ -160,15 +181,13 @@ def _build_competitor_gaps(
                 if text and text not in top_complaints:
                     top_complaints.append(text)
 
-        price_diff = round(product.price - comp.price, 2)
-
         gaps.append(CompetitorGap(
             competitor_name=comp.name,
             competitor_price=comp.price,
             competitor_rating=comp.avg_rating,
-            competitor_bought=eff_share,  # GODMODE: use effective share
+            competitor_bought=eff_share,
             market_share=round(market_share, 3),
-            user_price_diff=price_diff,
+            user_price_diff=round(product.price - comp.price, 2),
             star_signal=signal,
             top_praise=top_praise[:4],
             top_complaints=top_complaints[:3],
@@ -180,17 +199,13 @@ def _build_competitor_gaps(
     return gaps
 
 
-# ── Market Signal with Fallback ───────────────────────────────────────────────
-
-def _compute_market_signal(competitors: list[CompetitorProfile]) -> dict:
+def _compute_market_signal(competitors):
     if not competitors:
-        return {
-            "for": 0.33, "against": 0.33, "neutral": 0.34,
-            "avg_rating": 0.0, "weighted_price": 0.0, "total_reviews": 0,
-            "dominant_competitor": "", "dominant_bought": 0, "dominant_rating": 0.0,
-        }
+        return {"for": 0.33, "against": 0.33, "neutral": 0.34,
+                "avg_rating": 0.0, "weighted_price": 0.0, "total_reviews": 0,
+                "dominant_competitor": "", "dominant_bought": 0, "dominant_rating": 0.0,
+                "dominant_reviews": 0}
 
-    # GODMODE: weights use effective market share (bought_last_month OR reviews/10)
     weights = []
     for comp in competitors:
         if not comp.found_on_amazon:
@@ -200,36 +215,30 @@ def _compute_market_signal(competitors: list[CompetitorProfile]) -> dict:
 
     total_weight = sum(weights)
     if total_weight == 0:
-        return {
-            "for": 0.33, "against": 0.33, "neutral": 0.34,
-            "avg_rating": 0.0, "weighted_price": 0.0, "total_reviews": 0,
-            "dominant_competitor": "", "dominant_bought": 0, "dominant_rating": 0.0,
-        }
+        return {"for": 0.33, "against": 0.33, "neutral": 0.34,
+                "avg_rating": 0.0, "weighted_price": 0.0, "total_reviews": 0,
+                "dominant_competitor": "", "dominant_bought": 0, "dominant_rating": 0.0,
+                "dominant_reviews": 0}
 
     w_for = w_against = w_neutral = 0.0
-    w_price = 0.0
-    w_rating = 0.0
+    w_price = w_rating = 0.0
     total_reviews = 0
-
     dominant = None
     dominant_share = 0
 
     for comp, weight in zip(competitors, weights):
         if weight == 0:
             continue
-
         signal = compute_weighted_signal(comp.reviews, comp.star_distribution)
         share = weight / total_weight
 
         w_for     += signal["for"]     * share
         w_against += signal["against"] * share
         w_neutral += signal["neutral"] * share
-
         if comp.price > 0:
             w_price += comp.price * share
         if comp.avg_rating > 0:
             w_rating += comp.avg_rating * share
-
         total_reviews += comp.total_reviews
 
         if weight > dominant_share:
@@ -244,19 +253,15 @@ def _compute_market_signal(competitors: list[CompetitorProfile]) -> dict:
         "weighted_price": round(w_price, 2),
         "total_reviews": total_reviews,
         "dominant_competitor": dominant.name if dominant else "",
-        "dominant_bought":     dominant_share,  # effective, non-zero
+        "dominant_bought":     dominant_share,
         "dominant_rating":     dominant.avg_rating if dominant else 0.0,
+        "dominant_reviews":    dominant.total_reviews if dominant else 0,
     }
 
 
-# ── Agent Ratios with Category-Specific Penalties ─────────────────────────────
+# ── GODMODE 3: Multi-Signal Penalty System ──────────────────────────────────
 
-def _compute_agent_ratios(
-    intel,
-    market_signal: dict,
-    reddit:        RedditIntelligence,
-    num_agents:    int = 6
-) -> tuple[float, float, float, float]:
+def _compute_agent_ratios(intel, market_signal, reddit, num_agents=6):
     amazon_for     = market_signal["for"]
     amazon_against = market_signal["against"]
     amazon_neutral = market_signal["neutral"]
@@ -267,7 +272,6 @@ def _compute_agent_ratios(
         r_for     = reddit.positive_count / total_r
         r_against = reddit.negative_count / total_r
         r_neutral = reddit.neutral_count  / total_r
-
         b_for     = 0.60 * amazon_for     + 0.40 * r_for
         b_against = 0.60 * amazon_against + 0.40 * r_against
         b_neutral = 0.60 * amazon_neutral + 0.40 * r_neutral
@@ -278,57 +282,81 @@ def _compute_agent_ratios(
     if total > 0:
         b_for, b_against, b_neutral = b_for/total, b_against/total, b_neutral/total
 
-    # ── GODMODE: Category-specific price penalty ────────────────────────
     product_price = intel.product.price
     category_price = market_signal.get("weighted_price", 0) or intel.category_avg_price
     category = intel.product.category
+    threshold = CATEGORY_PRICE_THRESHOLD.get(category, 1.30)
+    coefficient = CATEGORY_PENALTY_COEFFICIENT.get(category, 0.12)
 
-    threshold = CATEGORY_PRICE_THRESHOLD.get(category, 1.35)
-    coefficient = CATEGORY_PENALTY_COEFFICIENT.get(category, 0.10)
-
+    # ── PENALTY 1: Price Premium (Monroe 2003) ─────────────────────────
     total_penalty = 0.0
     if category_price > 0:
         price_ratio = product_price / category_price
         intel.price_premium_ratio = round(price_ratio, 2)
 
         if price_ratio > threshold:
-            # Log-scale penalty scaled by category elasticity
             penalty = min(0.50, coefficient * math.log2(price_ratio / threshold + 1))
             total_penalty = penalty
             intel.price_premium_penalty = round(penalty, 3)
-
             b_for     = max(0.05, b_for - penalty)
             b_against = b_against + penalty * 0.65
             b_neutral = b_neutral + penalty * 0.35
-
             total = b_for + b_against + b_neutral
             b_for, b_against, b_neutral = b_for/total, b_against/total, b_neutral/total
 
-    # ── GODMODE: Switching cost penalty (with review fallback) ───────────
+    # ── PENALTY 2: Switching Cost (Burnham 2003) ────────────────────────
     dominant_bought = market_signal.get("dominant_bought", 0)
     dominant_rating = market_signal.get("dominant_rating", 0)
+    dominant_reviews = market_signal.get("dominant_reviews", 0)
+    intel.dominant_reviews = dominant_reviews
 
-    # Fashion/apparel trigger: very dominant competitor OR high review volume
-    # Lower threshold because fashion dupes create strong incumbent anchors
-    if category in ("fashion_apparel", "food_beverage"):
-        switching_threshold_bought = 50    # effective share (reviews/10 at minimum)
-        switching_threshold_rating = 3.8
+    # Expanded trigger: bought OR review volume
+    if category in ("fashion_apparel", "food_beverage", "home_lifestyle", "fitness_sports"):
+        bought_trigger = 50
+        rating_trigger = 3.8
     else:
-        switching_threshold_bought = 5000
-        switching_threshold_rating = 4.3
+        bought_trigger = 5000
+        rating_trigger = 4.3
 
-    if dominant_bought >= switching_threshold_bought and dominant_rating >= switching_threshold_rating:
-        # Fashion gets stronger penalty because price-comparison is trivial (same material, different brand)
-        switching_penalty = 0.12 if category == "fashion_apparel" else 0.08
+    switching_fires = (
+        (dominant_bought >= bought_trigger or dominant_reviews >= 2000) and
+        dominant_rating >= rating_trigger
+    )
+
+    if switching_fires:
+        switching_penalty = 0.12 if category == "fashion_apparel" else 0.10
         intel.switching_cost_penalty = switching_penalty
-
         b_for     = max(0.05, b_for - switching_penalty)
         b_neutral = b_neutral + switching_penalty
-
         total = b_for + b_against + b_neutral
         b_for, b_against, b_neutral = b_for/total, b_against/total, b_neutral/total
     else:
         intel.switching_cost_penalty = 0.0
+
+    # ── PENALTY 3: NEW — Cult Brand / Saturated Market ─────────────────
+    # Fires when a dominant incumbent controls the market via brand loyalty
+    # Stanley Quencher, Liquid I.V., etc — new entrants lose to mindshare
+    is_saturated, _ = _detect_saturated_market(intel.competitors)
+    intel.is_saturated_market = is_saturated
+
+    if is_saturated:
+        # Heavy cult-brand penalty in consumer categories
+        if category in ("home_lifestyle", "fitness_sports", "fashion_apparel"):
+            cult_penalty = 0.20  # 20% FOR shift — incumbent loyalty is strong
+        elif category in ("food_beverage", "beauty_skincare"):
+            cult_penalty = 0.15
+        else:
+            cult_penalty = 0.10
+
+        intel.cult_brand_penalty = cult_penalty
+        b_for     = max(0.05, b_for - cult_penalty)
+        b_against = b_against + cult_penalty * 0.55
+        b_neutral = b_neutral + cult_penalty * 0.45
+
+        total = b_for + b_against + b_neutral
+        b_for, b_against, b_neutral = b_for/total, b_against/total, b_neutral/total
+    else:
+        intel.cult_brand_penalty = 0.0
 
     return (
         round(b_for, 3),
@@ -338,15 +366,12 @@ def _compute_agent_ratios(
     )
 
 
-# ── Main Entry Point ──────────────────────────────────────────────────────────
+# ── Main Entry ────────────────────────────────────────────────────────────────
 
-async def run_market_ingestion(
-    product:    ProductBrief,
-    num_agents: int = 6
-) -> MarketIntelligence:
+async def run_market_ingestion(product, num_agents=6):
     intel = MarketIntelligence(product=product)
 
-    print(f"\n[DTCIngestor] ══ Starting GODMODE market ingestion ══")
+    print(f"\n[DTCIngestor] ══ GODMODE 3 market ingestion ══")
     print(f"[DTCIngestor] Product: {product.name} @ ${product.price}")
     print(f"[DTCIngestor] Category: {product.category}")
 
@@ -359,25 +384,20 @@ async def run_market_ingestion(
         competitors=competitor_names,
         price=product.price,
     )
-
     amazon_results, reddit_result = await asyncio.gather(
         amazon_task, reddit_task, return_exceptions=True
     )
 
     if isinstance(amazon_results, Exception):
-        print(f"[DTCIngestor] Amazon failed: {amazon_results}")
-        intel.error = f"Amazon ingestion failed: {amazon_results}"
+        intel.error = f"Amazon failed: {amazon_results}"
         amazon_results = []
-
     intel.competitors = amazon_results or []
 
     if isinstance(reddit_result, Exception):
-        print(f"[DTCIngestor] Reddit failed: {reddit_result}")
         reddit_result = None
     intel.reddit = reddit_result
 
     market_signal = _compute_market_signal(intel.competitors)
-
     intel.market_for       = market_signal["for"]
     intel.market_against   = market_signal["against"]
     intel.market_neutral   = market_signal["neutral"]
@@ -395,9 +415,15 @@ async def run_market_ingestion(
     intel.agent_against_ratio = against_ratio
     intel.agent_neutral_ratio = neutral_ratio
 
-    # Hardcore resistors scale with total AGAINST count
+    # GODMODE 3: Hardcore resistor scales with market saturation
     num_against_est = max(1, round(against_ratio * num_agents))
-    intel.hardcore_resistor_count = max(1, num_against_est // 3) if num_against_est >= 3 else 1
+    if intel.is_saturated_market:
+        # Saturated markets have stronger incumbent loyalty = more hardcore resistors
+        intel.hardcore_resistor_count = max(3, round(num_agents * 0.10))
+    elif num_against_est >= 3:
+        intel.hardcore_resistor_count = max(1, num_against_est // 3)
+    else:
+        intel.hardcore_resistor_count = 1
 
     intel.gaps = _build_competitor_gaps(product, intel.competitors)
 
@@ -405,33 +431,18 @@ async def run_market_ingestion(
     print(f"[DTCIngestor] Competitors: {len(intel.competitors)}")
     print(f"[DTCIngestor] Market-weighted avg price: ${intel.category_avg_price}")
     print(f"[DTCIngestor] Dominant competitor: {intel.dominant_competitor} "
-          f"(share={intel.dominant_bought}, {intel.dominant_rating}★)")
-    print(f"[DTCIngestor] Price premium ratio: {intel.price_premium_ratio}x "
-          f"(threshold for {product.category}: {CATEGORY_PRICE_THRESHOLD.get(product.category, 1.35)}x)")
+          f"({intel.dominant_reviews:,} reviews, {intel.dominant_rating}★)")
+    print(f"[DTCIngestor] Price premium ratio: {intel.price_premium_ratio}x")
+    print(f"[DTCIngestor] Saturated market detected: {intel.is_saturated_market}")
     if intel.price_premium_penalty > 0:
-        print(f"[DTCIngestor] GODMODE price penalty: -{intel.price_premium_penalty*100:.1f}% from FOR")
+        print(f"[DTCIngestor] GODMODE price penalty:     -{intel.price_premium_penalty*100:.1f}% from FOR")
     if intel.switching_cost_penalty > 0:
         print(f"[DTCIngestor] GODMODE switching penalty: -{intel.switching_cost_penalty*100:.0f}% from FOR")
+    if intel.cult_brand_penalty > 0:
+        print(f"[DTCIngestor] GODMODE cult-brand penalty: -{intel.cult_brand_penalty*100:.0f}% from FOR")
     print(f"[DTCIngestor] Agent ratios: FOR={intel.agent_for_ratio*100:.1f}% "
           f"AGAINST={intel.agent_against_ratio*100:.1f}% "
           f"NEUTRAL={intel.agent_neutral_ratio*100:.1f}%")
     print(f"[DTCIngestor] Hardcore resistors: {intel.hardcore_resistor_count}")
 
     return intel
-
-
-if __name__ == "__main__":
-    async def test():
-        product = ProductBrief(
-            name="Everlane Cashmere Crew",
-            description="100% Mongolian cashmere",
-            price=130.0,
-            category="fashion_apparel",
-            demographic="professionals 28-45",
-            competitors=[
-                {"name": "Quince Mongolian Cashmere", "asin": ""},
-                {"name": "Uniqlo Cashmere Crew", "asin": ""},
-            ],
-        )
-        intel = await run_market_ingestion(product, num_agents=50)
-    asyncio.run(test())

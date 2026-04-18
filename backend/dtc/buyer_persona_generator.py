@@ -1,11 +1,12 @@
 """
-backend/dtc/buyer_persona_generator.py — GODMODE FINAL
+backend/dtc/buyer_persona_generator.py — GODMODE 3 FINAL
 
-All fixes:
- - 50 agent cap (was 12)
- - 49 unique demographics (no assertion crash)
- - Hardcore resistor support
- - Pool cycling for >49 agents
+MAJOR FIXES:
+1. Stance enforcement — LLM can't override assigned stance
+2. Hardcore resistors have very low persuasion_resistance (<=0.10)
+3. Saturated market awareness in persona prompts
+4. Competitor loyalty injected for AGAINST agents in saturated markets
+5. 50 agent cap with 49-entry pool
 """
 
 import asyncio
@@ -72,7 +73,6 @@ DEMOGRAPHIC_POOL = [
     {"name": "Nathan Goldsmith",  "age": 41, "profession": "E-commerce Owner",            "location": "Denver, CO"},
     {"name": "Imani Okoye",       "age": 36, "profession": "Consulting Firm Owner",       "location": "Atlanta, GA"},
 ]
-# NO ASSERT — lets us add/remove entries freely
 
 
 @dataclass
@@ -123,17 +123,14 @@ def _sample_review_for_stance(intel, stance):
     all_reviews = []
     for comp in intel.competitors:
         all_reviews.extend(comp.reviews)
-
     if stance == "for":
         matching = [r for r in all_reviews if r.star_rating >= 4]
     elif stance == "against":
         matching = [r for r in all_reviews if r.star_rating <= 2]
     else:
         matching = [r for r in all_reviews if r.star_rating == 3]
-
     if matching:
         return random.choice(matching).text[:300]
-
     if intel.reddit and intel.reddit.signals:
         sentiment_map = {"for": "positive", "against": "negative", "neutral": "neutral"}
         reddit_matches = [s for s in intel.reddit.signals if s.sentiment == sentiment_map[stance]]
@@ -143,18 +140,23 @@ def _sample_review_for_stance(intel, stance):
 
 
 def _derive_deffuant_params(stance, score, hardcore=False):
+    """
+    GODMODE 3: Hardcore resistors have persuasion_resistance <= 0.10
+    This triggers the 'skip Deffuant update' path in debate engine.
+    """
     if hardcore:
-        noise = random.uniform(-0.03, 0.03)
+        noise = random.uniform(-0.02, 0.02)
         return (
-            round(max(0.85, min(0.98, 0.92 + noise)), 2),
-            round(max(0.02, min(0.10, 0.05 + noise)), 2),
-            round(max(0.60, min(0.85, 0.75 + noise)), 2),
+            round(max(0.88, min(0.98, 0.93 + noise)), 2),    # confirmation_bias VERY high
+            round(max(0.03, min(0.10, 0.06 + noise)), 2),    # persuasion_resistance VERY low (immovable)
+            round(max(0.55, min(0.80, 0.70 + noise)), 2),    # influence_weight moderate
         )
     extremity = abs(score - 0.5) * 2
     noise = random.uniform(-0.05, 0.05)
-    cb = max(0.1, min(0.9, 0.25 + 0.50 * extremity + noise))
-    pr = max(0.1, min(0.9, 0.20 + 0.45 * extremity + noise))
-    iw = max(0.2, min(0.9, 0.30 + 0.55 * extremity + noise))
+    cb = max(0.15, min(0.90, 0.30 + 0.50 * extremity + noise))
+    # Higher extremity = more resistant to persuasion
+    pr = max(0.15, min(0.85, 0.60 - 0.40 * extremity + noise))
+    iw = max(0.20, min(0.85, 0.30 + 0.50 * extremity + noise))
     return round(cb, 2), round(pr, 2), round(iw, 2)
 
 
@@ -163,7 +165,7 @@ def _compute_initial_score(stance, intel):
     if stance == "for":
         score = max(0.55, min(0.95, 0.55 + 0.35 * cat_sat + random.uniform(-0.08, 0.12)))
     elif stance == "against":
-        score = max(0.05, min(0.45, 0.45 - 0.35 * cat_sat + random.uniform(-0.08, 0.08)))
+        score = max(0.05, min(0.40, 0.35 - 0.30 * cat_sat + random.uniform(-0.08, 0.05)))
     else:
         score = max(0.38, min(0.62, 0.45 + random.uniform(0.0, 0.15)))
     return round(score, 3)
@@ -182,53 +184,64 @@ async def _generate_single_persona(session, agent_index, stance, intel, product,
     comp_names = [c.name for c in intel.competitors if c.found_on_amazon]
     comp_context = f"They are familiar with: {', '.join(comp_names)}." if comp_names else ""
 
+    # GODMODE 3: Saturated market context
+    saturation_context = ""
+    if intel.is_saturated_market:
+        saturation_context = (
+            f"\n\nMARKET CONTEXT: {intel.dominant_competitor} dominates this category with "
+            f"{intel.dominant_reviews:,} reviews — this is the incumbent buyers already own. "
+            f"{product.name} is a challenger in a saturated market."
+        )
+
+    # GODMODE 3: Stance-specific instructions with explicit enforcement
     stance_instruction = {
-        "for":     f"This person is GENUINELY INTERESTED in {product.name} and likely to try it.",
-        "against": f"This person is SKEPTICAL or RESISTANT — they prefer existing solutions.",
-        "neutral": f"This person is ON THE FENCE — could go either way.",
+        "for":     f"GENUINELY INTERESTED in {product.name}. You would actually buy this.",
+        "against": (f"ACTIVELY RESISTANT to {product.name}. You prefer existing alternatives "
+                    f"(especially {intel.dominant_competitor if intel.dominant_competitor else 'competitors'}). "
+                    f"You will NOT be persuaded to buy. Your opinion must reflect real rejection."),
+        "neutral": (f"TRULY ON THE FENCE. You see both sides. Your opinion should express "
+                    f"genuine uncertainty — not lean toward buying."),
     }[stance]
 
     hardcore_instruction = ""
     if is_hardcore:
-        hardcore_instruction = ("\nIMPORTANT: This person is a HARDCORE RESISTOR — extremely skeptical, "
-                                "hard to convince, loyal to existing alternatives. Their opinion is strongly held "
-                                "and they rarely change their mind.")
+        hardcore_instruction = (
+            f"\n\nYOU ARE A HARDCORE RESISTOR. You've been burned by {product.category.replace('_', ' ')} "
+            f"marketing before. You're loyal to {intel.dominant_competitor or 'what you already own'}. "
+            f"Peer arguments NEVER change your mind. Be blunt about your skepticism."
+        )
 
-    prompt = f"""You are generating a real buyer persona for a DTC market simulation.
+    prompt = f"""Generate a buyer persona for a DTC market simulation.
 
 PRODUCT: {product.name} — {product.description}
 PRICE: ${product.price} ({price_position} vs category avg ${cat_avg_price:.0f})
-CATEGORY: {product.category.replace('_', ' ')}
-TARGET DEMOGRAPHIC: {product.demographic or 'general consumers'}
+CATEGORY: {product.category.replace('_', ' ')}{saturation_context}
 
-ASSIGNED PERSONA (use EXACTLY as given — do not change name, age, profession, or location):
+ASSIGNED PERSONA (use EXACTLY):
 Name: {demographic['name']}
 Age: {demographic['age']}
 Profession: {demographic['profession']}
 Location: {demographic['location']}
 
-STANCE: {stance.upper()}
-{stance_instruction}{hardcore_instruction}
+ASSIGNED STANCE: {stance.upper()} — {stance_instruction}{hardcore_instruction}
 {comp_context}
 
 REAL MARKET SIGNAL:
-{f'Source review: "{source_review}"' if source_review else 'Use Reddit community context.'}
+{f'Reference review: "{source_review}"' if source_review else 'No competitor reviews available.'}
 
-Return ONLY valid JSON, no markdown:
+CRITICAL: Your opinion MUST match the assigned {stance} stance. Do not soften or contradict it.
+- FOR agents: express clear purchase intent
+- AGAINST agents: express clear rejection and mention a preferred alternative
+- NEUTRAL agents: express genuine uncertainty without leaning toward buying
 
+Return ONLY valid JSON:
 {{
   "stakeholder_name": "<brief descriptor>",
   "emotional_intensity": "<high|medium|low>",
-  "opinion": "<2-3 sentence authentic first-person reaction. Reference price, ingredients, or specific competitors.>",
-  "last_argument": "<1-2 sentence argument they would make>",
+  "opinion": "<2-3 sentences, first person, MATCHING the {stance} stance>",
+  "last_argument": "<single sentence argument>",
   "key_beliefs": ["<belief 1>", "<belief 2>"]
-}}
-
-Rules:
-- Opinion MUST reflect {stance} stance
-- Reference ${product.price} price specifically
-- If against: mention a specific competitor they prefer by name
-- Sound like {demographic['name']}, a {demographic['age']}-year-old {demographic['profession']} from {demographic['location']}"""
+}}"""
 
     response = await _llm_generate(session, prompt, max_tokens=400)
 
@@ -243,8 +256,10 @@ Rules:
         data = {
             "stakeholder_name":    f"{demographic['profession']}, {demographic['age']}",
             "emotional_intensity": "medium",
-            "opinion":             f"I {'support' if stance == 'for' else 'question' if stance == 'neutral' else 'doubt'} {product.name} at ${product.price}.",
-            "last_argument":       f"The ${product.price} price point needs {'justification' if stance != 'for' else 'context'}.",
+            "opinion":             (f"I already use {intel.dominant_competitor}, no reason to switch."
+                                    if stance == "against" else
+                                    f"I {'would try' if stance == 'for' else 'might consider'} {product.name}."),
+            "last_argument":       f"${product.price} is {'worth it' if stance == 'for' else 'too much'}.",
             "key_beliefs":         ["Quality matters", "Value is important"],
         }
 
@@ -277,11 +292,8 @@ Rules:
 
 
 async def generate_buyer_personas(intel, num_agents=6):
-    """
-    GODMODE: Support 4-50 agents.
-    """
     product = intel.product
-    num_agents = max(4, min(50, num_agents))  # ✅ RAISED CAP TO 50
+    num_agents = max(4, min(50, num_agents))
 
     n_for     = max(1, round(intel.agent_for_ratio     * num_agents))
     n_against = max(1, round(intel.agent_against_ratio * num_agents))
@@ -307,7 +319,6 @@ async def generate_buyer_personas(intel, num_agents=6):
     if num_agents <= len(pool):
         demographics = pool[:num_agents]
     else:
-        # Pool cycling with variations
         demographics = []
         for i in range(num_agents):
             base = pool[i % len(pool)]
