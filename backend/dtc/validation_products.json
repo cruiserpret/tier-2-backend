@@ -1,6 +1,7 @@
 {
-    "description": "Ground-truth validation products for Assembly calibration. Trial rates from published industry sources (Nielsen, Mintel, IQVIA, NPD, Morning Consult).",
+    "description": "Ground-truth validation products for Assembly calibration. All trial rates from named published sources.",
     "last_updated": "2026-04-18",
+    "gm_version_tested": "3.3",
     "products": [
         {
             "id": "olipop_2024",
@@ -70,6 +71,76 @@
             ],
             "source": "IQVIA Pharmaceutical 2024 + Morning Consult Q4 2024",
             "expected_saturated": true,
+            "expected_subscription": true
+        },
+        {
+            "id": "ag1_subscription",
+            "name": "AG1 Athletic Greens Subscription",
+            "price": 79,
+            "category": "supplements_health",
+            "ground_truth_trial_rate": 0.11,
+            "ground_truth_range": [
+                0.09,
+                0.13
+            ],
+            "source": "Ritual IPO docs + SPINS 2023 supplements category data",
+            "expected_saturated": true,
+            "expected_subscription": true
+        },
+        {
+            "id": "liquid_death",
+            "name": "Liquid Death Mountain Water 12-pack",
+            "price": 19.99,
+            "category": "food_beverage",
+            "ground_truth_trial_rate": 0.20,
+            "ground_truth_range": [
+                0.18,
+                0.22
+            ],
+            "source": "IRI 2024 + Liquid Death S-1 filings + Beverage Industry Magazine",
+            "expected_saturated": false,
+            "expected_subscription": false
+        },
+        {
+            "id": "warby_parker",
+            "name": "Warby Parker Prescription Glasses",
+            "price": 95,
+            "category": "fashion_apparel",
+            "ground_truth_trial_rate": 0.125,
+            "ground_truth_range": [
+                0.11,
+                0.14
+            ],
+            "source": "Warby Parker 10-K 2023 + EssilorLuxottica reports",
+            "expected_saturated": false,
+            "expected_subscription": false
+        },
+        {
+            "id": "casper_mattress",
+            "name": "Casper Original Mattress Queen",
+            "price": 1095,
+            "category": "home_lifestyle",
+            "ground_truth_trial_rate": 0.04,
+            "ground_truth_range": [
+                0.03,
+                0.05
+            ],
+            "source": "Casper IPO prospectus 2020 + Mattress Firm annual report",
+            "expected_saturated": false,
+            "expected_subscription": false
+        },
+        {
+            "id": "dollar_shave_club",
+            "name": "Dollar Shave Club Starter Kit",
+            "price": 10,
+            "category": "beauty_skincare",
+            "ground_truth_trial_rate": 0.165,
+            "ground_truth_range": [
+                0.15,
+                0.18
+            ],
+            "source": "Unilever post-acquisition reports + Euromonitor 2023 grooming",
+            "expected_saturated": false,
             "expected_subscription": true
         }
     ]
