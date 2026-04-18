@@ -1,7 +1,8 @@
 """
-backend/dtc/buyer_persona_generator.py
+backend/dtc/buyer_persona_generator.py — GODMODE (50 agent support)
 
-Buyer Persona Generator for Assembly Tier 2 DTC Market Simulator.
+Expanded DEMOGRAPHIC_POOL to 50 unique personas covering full market spectrum.
+Removed agent cap — now supports 4-50 agents.
 """
 
 import asyncio
@@ -17,23 +18,87 @@ from dataclasses import dataclass, field
 from backend.dtc.dtc_ingestor import MarketIntelligence, ProductBrief
 
 
-# ── Demographic Pool ──────────────────────────────────────────────────────────
-# Pre-assigned to prevent LLM convergence on same names/professions
+# ── Expanded Demographic Pool (50 unique personas) ────────────────────────────
 
 DEMOGRAPHIC_POOL = [
-    {"name": "Maya Chen",       "age": 32, "profession": "UX Designer",             "location": "San Francisco, CA"},
-    {"name": "Sarah Okonkwo",   "age": 38, "profession": "Elementary School Teacher","location": "Austin, TX"},
-    {"name": "Rachel Torres",   "age": 41, "profession": "Marketing Director",       "location": "New York, NY"},
-    {"name": "Priya Sharma",    "age": 34, "profession": "Dermatology PA",           "location": "Chicago, IL"},
-    {"name": "Jennifer Walsh",  "age": 29, "profession": "Freelance Photographer",   "location": "Portland, OR"},
-    {"name": "Diana Reeves",    "age": 58, "profession": "Retired Accountant",       "location": "Scottsdale, AZ"},
-    {"name": "Marcus Webb",     "age": 45, "profession": "Software Engineer",        "location": "Seattle, WA"},
-    {"name": "Chloe Bernard",   "age": 27, "profession": "Graduate Student",         "location": "Boston, MA"},
-    {"name": "James Kim",       "age": 52, "profession": "Restaurant Owner",         "location": "Los Angeles, CA"},
-    {"name": "Fatima Hassan",   "age": 36, "profession": "Nurse Practitioner",       "location": "Houston, TX"},
-    {"name": "Tom Gallagher",   "age": 44, "profession": "Financial Advisor",        "location": "Denver, CO"},
-    {"name": "Aisha Johnson",   "age": 31, "profession": "Graphic Designer",         "location": "Atlanta, GA"},
+    # Healthcare professionals
+    {"name": "Priya Sharma",     "age": 34, "profession": "Dermatology PA",              "location": "Chicago, IL"},
+    {"name": "Fatima Hassan",    "age": 36, "profession": "Nurse Practitioner",          "location": "Houston, TX"},
+    {"name": "David Goldberg",   "age": 47, "profession": "Family Physician",            "location": "Minneapolis, MN"},
+    {"name": "Nia Williams",     "age": 29, "profession": "Registered Dietitian",       "location": "Atlanta, GA"},
+    {"name": "Sanjay Patel",     "age": 52, "profession": "Cardiologist",               "location": "Philadelphia, PA"},
+
+    # Tech professionals
+    {"name": "Maya Chen",        "age": 32, "profession": "UX Designer",                "location": "San Francisco, CA"},
+    {"name": "Marcus Webb",      "age": 45, "profession": "Software Engineer",          "location": "Seattle, WA"},
+    {"name": "Aisha Johnson",    "age": 31, "profession": "Graphic Designer",           "location": "Atlanta, GA"},
+    {"name": "Kevin Park",       "age": 38, "profession": "Product Manager",            "location": "Austin, TX"},
+    {"name": "Lena Kowalski",    "age": 26, "profession": "Junior Developer",           "location": "Brooklyn, NY"},
+
+    # Educators
+    {"name": "Sarah Okonkwo",    "age": 38, "profession": "Elementary School Teacher",  "location": "Austin, TX"},
+    {"name": "Robert Chen",      "age": 54, "profession": "High School Principal",      "location": "Sacramento, CA"},
+    {"name": "Amara Diallo",     "age": 33, "profession": "University Professor",       "location": "Boston, MA"},
+
+    # Business/finance
+    {"name": "Rachel Torres",    "age": 41, "profession": "Marketing Director",         "location": "New York, NY"},
+    {"name": "Tom Gallagher",    "age": 44, "profession": "Financial Advisor",          "location": "Denver, CO"},
+    {"name": "Yuki Tanaka",      "age": 36, "profession": "Management Consultant",      "location": "Chicago, IL"},
+    {"name": "Carlos Mendoza",   "age": 48, "profession": "Real Estate Agent",          "location": "Miami, FL"},
+    {"name": "Lisa Andersson",   "age": 39, "profession": "CPA",                        "location": "Portland, OR"},
+
+    # Creatives
+    {"name": "Jennifer Walsh",   "age": 29, "profession": "Freelance Photographer",     "location": "Portland, OR"},
+    {"name": "Diego Ramirez",    "age": 34, "profession": "Video Editor",               "location": "Los Angeles, CA"},
+    {"name": "Brittany Moore",   "age": 27, "profession": "Content Creator",            "location": "Nashville, TN"},
+    {"name": "Elijah Foster",    "age": 42, "profession": "Musician",                   "location": "Austin, TX"},
+
+    # Service industry
+    {"name": "James Kim",        "age": 52, "profession": "Restaurant Owner",           "location": "Los Angeles, CA"},
+    {"name": "Gabrielle Rousseau", "age": 33, "profession": "Sommelier",                "location": "San Francisco, CA"},
+    {"name": "Anthony Russo",    "age": 46, "profession": "Contractor",                 "location": "Long Island, NY"},
+    {"name": "Destiny Jackson",  "age": 28, "profession": "Yoga Instructor",            "location": "Boulder, CO"},
+
+    # Students & early career
+    {"name": "Chloe Bernard",    "age": 27, "profession": "Graduate Student",           "location": "Boston, MA"},
+    {"name": "Tyler Hendricks",  "age": 23, "profession": "College Senior",             "location": "Ann Arbor, MI"},
+    {"name": "Fernanda Castro",  "age": 25, "profession": "Nursing Student",            "location": "Miami, FL"},
+    {"name": "Jake Whitfield",   "age": 24, "profession": "Sales Associate",            "location": "Dallas, TX"},
+
+    # Parents
+    {"name": "Rebecca Hill",     "age": 37, "profession": "Stay-at-home Parent",        "location": "Cincinnati, OH"},
+    {"name": "Darius Washington", "age": 40, "profession": "Youth Coach",               "location": "Memphis, TN"},
+    {"name": "Mei Lin Zhao",     "age": 35, "profession": "Part-time Accountant",       "location": "San Jose, CA"},
+
+    # Retirees & 50+
+    {"name": "Diana Reeves",     "age": 58, "profession": "Retired Accountant",         "location": "Scottsdale, AZ"},
+    {"name": "Harold Brennan",   "age": 64, "profession": "Retired Engineer",           "location": "Raleigh, NC"},
+    {"name": "Patricia O'Malley", "age": 61, "profession": "Retired Teacher",           "location": "Sarasota, FL"},
+    {"name": "Walter Kimura",    "age": 67, "profession": "Retired Pharmacist",         "location": "Honolulu, HI"},
+
+    # Skilled trades & operations
+    {"name": "Luis Salazar",     "age": 43, "profession": "HVAC Technician",           "location": "Phoenix, AZ"},
+    {"name": "Megan Sullivan",   "age": 30, "profession": "Paramedic",                  "location": "Cleveland, OH"},
+    {"name": "Trey Coleman",     "age": 35, "profession": "Firefighter",                "location": "Saint Louis, MO"},
+    {"name": "Vanessa Nguyen",   "age": 32, "profession": "Dental Hygienist",           "location": "San Diego, CA"},
+
+    # Government & non-profit
+    {"name": "Amir Khan",        "age": 45, "profession": "City Planner",               "location": "Washington, DC"},
+    {"name": "Olivia Hartman",   "age": 39, "profession": "Social Worker",              "location": "Madison, WI"},
+    {"name": "Theo Branson",     "age": 28, "profession": "Policy Analyst",             "location": "Washington, DC"},
+
+    # Fitness & wellness
+    {"name": "Brooke Stephens",  "age": 31, "profession": "Personal Trainer",           "location": "Austin, TX"},
+    {"name": "Rafael Santos",    "age": 33, "profession": "Physical Therapist",         "location": "San Antonio, TX"},
+
+    # Entrepreneurs
+    {"name": "Zara Ahmad",       "age": 29, "profession": "Startup Founder",            "location": "Brooklyn, NY"},
+    {"name": "Nathan Goldsmith", "age": 41, "profession": "E-commerce Owner",           "location": "Denver, CO"},
+    {"name": "Imani Okoye",      "age": 36, "profession": "Consulting Firm Owner",     "location": "Atlanta, GA"},
 ]
+
+# Verify pool size
+assert len(DEMOGRAPHIC_POOL) == 50, f"Pool must have 50 entries, got {len(DEMOGRAPHIC_POOL)}"
 
 
 # ── Data Structures ───────────────────────────────────────────────────────────
@@ -110,14 +175,26 @@ def _sample_review_for_stance(intel, stance):
     return ""
 
 
-# ── Deffuant Parameters ───────────────────────────────────────────────────────
+# ── Deffuant Parameters (with hardcore resistor support) ─────────────────────
 
-def _derive_deffuant_params(stance, score):
+def _derive_deffuant_params(stance, score, hardcore=False):
+    """
+    GODMODE: Support for hardcore resistor agents (Rogers 1962 laggards).
+    Hardcore agents resist peer influence almost completely.
+    """
+    if hardcore:
+        noise = random.uniform(-0.03, 0.03)
+        return (
+            round(max(0.85, min(0.98, 0.92 + noise)), 2),  # confirmation_bias very high
+            round(max(0.02, min(0.10, 0.05 + noise)), 2),  # persuasion_resistance very low (barely moves)
+            round(max(0.60, min(0.85, 0.75 + noise)), 2),  # influence_weight moderate-high
+        )
+
     extremity = abs(score - 0.5) * 2
     noise = random.uniform(-0.05, 0.05)
-    cb  = max(0.1, min(0.9, 0.25 + 0.50 * extremity + noise))
-    pr  = max(0.1, min(0.9, 0.20 + 0.45 * extremity + noise))
-    iw  = max(0.2, min(0.9, 0.30 + 0.55 * extremity + noise))
+    cb = max(0.1, min(0.9, 0.25 + 0.50 * extremity + noise))
+    pr = max(0.1, min(0.9, 0.20 + 0.45 * extremity + noise))
+    iw = max(0.2, min(0.9, 0.30 + 0.55 * extremity + noise))
     return round(cb, 2), round(pr, 2), round(iw, 2)
 
 
@@ -134,24 +211,30 @@ def _compute_initial_score(stance, intel):
 
 # ── Persona Generation ────────────────────────────────────────────────────────
 
-async def _generate_single_persona(session, agent_index, stance, intel, product, demographic):
+async def _generate_single_persona(session, agent_index, stance, intel, product, demographic, is_hardcore=False):
     source_review = _sample_review_for_stance(intel, stance)
-    score         = _compute_initial_score(stance, intel)
+    score = _compute_initial_score(stance, intel)
     frontend_score = round(1.0 + score * 9.0, 1)
-    cb, pr, iw    = _derive_deffuant_params(stance, score)
+    cb, pr, iw = _derive_deffuant_params(stance, score, hardcore=is_hardcore)
 
-    cat_avg_price  = intel.category_avg_price
+    cat_avg_price = intel.category_avg_price
     price_position = "premium" if product.price > cat_avg_price * 1.3 else \
                      "budget"  if product.price < cat_avg_price * 0.7 else "mid-range"
 
     comp_names = [c.name for c in intel.competitors if c.found_on_amazon]
-    comp_context  = f"They are familiar with: {', '.join(comp_names)}." if comp_names else ""
+    comp_context = f"They are familiar with: {', '.join(comp_names)}." if comp_names else ""
 
     stance_instruction = {
         "for":     f"This person is GENUINELY INTERESTED in {product.name} and likely to try it.",
         "against": f"This person is SKEPTICAL or RESISTANT — they prefer existing solutions.",
         "neutral": f"This person is ON THE FENCE — could go either way.",
     }[stance]
+
+    hardcore_instruction = ""
+    if is_hardcore:
+        hardcore_instruction = ("\nIMPORTANT: This person is a HARDCORE RESISTOR — extremely skeptical, "
+                                "hard to convince, loyal to existing alternatives. Their opinion is strongly held "
+                                "and they rarely change their mind.")
 
     prompt = f"""You are generating a real buyer persona for a DTC market simulation.
 
@@ -167,7 +250,7 @@ Profession: {demographic['profession']}
 Location: {demographic['location']}
 
 STANCE: {stance.upper()}
-{stance_instruction}
+{stance_instruction}{hardcore_instruction}
 {comp_context}
 
 REAL MARKET SIGNAL:
@@ -201,11 +284,11 @@ Rules:
         data = json.loads(clean.strip())
     except Exception:
         data = {
-            "stakeholder_name":  f"{demographic['profession']}, {demographic['age']}",
+            "stakeholder_name":    f"{demographic['profession']}, {demographic['age']}",
             "emotional_intensity": "medium",
-            "opinion":           f"I {'support' if stance == 'for' else 'question' if stance == 'neutral' else 'doubt'} {product.name} at ${product.price}.",
-            "last_argument":     f"The ${product.price} price point needs {'justification' if stance != 'for' else 'context'}.",
-            "key_beliefs":       ["Quality matters", "Value is important"],
+            "opinion":             f"I {'support' if stance == 'for' else 'question' if stance == 'neutral' else 'doubt'} {product.name} at ${product.price}.",
+            "last_argument":       f"The ${product.price} price point needs {'justification' if stance != 'for' else 'context'}.",
+            "key_beliefs":         ["Quality matters", "Value is important"],
         }
 
     agent = BuyerAgent(
@@ -230,7 +313,8 @@ Rules:
         source_review=source_review[:100] if source_review else "",
     )
 
-    print(f"[PersonaGenerator] ✓ {agent.name} ({stance}, score={frontend_score}, "
+    hardcore_tag = " [HARDCORE]" if is_hardcore else ""
+    print(f"[PersonaGenerator] ✓ {agent.name} ({stance}{hardcore_tag}, score={frontend_score}, "
           f"age={agent.age}, {agent.profession})")
 
     return agent
@@ -239,8 +323,13 @@ Rules:
 # ── Main Entry Point ──────────────────────────────────────────────────────────
 
 async def generate_buyer_personas(intel, num_agents=6):
-    product    = intel.product
-    num_agents = max(4, min(12, num_agents))
+    """
+    GODMODE: Support for up to 50 buyer agents with full demographic diversity.
+    Previous cap of 12 removed.
+    """
+    product = intel.product
+    # GODMODE: Raise cap to 50 (was 12)
+    num_agents = max(4, min(50, num_agents))
 
     n_for     = max(1, round(intel.agent_for_ratio     * num_agents))
     n_against = max(1, round(intel.agent_against_ratio * num_agents))
@@ -248,22 +337,51 @@ async def generate_buyer_personas(intel, num_agents=6):
 
     if n_neutral < 1:
         n_neutral = 1
-        if n_for > n_against: n_for -= 1
-        else: n_against -= 1
+        if n_for > n_against:
+            n_for -= 1
+        else:
+            n_against -= 1
+
+    # Hardcore resistor count from intel
+    n_hardcore = getattr(intel, 'hardcore_resistor_count', 1)
+    n_hardcore = min(n_hardcore, n_against)  # can't have more hardcore than total AGAINST
 
     print(f"\n[PersonaGenerator] Generating {num_agents} buyer personas")
-    print(f"[PersonaGenerator] Distribution: {n_for} FOR | {n_against} AGAINST | {n_neutral} NEUTRAL")
+    print(f"[PersonaGenerator] Distribution: {n_for} FOR | {n_against} AGAINST ({n_hardcore} hardcore) | {n_neutral} NEUTRAL")
 
     stances = (["for"] * n_for) + (["against"] * n_against) + (["neutral"] * n_neutral)
     random.shuffle(stances)
 
+    # Pool cycling: if we need > 50 agents, we cycle with age/location variation
     pool = DEMOGRAPHIC_POOL.copy()
     random.shuffle(pool)
-    demographics = pool[:num_agents]
+
+    if num_agents <= len(pool):
+        demographics = pool[:num_agents]
+    else:
+        # Cycle and add age variation (±3 years) for uniqueness
+        demographics = []
+        for i in range(num_agents):
+            base = pool[i % len(pool)]
+            cycle_num = i // len(pool)
+            demographics.append({
+                "name":       base["name"] + (f" Jr." if cycle_num == 1 else f" III" if cycle_num == 2 else ""),
+                "age":        max(22, min(72, base["age"] + cycle_num * 3 - 5)),
+                "profession": base["profession"],
+                "location":   base["location"],
+            })
+
+    # Mark which AGAINST agents are hardcore
+    against_indices = [i for i, s in enumerate(stances) if s == "against"]
+    random.shuffle(against_indices)
+    hardcore_indices = set(against_indices[:n_hardcore])
 
     async with aiohttp.ClientSession() as session:
         tasks = [
-            _generate_single_persona(session, i, stances[i], intel, product, demographics[i])
+            _generate_single_persona(
+                session, i, stances[i], intel, product, demographics[i],
+                is_hardcore=(i in hardcore_indices)
+            )
             for i in range(len(stances))
         ]
         agents = await asyncio.gather(*tasks, return_exceptions=True)
@@ -291,40 +409,18 @@ def agents_to_dict(agents):
     } for a in agents]
 
 
-# ── Test ──────────────────────────────────────────────────────────────────────
-
 if __name__ == "__main__":
-    from backend.dtc.dtc_ingestor import run_market_ingestion
-
     async def test():
-        print("=" * 60)
-        print("Assembly Tier 2 — Buyer Persona Generator Test")
-        print("=" * 60)
-
+        from backend.dtc.dtc_ingestor import run_market_ingestion
         product = ProductBrief(
-            name="CollagenRise Daily Serum",
-            description="A vegan collagen-boosting serum with bakuchiol. No synthetic fragrance. Clinically tested.",
-            price=49.0,
-            category="beauty_skincare",
-            demographic="Women 28-45, clean beauty enthusiasts",
-            competitors=[
-                {"name": "The Ordinary Niacinamide", "asin": "B01MDTVZTZ"},
-                {"name": "Drunk Elephant", "asin": ""},
-            ],
+            name="Test Product", description="Test desc", price=49.0,
+            category="beauty_skincare", demographic="adults",
+            competitors=[{"name": "The Ordinary Niacinamide", "asin": "B01MDTVZTZ"}],
         )
-
-        intel  = await run_market_ingestion(product, num_agents=6)
-        agents = await generate_buyer_personas(intel, num_agents=6)
-
-        print("\n── Generated Personas ──────────────────────────────")
-        for a in agents:
-            print(f"\n{'='*50}")
-            print(f"Name:      {a.name}, {a.age} — {a.profession}, {a.location}")
-            print(f"Stance:    {a.stance.upper()} | Score: {a.score}/10")
-            print(f"Opinion:   {a.opinion[:150]}...")
-            print(f"Argument:  {a.last_argument[:100]}...")
-            print(f"Deffuant:  bias={a.confirmation_bias} resist={a.persuasion_resistance} influence={a.influence_weight}")
-
-        print(f"\n✓ {len(agents)} personas ready for debate engine")
+        intel = await run_market_ingestion(product, num_agents=50)
+        agents = await generate_buyer_personas(intel, num_agents=50)
+        print(f"\n✓ Generated {len(agents)} agents")
+        names = [a.name for a in agents]
+        print(f"Unique names: {len(set(names))}/{len(names)}")
 
     asyncio.run(test())
