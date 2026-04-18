@@ -398,7 +398,7 @@ def dtc_start_simulation():
                     price=parsed["price"], category=parsed["category"],
                     demographic=parsed["demographic"], competitors=parsed["competitors"],
                 )
-                num_agents = max(4, min(12, parsed["num_agents"]))
+                num_agents = max(4, min(50, parsed["num_agents"]))
                 print(f"\n[API] DTC {simulation_id} starting: {product.name} @ ${product.price}")
 
                 intel = run_async(run_market_ingestion(product, num_agents))
