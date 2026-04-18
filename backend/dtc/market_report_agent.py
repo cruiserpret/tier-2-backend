@@ -87,24 +87,23 @@ PURCHASE_PATTERNS = [
 ]
 
 
-# ── GM3.3 CALIBRATION CONSTANTS ──────────────────────────────────────────────
-# These are the tuned values based on validation product results.
-# Each constant has a clear math rationale.
+# ─── GM3.4 FIX 1: Conditional Deflation (saturated vs non-saturated) ────────
+# PUBLISHED CONCEPT (Morwitz 1993): behavioral compensation should vary
+# with market structure. Research basis for the split.
+# CALIBRATED: Specific values derived from 10-product validation tonight.
+#
+# Saturated markets: incumbents already suppress intent → use loose (0.15)
+# Non-saturated markets: intent maps directly to behavior → use tight (0.25)
 
-# CALIBRATED: Behavioral compensation coefficient (was 0.4, now 0.25)
-# Rationale: YETI test showed 0.4 over-softens when AGAINST is extreme.
-# 0.25 provides gentler correction that preserves deflation signal.
-BEHAVIORAL_COMPENSATION_COEF = 0.15
+# Saturated market values (works for YETI, Oura, Everlane, Warby Parker)
+BEHAVIORAL_COMPENSATION_COEF_SATURATED = 0.15
+BEHAVIORAL_COMPENSATION_FLOOR_SATURATED = 0.40
 
-# CALIBRATED: Behavioral compensation floor (was 0.25, now 0.35)
-# Rationale: Prevents effective_deflation from dropping below 0.35 even
-# when AGAINST is 100%. Protects against over-softening.
-BEHAVIORAL_COMPENSATION_FLOOR = 0.40
+# Non-saturated market values (works for Olipop, Liquid Death)
+BEHAVIORAL_COMPENSATION_COEF_NONSATURATED = 0.25
+BEHAVIORAL_COMPENSATION_FLOOR_NONSATURATED = 0.35
 
-# CALIBRATED: Compound penalty multiplier for sub + saturation
-# Rationale: Hims test showed we need extra ~33% deflation when both fire.
-# 0.65 = 35% additional reduction when subscription + saturation co-occur.
-# Research basis: Inkpen & Beamish (1997) compound friction model.
+# Compound penalty applies when subscription + saturation both detected
 COMPOUND_PENALTY_MULTIPLIER = 0.80
 
 
@@ -242,10 +241,20 @@ def compute_juster_trial_rate(agents_final, intel):
     base_deflation = CATEGORY_DEFLATION.get(category, CATEGORY_DEFLATION["general"])
 
     # Step 2 & 3: Behavioral compensation (GM3.3 TIGHTENED)
+    # GM3.4 FIX 1: Conditional Deflation based on market saturation
+    # Saturated markets need loose compensation, non-saturated need tight
     against_count = sum(1 for a in agents_final if a["stance"] == "against")
     against_ratio = against_count / len(agents_final)
-    effective_deflation = base_deflation * (1 - BEHAVIORAL_COMPENSATION_COEF * against_ratio)
-    effective_deflation = max(BEHAVIORAL_COMPENSATION_FLOOR, min(base_deflation, effective_deflation))
+
+    if intel.is_saturated_market:
+        comp_coef = BEHAVIORAL_COMPENSATION_COEF_SATURATED
+        comp_floor = BEHAVIORAL_COMPENSATION_FLOOR_SATURATED
+    else:
+        comp_coef = BEHAVIORAL_COMPENSATION_COEF_NONSATURATED
+        comp_floor = BEHAVIORAL_COMPENSATION_FLOOR_NONSATURATED
+
+    effective_deflation = base_deflation * (1 - comp_coef * against_ratio)
+    effective_deflation = max(comp_floor, min(base_deflation, effective_deflation))
 
     # Step 4: GM3.3 NEW — Compound penalty for subscription + saturation
     compound_applied = False
@@ -315,6 +324,9 @@ def compute_juster_trial_rate(agents_final, intel):
         "segment_breakdown": segment_breakdown,
         "deflation_factor":  base_deflation,
         "effective_deflation": round(effective_deflation, 3),
+        "comp_coef_used":    comp_coef,
+        "comp_floor_used":   comp_floor,
+        "market_type":       "saturated" if intel.is_saturated_market else "open",
         "against_ratio":     round(against_ratio, 3),
         "switching_penalty": switching_penalty,
         "cult_brand_penalty": cult_penalty,
@@ -583,8 +595,9 @@ async def generate_market_report(intel, debate, simulation_id="sim_dtc_001"):
 
     print(f"[ReportAgent] Trial rate: {juster['trial_rate_pct']}% "
           f"(range: {juster['trial_rate_low']}-{juster['trial_rate_high']}%)")
+    market_type = "SATURATED" if intel.is_saturated_market else "OPEN"
     print(f"[ReportAgent] Base deflation: {juster['deflation_factor']} → effective {juster['effective_deflation']} "
-          f"(AGAINST ratio {juster['against_ratio']*100:.0f}%, coef {BEHAVIORAL_COMPENSATION_COEF}, floor {BEHAVIORAL_COMPENSATION_FLOOR})")
+          f"(AGAINST ratio {juster['against_ratio']*100:.0f}%, market={market_type})")
     if juster.get("compound_penalty_applied"):
         print(f"[ReportAgent] ⚡ COMPOUND penalty (sub+saturation): × {COMPOUND_PENALTY_MULTIPLIER}")
     print(f"[ReportAgent] Cult penalty (Dirichlet): -{juster['cult_brand_penalty']*100:.1f}%")
