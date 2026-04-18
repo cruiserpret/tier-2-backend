@@ -253,9 +253,13 @@ def _detect_brand_saturation(competitors, product_category: str) -> tuple[bool, 
     dominant_name_lower = dominant.name.lower()
 
     # Signal 1: PUBLISHED known brand
+    # Signal 1: PUBLISHED known brand — WITH review threshold gate
+    # GM3.4 FIX 1.5: require minimum reviews so challengers don't fire saturation
+    # Calibrated from Olipop test: Poppi at 4,740 reviews should NOT trigger
+    DOMINANT_BRAND_MIN_REVIEWS = 10000
     for brand in DOMINANT_BRANDS:
-        if brand in dominant_name_lower:
-            return True, f"dominant_brand_detected:{brand}"
+        if brand in dominant_name_lower and dominant_reviews >= DOMINANT_BRAND_MIN_REVIEWS:
+            return True, f"dominant_brand_detected:{brand}({dominant_reviews} reviews)"
 
     # Signal 2: CALIBRATED category threshold
     threshold = CATEGORY_INCUMBENT_THRESHOLD.get(product_category, 5000)
