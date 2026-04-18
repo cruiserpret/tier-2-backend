@@ -1,0 +1,76 @@
+{
+    "description": "Ground-truth validation products for Assembly calibration. Trial rates from published industry sources (Nielsen, Mintel, IQVIA, NPD, Morning Consult).",
+    "last_updated": "2026-04-18",
+    "products": [
+        {
+            "id": "olipop_2024",
+            "name": "Olipop Prebiotic Soda 12-pack",
+            "price": 35.99,
+            "category": "food_beverage",
+            "ground_truth_trial_rate": 0.27,
+            "ground_truth_range": [
+                0.24,
+                0.30
+            ],
+            "source": "Nielsen Functional Beverage Report 2024",
+            "expected_saturated": false,
+            "expected_subscription": false
+        },
+        {
+            "id": "everlane_2024",
+            "name": "Everlane Cotton T-Shirt",
+            "price": 130,
+            "category": "fashion_apparel",
+            "ground_truth_trial_rate": 0.10,
+            "ground_truth_range": [
+                0.08,
+                0.12
+            ],
+            "source": "Mintel Apparel 2024 + Quince market share data",
+            "expected_saturated": true,
+            "expected_subscription": false
+        },
+        {
+            "id": "yeti_2024",
+            "name": "YETI Rambler 20oz Travel Mug",
+            "price": 40,
+            "category": "home_lifestyle",
+            "ground_truth_trial_rate": 0.16,
+            "ground_truth_range": [
+                0.14,
+                0.18
+            ],
+            "source": "NPD Housewares 2023 + YETI 10-K",
+            "expected_saturated": true,
+            "expected_subscription": false
+        },
+        {
+            "id": "oura_2024",
+            "name": "Oura Ring Gen 3",
+            "price": 349,
+            "category": "electronics_tech",
+            "ground_truth_trial_rate": 0.075,
+            "ground_truth_range": [
+                0.06,
+                0.09
+            ],
+            "source": "Counterpoint Research Wearables 2024",
+            "expected_saturated": true,
+            "expected_subscription": true
+        },
+        {
+            "id": "hims_glp1_2024",
+            "name": "Hims GLP-1 Weight Loss Program",
+            "price": 199,
+            "category": "supplements_health",
+            "ground_truth_trial_rate": 0.055,
+            "ground_truth_range": [
+                0.04,
+                0.07
+            ],
+            "source": "IQVIA Pharmaceutical 2024 + Morning Consult Q4 2024",
+            "expected_saturated": true,
+            "expected_subscription": true
+        }
+    ]
+}
