@@ -1,19 +1,18 @@
 """
-backend/dtc/market_report_agent.py — GODMODE EDITION
+backend/dtc/market_report_agent.py — GODMODE FINAL
 
-Upgrades:
-  1. Category-specific Chandon deflation factors
-  2. Semantic stance reconciliation (fixes text/score mismatch)
-  3. Competitor-anchored Van Westendorp (market-share weighted)
-  4. Switching cost penalty on trial rate
-  5. Trial rate confidence interval (low/point/high)
-  6. Risk factors extracted from actual AGAINST arguments
+All fixes:
+ - Category-specific Chandon deflation
+ - Semantic stance reconciliation
+ - Competitor-anchored Van Westendorp (DISPLACES user price for premium)
+ - Trial rate confidence interval
+ - Real risk factors from AGAINST arguments
+ - Fashion-aware OPP computation
 """
 
 import asyncio
 import aiohttp
 import json
-import math
 import sys
 import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
@@ -23,41 +22,36 @@ from backend.dtc.dtc_ingestor import MarketIntelligence, ProductBrief
 from backend.dtc.market_debate_engine import DebateResult
 
 
-# ── GODMODE: Category-Specific Deflation Factors ─────────────────────────────
-# Derived from Chandon, Morwitz & Reinartz (2005) meta-analysis:
-# stated intent overprediction varies 2x between categories
 CATEGORY_DEFLATION = {
-    "beauty_skincare":    0.60,  # high repurchase signal from verified reviews
-    "supplements_health": 0.58,  # ritual consumption, moderate bias
-    "food_beverage":      0.45,  # taste is subjective, highest gap
-    "electronics_tech":   0.70,  # concrete specs, less bias
-    "saas_software":      0.65,  # clear ROI calculation
-    "fitness_sports":     0.55,  # lifestyle goods, moderate bias
-    "home_lifestyle":     0.62,  # durability matters, moderate bias
-    "fashion_apparel":    0.50,  # style subjectivity
-    "pet_products":       0.68,  # owner commitment
-    "baby_kids":          0.75,  # necessity category
-    "general":            0.60,  # default
+    "beauty_skincare":    0.60,
+    "supplements_health": 0.58,
+    "food_beverage":      0.45,
+    "electronics_tech":   0.70,
+    "saas_software":      0.65,
+    "fitness_sports":     0.55,
+    "home_lifestyle":     0.62,
+    "fashion_apparel":    0.42,  # Fashion is highest bias (Chandon extreme)
+    "pet_products":       0.68,
+    "baby_kids":          0.75,
+    "general":            0.60,
 }
 
-# Rejection phrases for semantic stance reconciliation
 REJECTION_PATTERNS = [
     "i won't purchase", "i won't buy", "not buying", "i'm a no",
     "i'm going to pass", "passing on this", "going to pass on",
     "not going to buy", "definitively no", "definitive no",
     "absolutely not", "can't justify", "cannot justify",
     "i cannot justify", "not worth it", "not paying",
+    "won't spend", "isn't worth",
 ]
 
 PURCHASE_PATTERNS = [
     "going to purchase", "going to buy", "i'll buy", "i'll purchase",
     "absolutely buying", "definitely buying", "i'm buying",
-    "worth the money", "i'm going to purchase", "adding to cart",
-    "will purchase", "will buy", "yes to buying",
+    "i'm going to purchase", "adding to cart",
+    "will purchase", "will buy",
 ]
 
-
-# ── LLM Client ────────────────────────────────────────────────────────────────
 
 async def _llm(session, prompt, max_tokens=800):
     try:
@@ -83,73 +77,44 @@ async def _llm(session, prompt, max_tokens=800):
         return ""
 
 
-# ── GODMODE: Semantic Stance Reconciliation ──────────────────────────────────
-
-def _reconcile_agent_stance(agent: dict) -> dict:
-    """
-    GODMODE FIX #3: Reconcile opinion text with numerical score.
-
-    If agent opinion contains clear rejection → force AGAINST stance
-    If agent opinion contains clear purchase intent → force FOR stance
-    Otherwise use score-based classification.
-
-    Returns agent dict with corrected stance + reconciliation flag.
-    """
+def _reconcile_agent_stance(agent):
     opinion = (agent.get("opinion", "") + " " + agent.get("last_argument", "")).lower()
-
     has_rejection = any(p in opinion for p in REJECTION_PATTERNS)
     has_purchase  = any(p in opinion for p in PURCHASE_PATTERNS)
-
     original_stance = agent.get("stance", "neutral")
-    reconciled = False
 
     if has_rejection and not has_purchase:
         if original_stance != "against":
             agent["stance"] = "against"
             agent["stance_reconciled"] = True
             agent["reconciliation_reason"] = "Opinion contains clear rejection"
-            reconciled = True
     elif has_purchase and not has_rejection:
         if original_stance != "for":
             agent["stance"] = "for"
             agent["stance_reconciled"] = True
             agent["reconciliation_reason"] = "Opinion contains clear purchase intent"
-            reconciled = True
 
-    if not reconciled:
+    if "stance_reconciled" not in agent:
         agent["stance_reconciled"] = False
-
     return agent
 
 
-def reconcile_all_agents(agents: list[dict]) -> tuple[list[dict], int]:
-    """Reconcile stances for all agents. Returns (agents, num_reconciled)."""
-    reconciled_count = 0
+def reconcile_all_agents(agents):
+    count = 0
     for a in agents:
         _reconcile_agent_stance(a)
         if a.get("stance_reconciled"):
-            reconciled_count += 1
-    return agents, reconciled_count
+            count += 1
+    return agents, count
 
 
-# ── GODMODE: Category-Specific Juster Trial Rate ─────────────────────────────
-
-def compute_juster_trial_rate(
-    agents_final: list[dict],
-    intel:        MarketIntelligence,
-) -> dict:
-    """
-    GODMODE FIX #1, #7, #9:
-    - Category-specific Chandon deflation
-    - Switching cost penalty if dominant competitor is strong
-    - Trial rate confidence interval (low/point/high)
-    """
+def compute_juster_trial_rate(agents_final, intel):
     if not agents_final:
         return {
             "trial_rate_pct": 0, "trial_rate_low": 0, "trial_rate_high": 0,
             "juster_raw": 0, "avg_score": 0, "confidence": "low",
-            "segment_breakdown": {},
-            "deflation_factor": 0.60, "switching_penalty": 0.0,
+            "segment_breakdown": {}, "deflation_factor": 0.60,
+            "switching_penalty": 0.0,
         }
 
     scores = [a["score"] for a in agents_final]
@@ -159,19 +124,15 @@ def compute_juster_trial_rate(
     x = avg_score / 10.0
     juster_raw = max(0.0, min(1.0, 0.8845 * x - 0.0481))
 
-    # ── GODMODE: Category-specific deflation ─────────────────────────────
     category = intel.product.category
     deflation = CATEGORY_DEFLATION.get(category, CATEGORY_DEFLATION["general"])
 
     trial_point = juster_raw * deflation
 
-    # ── GODMODE: Switching cost penalty ──────────────────────────────────
     switching_penalty = intel.switching_cost_penalty
     if switching_penalty > 0:
         trial_point = trial_point * (1 - switching_penalty)
 
-    # ── GODMODE: Confidence interval ─────────────────────────────────────
-    # Low/high estimates based on score variance
     x_low  = max(0.0, (avg_score - 0.5 * score_std) / 10.0)
     x_high = min(1.0, (avg_score + 0.5 * score_std) / 10.0)
 
@@ -182,15 +143,10 @@ def compute_juster_trial_rate(
         trial_low  = trial_low  * (1 - switching_penalty)
         trial_high = trial_high * (1 - switching_penalty)
 
-    # Confidence assessment
-    if score_std < 1.5:
-        confidence = "high"
-    elif score_std < 3.0:
-        confidence = "medium"
-    else:
-        confidence = "low"
+    if score_std < 1.5:      confidence = "high"
+    elif score_std < 3.0:    confidence = "medium"
+    else:                    confidence = "low"
 
-    # Segment breakdown
     for_agents     = [a for a in agents_final if a["stance"] == "for"]
     against_agents = [a for a in agents_final if a["stance"] == "against"]
     neutral_agents = [a for a in agents_final if a["stance"] == "neutral"]
@@ -220,37 +176,31 @@ def compute_juster_trial_rate(
     }
 
 
-# ── GODMODE: Competitor-Anchored Van Westendorp ──────────────────────────────
-
-def compute_van_westendorp(
-    intel:        MarketIntelligence,
-    agents_final: list[dict]
-) -> dict:
+def compute_van_westendorp(intel, agents_final):
     """
-    GODMODE FIX #4: OPP derived from market-share weighted competitor prices,
-    not just arbitrary new-brand discount.
+    GODMODE: OPP properly anchored to competitor pricing, not user's set price.
+    For premium products, OPP sits near category-weighted price, NOT user price.
     """
     product_price = intel.product.price
-    comp_gaps = intel.gaps
     cat_weighted_price = intel.category_avg_price
 
-    # Product price positioning relative to category
     if cat_weighted_price > 0:
         price_ratio = product_price / cat_weighted_price
     else:
         price_ratio = 1.0
 
-    # ── GODMODE: OPP based on price position ─────────────────────────────
     if cat_weighted_price > 0:
         if price_ratio > 1.5:
-            # Premium positioning — OPP sits slightly above category avg
-            # Real premium brands land ~15-25% above category, not at user's set price
-            opp = cat_weighted_price * 1.18
+            # Heavy premium — OPP close to category avg + small headroom
+            opp = cat_weighted_price * 1.08
+        elif price_ratio > 1.2:
+            # Moderate premium — OPP between category avg and user price
+            opp = cat_weighted_price * 1.15
         elif price_ratio < 0.7:
-            # Budget positioning — OPP near user price, slight headroom
+            # Budget positioning
             opp = product_price * 1.05
         else:
-            # Mid-range — OPP slightly below user price
+            # Mid-range — OPP just under user price
             opp = product_price * 0.92
     else:
         opp = product_price * 0.85
@@ -258,9 +208,8 @@ def compute_van_westendorp(
     opp = round(opp, 2)
     pmc = round(opp * 0.55, 2)
     lower_acceptable = round(opp * 0.80, 2)
-    upper_acceptable = round(opp * 1.30, 2)
+    upper_acceptable = round(opp * 1.25, 2)
 
-    # Price resistance from actual AGAINST agents
     against_count = sum(1 for a in agents_final if a["stance"] == "against")
     total_agents  = len(agents_final)
     resistance_pct = round((against_count / total_agents) * 100, 1) if total_agents else 0
@@ -296,16 +245,7 @@ def compute_van_westendorp(
     }
 
 
-# ── GODMODE: Real Risk Factors from AGAINST Arguments ────────────────────────
-
-async def _extract_real_risks(
-    session:      aiohttp.ClientSession,
-    agents_final: list[dict],
-    intel:        MarketIntelligence,
-) -> list[str]:
-    """
-    GODMODE FIX #10: Extract risks from actual holdout agent arguments.
-    """
+async def _extract_real_risks(session, agents_final, intel):
     resistors = [a for a in agents_final if a["stance"] in ("against", "neutral")]
     if not resistors:
         return ["No holdout agents — market reception was universally positive.",
@@ -323,16 +263,16 @@ async def _extract_real_risks(
 
     if not objections:
         return ["Holdout agents did not articulate specific objections.",
-                "Re-run simulation with more agents for better signal.",
-                "Gather qualitative feedback from real customers."]
+                "Gather qualitative feedback from real customers.",
+                "Run simulation with more agents for better signal."]
 
-    prompt = f"""From these real buyer objections to {intel.product.name} at ${intel.product.price}, extract the 3 most distinct RISK FACTORS that could kill this product's launch.
+    prompt = f"""From these buyer objections to {intel.product.name} at ${intel.product.price}, extract the 3 most distinct RISK FACTORS.
 
-OBJECTIONS FROM HOLDOUT BUYERS:
+OBJECTIONS:
 {chr(10).join(objections[:6])}
 
 Return ONLY a JSON array of 3 risk strings, each under 80 characters. No explanations.
-Example: ["Price resistance 6x category avg", "Taste skepticism not addressed", "Switching cost from Kashi too high"]"""
+Example: ["Price resistance 6x category avg", "Taste skepticism", "Switching cost from incumbent"]"""
 
     response = await _llm(session, prompt, max_tokens=200)
     try:
@@ -344,15 +284,10 @@ Example: ["Price resistance 6x category avg", "Taste skepticism not addressed", 
         risks = json.loads(clean.strip())
         return risks[:3] if isinstance(risks, list) else []
     except Exception:
-        # Fallback: extract from first objections directly
         return [obj[:100] for obj in objections[:3]]
 
 
-# ── LLM Report Generation ────────────────────────────────────────────────────
-
-async def _generate_report_narrative(
-    session, intel, debate, juster, psm, agents_final
-):
+async def _generate_report_narrative(session, intel, debate, juster, psm, agents_final):
     product = intel.product
     final_for     = sum(1 for a in agents_final if a["stance"] == "for")
     final_against = sum(1 for a in agents_final if a["stance"] == "against")
@@ -368,17 +303,14 @@ async def _generate_report_narrative(
             shifted = initial["stance"] != final_agent["stance"]
             agent_journeys.append(
                 f"{final_agent['name']}: {initial['stance']} → {final_agent['stance']} "
-                f"({'shifted' if shifted else 'held'}) | Score: {initial['score']} → {final_agent['score']}"
+                f"({'shifted' if shifted else 'held'})"
             )
 
     comp_context = ""
     for gap in intel.gaps[:2]:
         comp_context += (
             f"\n{gap.competitor_name}: ${gap.competitor_price} | "
-            f"{gap.competitor_rating}★ | {gap.competitor_bought:,}/month | "
-            f"market share {gap.market_share*100:.0f}% | "
-            f"FOR signal: {gap.star_signal['for']*100:.0f}% | "
-            f"Buyers praise: {', '.join(gap.top_praise[:2])}"
+            f"{gap.competitor_rating}★ | share={gap.competitor_bought}"
         )
 
     decisive_args = []
@@ -388,48 +320,32 @@ async def _generate_report_narrative(
             if a.get("last_argument"):
                 decisive_args.append(f"{a['name']}: \"{a['last_argument'][:120]}\"")
 
-    prompt = f"""Professional DTC market intelligence report for GODMODE simulation.
+    prompt = f"""Professional DTC market intelligence report.
 
-PRODUCT: {product.name}
-DESCRIPTION: {product.description}
-PRICE: ${product.price} (Price ratio: {intel.price_premium_ratio}x category weighted avg)
+PRODUCT: {product.name} at ${product.price}
 CATEGORY: {product.category.replace('_', ' ')}
+PRICE RATIO: {intel.price_premium_ratio}x category weighted avg
+PRICE PENALTY: -{intel.price_premium_penalty*100:.0f}% from FOR
+SWITCHING PENALTY: -{intel.switching_cost_penalty*100:.0f}%
 
-GODMODE ADJUSTMENTS APPLIED:
-- Category deflation: {juster['deflation_factor']} (Chandon 2005)
-- Price premium penalty: -{intel.price_premium_penalty*100:.0f}% from FOR (Monroe 2003)
-- Switching cost penalty: -{intel.switching_cost_penalty*100:.0f}% from trial (Burnham 2003)
+RESULTS ({total} agents): {final_for} FOR | {final_against} AGAINST | {final_neutral} NEUTRAL
+TRIAL RATE: {juster['trial_rate_pct']}% (range: {juster['trial_rate_low']}-{juster['trial_rate_high']}%)
+OPP: ${psm['optimal_price_point']} | VERDICT: {psm['pricing_verdict']}
 
-SIMULATION RESULTS ({total} agents, 3 rounds):
-- Final: {final_for} FOR | {final_against} AGAINST | {final_neutral} NEUTRAL
-- Trial rate: {juster['trial_rate_pct']}% (range: {juster['trial_rate_low']}-{juster['trial_rate_high']}%)
-- Van Westendorp OPP: ${psm['optimal_price_point']} vs current ${product.price}
-- Price verdict: {psm['pricing_verdict']}
-- Dominant competitor: {intel.dominant_competitor} ({intel.dominant_bought:,}/month)
-
-AGENT JOURNEYS:
-{chr(10).join(agent_journeys)}
-
-COMPETITOR LANDSCAPE:{comp_context}
-
-DECISIVE ARGUMENTS:
-{chr(10).join(decisive_args) if decisive_args else 'None recorded.'}
-
-REDDIT THEMES:
-Positive: {', '.join(intel.reddit.positive_themes) if intel.reddit else 'N/A'}
-Negative: {', '.join(intel.reddit.negative_themes) if intel.reddit else 'N/A'}
+COMPETITORS:{comp_context}
+ARGUMENTS:
+{chr(10).join(decisive_args) if decisive_args else 'None.'}
 
 Generate a professional market intelligence report. Return ONLY valid JSON:
-
 {{
-  "summary": "<3-4 sentences. Include price ratio context and category-specific insights.>",
-  "predicted_trajectory": "<2-3 sentence 12-month prediction. Name specific segment.>",
-  "most_receptive_segment": "<1-2 sentences naming primary buyer archetype.>",
-  "competitive_positioning": "<2-3 sentences on defensible position vs dominant competitor.>",
+  "summary": "<3-4 sentences with price ratio + category context>",
+  "predicted_trajectory": "<2-3 sentence 12-month prediction>",
+  "most_receptive_segment": "<1-2 sentences naming primary buyer archetype>",
+  "competitive_positioning": "<2-3 sentences on defensible position>",
   "purchase_drivers": ["<driver 1>", "<driver 2>", "<driver 3>"],
   "objections": ["<objection 1>", "<objection 2>", "<objection 3>"],
-  "winning_message": "<Under 15 words. Specific. No fluff.>",
-  "actionable_insight": "<2-3 sentences of concrete strategic recommendation.>"
+  "winning_message": "<Under 15 words, specific, no fluff>",
+  "actionable_insight": "<2-3 sentences of concrete recommendation>"
 }}"""
 
     response = await _llm(session, prompt, max_tokens=1000)
@@ -448,12 +364,10 @@ Generate a professional market intelligence report. Return ONLY valid JSON:
             "competitive_positioning": f"Premium vs {intel.dominant_competitor}.",
             "purchase_drivers": ["Quality", "Differentiation", "Positioning"],
             "objections": ["Price", "Brand trust", "Switching cost"],
-            "winning_message": "Premium quality, not premium marketing.",
+            "winning_message": "Quality that lasts beyond the price tag.",
             "actionable_insight": f"Test at ${psm['optimal_price_point']} for maximum trial.",
         }
 
-
-# ── Agent & Round Summaries ──────────────────────────────────────────────────
 
 def _build_agent_summaries(debate, agents_final):
     summaries = []
@@ -501,18 +415,10 @@ def _build_round_summaries(debate):
     return summaries
 
 
-# ── Main Entry Point ──────────────────────────────────────────────────────────
-
 async def generate_market_report(intel, debate, simulation_id="sim_dtc_001"):
-    """GODMODE market report generation with all 10 fixes applied."""
     product = intel.product
+    agents_final = list(debate.rounds[-1].agents) if debate.rounds else []
 
-    if debate.rounds:
-        agents_final = list(debate.rounds[-1].agents)
-    else:
-        agents_final = []
-
-    # ── GODMODE FIX #3: Reconcile stances ────────────────────────────────
     agents_final, reconciled_count = reconcile_all_agents(agents_final)
 
     print(f"\n[ReportAgent] ══ GODMODE Report Generation ══")
@@ -520,7 +426,6 @@ async def generate_market_report(intel, debate, simulation_id="sim_dtc_001"):
     if reconciled_count > 0:
         print(f"[ReportAgent] GODMODE: Reconciled {reconciled_count} agent stances from opinion text")
 
-    # Compute metrics with GODMODE
     juster = compute_juster_trial_rate(agents_final, intel)
     psm    = compute_van_westendorp(intel, agents_final)
 
@@ -531,11 +436,9 @@ async def generate_market_report(intel, debate, simulation_id="sim_dtc_001"):
     print(f"[ReportAgent] Van Westendorp OPP: ${psm['optimal_price_point']}")
     print(f"[ReportAgent] Price verdict: {psm['pricing_verdict']}")
 
-    # Generate narrative + real risks
     async with aiohttp.ClientSession() as session:
         narrative_task = _generate_report_narrative(session, intel, debate, juster, psm, agents_final)
         risks_task     = _extract_real_risks(session, agents_final, intel)
-
         narrative, real_risks = await asyncio.gather(narrative_task, risks_task)
 
     final_for     = sum(1 for a in agents_final if a["stance"] == "for")
@@ -578,7 +481,6 @@ async def generate_market_report(intel, debate, simulation_id="sim_dtc_001"):
         "juster_trial_rate":   juster,
         "van_westendorp_psm":  psm,
 
-        # GODMODE: context on what was applied
         "godmode_adjustments": {
             "price_premium_ratio":    intel.price_premium_ratio,
             "price_premium_penalty":  intel.price_premium_penalty,
