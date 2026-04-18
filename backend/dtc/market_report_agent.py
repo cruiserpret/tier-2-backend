@@ -105,6 +105,18 @@ BEHAVIORAL_COMPENSATION_FLOOR_NONSATURATED = 0.55  # calibrated against Olipop g
 
 # Compound penalty applies when subscription + saturation both detected
 COMPOUND_PENALTY_MULTIPLIER = 0.80
+# GM3.4 FIX 2: Absolute price elasticity multipliers
+# Research basis: Ariely (2008) Predictably Irrational — consumers anchor on
+# absolute dollar amounts, not ratios. Puccinelli et al. (2013) — purchase
+# probability drops steeply above $500 in consumer categories.
+# CALIBRATED: Multiplier values chosen empirically.
+# Note: Only applied in NON-SATURATED markets (saturated markets already
+# have cult penalty capturing price psychology — would double-count).
+ABS_PRICE_FRICTION_1000 = 0.40   # $1000+ luxury tier
+ABS_PRICE_FRICTION_500  = 0.55   # $500-999 high-ticket
+ABS_PRICE_FRICTION_300  = 0.70   # $300-499 premium
+ABS_PRICE_FRICTION_100  = 0.85   # $100-299 elevated
+ABS_PRICE_FRICTION_LOW  = 1.00   # <$100 no extra friction
 
 
 async def _llm(session, prompt, max_tokens=800):
@@ -272,6 +284,24 @@ def compute_juster_trial_rate(agents_final, intel):
     if cult_penalty > 0:
         trial_point = trial_point * (1 - cult_penalty)
 
+    # GM3.4 FIX 2: Absolute price elasticity (only for non-saturated markets)
+    # Saturated markets already have cult penalty capturing price psychology
+    abs_price_multiplier = 1.0
+    if not intel.is_saturated_market:
+        price = intel.product.price
+        if price >= 1000:
+            abs_price_multiplier = ABS_PRICE_FRICTION_1000
+        elif price >= 500:
+            abs_price_multiplier = ABS_PRICE_FRICTION_500
+        elif price >= 300:
+            abs_price_multiplier = ABS_PRICE_FRICTION_300
+        elif price >= 100:
+            abs_price_multiplier = ABS_PRICE_FRICTION_100
+        else:
+            abs_price_multiplier = ABS_PRICE_FRICTION_LOW
+        trial_point *= abs_price_multiplier
+
+    # ENGINEERED: Dynamic ceiling (not research-backed)
     dynamic_ceiling = _compute_dynamic_ceiling(intel)
     saturated_ceiling_applied = False
     if intel.is_saturated_market:
@@ -291,6 +321,10 @@ def compute_juster_trial_rate(agents_final, intel):
     if cult_penalty > 0:
         trial_low  *= (1 - cult_penalty)
         trial_high *= (1 - cult_penalty)
+    # GM3.4 FIX 2: Apply absolute price friction to confidence interval too
+    if abs_price_multiplier < 1.0:
+        trial_low  *= abs_price_multiplier
+        trial_high *= abs_price_multiplier
 
     if intel.is_saturated_market:
         trial_high = min(trial_high, dynamic_ceiling)
@@ -333,6 +367,14 @@ def compute_juster_trial_rate(agents_final, intel):
         "dynamic_ceiling":   dynamic_ceiling,
         "saturated_ceiling_applied": saturated_ceiling_applied,
         "compound_penalty_applied":  compound_applied,
+        "abs_price_multiplier":      abs_price_multiplier,
+        "abs_price_tier":           (
+            "luxury_1000+"   if intel.product.price >= 1000 else
+            "high_500_999"   if intel.product.price >= 500 else
+            "premium_300_499" if intel.product.price >= 300 else
+            "elevated_100_299" if intel.product.price >= 100 else
+            "standard_under_100"
+        ),
     }
 
 
@@ -601,6 +643,8 @@ async def generate_market_report(intel, debate, simulation_id="sim_dtc_001"):
     if juster.get("compound_penalty_applied"):
         print(f"[ReportAgent] ⚡ COMPOUND penalty (sub+saturation): × {COMPOUND_PENALTY_MULTIPLIER}")
     print(f"[ReportAgent] Cult penalty (Dirichlet): -{juster['cult_brand_penalty']*100:.1f}%")
+    if juster['abs_price_multiplier'] < 1.0:
+        print(f"[ReportAgent] ⚡ Abs price friction ({juster['abs_price_tier']}): × {juster['abs_price_multiplier']}")
     print(f"[ReportAgent] Dynamic ceiling: {juster['dynamic_ceiling']*100:.1f}%")
     if juster['saturated_ceiling_applied']:
         print(f"[ReportAgent] ⚠ Saturated ceiling applied")
