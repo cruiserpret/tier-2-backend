@@ -76,21 +76,18 @@ CATEGORY_PENALTY_COEFFICIENT = {
 # CALIBRATED — Incumbent review count thresholds per category.
 # Research foundation: Morwitz et al. (2007) showed review count correlates
 # with market penetration. Specific cutoffs are empirical from validation.
-# GM3.4 FIX 1.6: Raised thresholds to match real market dominance criteria
-# Rationale: 4,740 reviews (Poppi) is a healthy challenger, NOT saturation.
-# True dominance looks like Stanley (90K), Apple Watch (100K+), Gillette (15K+)
 CATEGORY_INCUMBENT_THRESHOLD = {
-    "fashion_apparel":    15000,   # was 5000 — true incumbents like Gap/Levi's
-    "food_beverage":      20000,   # was 3000 — Red Bull/Monster-tier only
-    "home_lifestyle":     20000,   # was 10000 — legacy brands like Thermos
-    "beauty_skincare":    15000,   # was 5000 — Cetaphil/CeraVe tier
-    "supplements_health": 12000,   # was 4000 — Centrum/One A Day tier
-    "electronics_tech":   10000,   # was 1500 — true wearable dominance
-    "fitness_sports":     10000,
-    "pet_products":       10000,
-    "baby_kids":          10000,
-    "saas_software":      2000,
-    "general":            15000,
+    "fashion_apparel":    5000,
+    "food_beverage":      3000,
+    "home_lifestyle":     10000,
+    "beauty_skincare":    5000,
+    "supplements_health": 4000,
+    "electronics_tech":   1500,   # CALIBRATED: fragmented variants
+    "fitness_sports":     3000,
+    "pet_products":       3000,
+    "baby_kids":          3000,
+    "saas_software":      500,
+    "general":            5000,
 }
 
 # CALIBRATED — Curated list of known dominant brands per category.
@@ -236,13 +233,12 @@ def _effective_price(product: ProductBrief, subscription_monthly: float) -> floa
 
 def _detect_brand_saturation(competitors, product_category: str) -> tuple[bool, str]:
     """
-    GM3.4 FIX 1.7: ALL saturation signals now require minimum review floor.
-    
-    Rationale: A "saturated market" means a brand so dominant consumers default to it.
-    This requires ABSOLUTE scale, not just relative dominance.
-    Poppi at 4,740 reviews is a challenger, not a market-dominating incumbent.
-    
-    Universal floor: 10,000 reviews minimum for any signal to fire.
+    ENGINEERED: 4-signal saturation detection cascade.
+
+    Signal 1 — PUBLISHED: Known brand match (Counterpoint/NPD/Mintel data)
+    Signal 2 — CALIBRATED: Category review threshold
+    Signal 3 — CALIBRATED: 5x asymmetry ratio
+    Signal 4 — CALIBRATED: 4.5★ + 1000 reviews cult threshold
     """
     if not competitors:
         return False, ""
@@ -256,30 +252,24 @@ def _detect_brand_saturation(competitors, product_category: str) -> tuple[bool, 
     dominant_rating = dominant.avg_rating
     dominant_name_lower = dominant.name.lower()
 
-    # GM3.4 FIX 1.7: Universal absolute-scale floor
-    # No signal fires below this regardless of other criteria
-    UNIVERSAL_SATURATION_FLOOR = 10000
-    if dominant_reviews < UNIVERSAL_SATURATION_FLOOR:
-        return False, ""
-
-    # Signal 1: Known brand match (now also gated by universal floor above)
+    # Signal 1: PUBLISHED known brand
     for brand in DOMINANT_BRANDS:
         if brand in dominant_name_lower:
-            return True, f"dominant_brand_detected:{brand}({dominant_reviews} reviews)"
+            return True, f"dominant_brand_detected:{brand}"
 
-    # Signal 2: Category-specific threshold (>= universal floor, and >= category threshold)
-    threshold = CATEGORY_INCUMBENT_THRESHOLD.get(product_category, 15000)
+    # Signal 2: CALIBRATED category threshold
+    threshold = CATEGORY_INCUMBENT_THRESHOLD.get(product_category, 5000)
     if dominant_reviews >= threshold:
         return True, f"review_threshold:{dominant_reviews}>={threshold}"
 
-    # Signal 3: 5x review asymmetry (only matters at scale)
+    # Signal 3: CALIBRATED 5x asymmetry
     if len(valid) > 1:
         second_reviews = valid[1].total_reviews
         if second_reviews > 0 and (dominant_reviews / second_reviews) >= 5:
             return True, f"asymmetry_ratio:{dominant_reviews/second_reviews:.1f}x"
 
-    # Signal 4: Cult brand (4.5★+ with 1000+ reviews — but only above universal floor)
-    if dominant_rating >= 4.5:
+    # Signal 4: CALIBRATED cult brand
+    if dominant_rating >= 4.5 and dominant_reviews >= 1000:
         return True, f"cult_brand:{dominant_rating}★_with_{dominant_reviews}_reviews"
 
     return False, ""

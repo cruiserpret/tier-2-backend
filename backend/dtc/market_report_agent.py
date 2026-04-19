@@ -87,36 +87,25 @@ PURCHASE_PATTERNS = [
 ]
 
 
-# ─── GM3.4 FIX 1: Conditional Deflation (saturated vs non-saturated) ────────
-# PUBLISHED CONCEPT (Morwitz 1993): behavioral compensation should vary
-# with market structure. Research basis for the split.
-# CALIBRATED: Specific values derived from 10-product validation tonight.
-#
-# Saturated markets: incumbents already suppress intent → use loose (0.15)
-# Non-saturated markets: intent maps directly to behavior → use tight (0.25)
+# ── GM3.3 CALIBRATION CONSTANTS ──────────────────────────────────────────────
+# These are the tuned values based on validation product results.
+# Each constant has a clear math rationale.
 
-# Saturated market values (works for YETI, Oura, Everlane, Warby Parker)
-BEHAVIORAL_COMPENSATION_COEF_SATURATED = 0.15
-BEHAVIORAL_COMPENSATION_FLOOR_SATURATED = 0.40
+# CALIBRATED: Behavioral compensation coefficient (was 0.4, now 0.25)
+# Rationale: YETI test showed 0.4 over-softens when AGAINST is extreme.
+# 0.25 provides gentler correction that preserves deflation signal.
+BEHAVIORAL_COMPENSATION_COEF = 0.15
 
-# Non-saturated market values (works for Olipop, Liquid Death)
-BEHAVIORAL_COMPENSATION_COEF_NONSATURATED = 0.25
-BEHAVIORAL_COMPENSATION_FLOOR_NONSATURATED = 0.55  # calibrated against Olipop ground truth
+# CALIBRATED: Behavioral compensation floor (was 0.25, now 0.35)
+# Rationale: Prevents effective_deflation from dropping below 0.35 even
+# when AGAINST is 100%. Protects against over-softening.
+BEHAVIORAL_COMPENSATION_FLOOR = 0.40
 
-# Compound penalty applies when subscription + saturation both detected
+# CALIBRATED: Compound penalty multiplier for sub + saturation
+# Rationale: Hims test showed we need extra ~33% deflation when both fire.
+# 0.65 = 35% additional reduction when subscription + saturation co-occur.
+# Research basis: Inkpen & Beamish (1997) compound friction model.
 COMPOUND_PENALTY_MULTIPLIER = 0.80
-# GM3.4 FIX 2: Absolute price elasticity multipliers
-# Research basis: Ariely (2008) Predictably Irrational — consumers anchor on
-# absolute dollar amounts, not ratios. Puccinelli et al. (2013) — purchase
-# probability drops steeply above $500 in consumer categories.
-# CALIBRATED: Multiplier values chosen empirically.
-# Note: Only applied in NON-SATURATED markets (saturated markets already
-# have cult penalty capturing price psychology — would double-count).
-ABS_PRICE_FRICTION_1000 = 0.40   # $1000+ luxury tier
-ABS_PRICE_FRICTION_500  = 0.55   # $500-999 high-ticket
-ABS_PRICE_FRICTION_300  = 0.70   # $300-499 premium
-ABS_PRICE_FRICTION_100  = 0.85   # $100-299 elevated
-ABS_PRICE_FRICTION_LOW  = 1.00   # <$100 no extra friction
 
 
 async def _llm(session, prompt, max_tokens=800):
@@ -253,20 +242,10 @@ def compute_juster_trial_rate(agents_final, intel):
     base_deflation = CATEGORY_DEFLATION.get(category, CATEGORY_DEFLATION["general"])
 
     # Step 2 & 3: Behavioral compensation (GM3.3 TIGHTENED)
-    # GM3.4 FIX 1: Conditional Deflation based on market saturation
-    # Saturated markets need loose compensation, non-saturated need tight
     against_count = sum(1 for a in agents_final if a["stance"] == "against")
     against_ratio = against_count / len(agents_final)
-
-    if intel.is_saturated_market:
-        comp_coef = BEHAVIORAL_COMPENSATION_COEF_SATURATED
-        comp_floor = BEHAVIORAL_COMPENSATION_FLOOR_SATURATED
-    else:
-        comp_coef = BEHAVIORAL_COMPENSATION_COEF_NONSATURATED
-        comp_floor = BEHAVIORAL_COMPENSATION_FLOOR_NONSATURATED
-
-    effective_deflation = base_deflation * (1 - comp_coef * against_ratio)
-    effective_deflation = max(comp_floor, min(base_deflation, effective_deflation))
+    effective_deflation = base_deflation * (1 - BEHAVIORAL_COMPENSATION_COEF * against_ratio)
+    effective_deflation = max(BEHAVIORAL_COMPENSATION_FLOOR, min(base_deflation, effective_deflation))
 
     # Step 4: GM3.3 NEW — Compound penalty for subscription + saturation
     compound_applied = False
@@ -284,24 +263,6 @@ def compute_juster_trial_rate(agents_final, intel):
     if cult_penalty > 0:
         trial_point = trial_point * (1 - cult_penalty)
 
-    # GM3.4 FIX 2: Absolute price elasticity (only for non-saturated markets)
-    # Saturated markets already have cult penalty capturing price psychology
-    abs_price_multiplier = 1.0
-    if not intel.is_saturated_market:
-        price = intel.product.price
-        if price >= 1000:
-            abs_price_multiplier = ABS_PRICE_FRICTION_1000
-        elif price >= 500:
-            abs_price_multiplier = ABS_PRICE_FRICTION_500
-        elif price >= 300:
-            abs_price_multiplier = ABS_PRICE_FRICTION_300
-        elif price >= 100:
-            abs_price_multiplier = ABS_PRICE_FRICTION_100
-        else:
-            abs_price_multiplier = ABS_PRICE_FRICTION_LOW
-        trial_point *= abs_price_multiplier
-
-    # ENGINEERED: Dynamic ceiling (not research-backed)
     dynamic_ceiling = _compute_dynamic_ceiling(intel)
     saturated_ceiling_applied = False
     if intel.is_saturated_market:
@@ -321,10 +282,6 @@ def compute_juster_trial_rate(agents_final, intel):
     if cult_penalty > 0:
         trial_low  *= (1 - cult_penalty)
         trial_high *= (1 - cult_penalty)
-    # GM3.4 FIX 2: Apply absolute price friction to confidence interval too
-    if abs_price_multiplier < 1.0:
-        trial_low  *= abs_price_multiplier
-        trial_high *= abs_price_multiplier
 
     if intel.is_saturated_market:
         trial_high = min(trial_high, dynamic_ceiling)
@@ -358,23 +315,12 @@ def compute_juster_trial_rate(agents_final, intel):
         "segment_breakdown": segment_breakdown,
         "deflation_factor":  base_deflation,
         "effective_deflation": round(effective_deflation, 3),
-        "comp_coef_used":    comp_coef,
-        "comp_floor_used":   comp_floor,
-        "market_type":       "saturated" if intel.is_saturated_market else "open",
         "against_ratio":     round(against_ratio, 3),
         "switching_penalty": switching_penalty,
         "cult_brand_penalty": cult_penalty,
         "dynamic_ceiling":   dynamic_ceiling,
         "saturated_ceiling_applied": saturated_ceiling_applied,
         "compound_penalty_applied":  compound_applied,
-        "abs_price_multiplier":      abs_price_multiplier,
-        "abs_price_tier":           (
-            "luxury_1000+"   if intel.product.price >= 1000 else
-            "high_500_999"   if intel.product.price >= 500 else
-            "premium_300_499" if intel.product.price >= 300 else
-            "elevated_100_299" if intel.product.price >= 100 else
-            "standard_under_100"
-        ),
     }
 
 
@@ -637,14 +583,11 @@ async def generate_market_report(intel, debate, simulation_id="sim_dtc_001"):
 
     print(f"[ReportAgent] Trial rate: {juster['trial_rate_pct']}% "
           f"(range: {juster['trial_rate_low']}-{juster['trial_rate_high']}%)")
-    market_type = "SATURATED" if intel.is_saturated_market else "OPEN"
     print(f"[ReportAgent] Base deflation: {juster['deflation_factor']} → effective {juster['effective_deflation']} "
-          f"(AGAINST ratio {juster['against_ratio']*100:.0f}%, market={market_type})")
+          f"(AGAINST ratio {juster['against_ratio']*100:.0f}%, coef {BEHAVIORAL_COMPENSATION_COEF}, floor {BEHAVIORAL_COMPENSATION_FLOOR})")
     if juster.get("compound_penalty_applied"):
         print(f"[ReportAgent] ⚡ COMPOUND penalty (sub+saturation): × {COMPOUND_PENALTY_MULTIPLIER}")
     print(f"[ReportAgent] Cult penalty (Dirichlet): -{juster['cult_brand_penalty']*100:.1f}%")
-    if juster['abs_price_multiplier'] < 1.0:
-        print(f"[ReportAgent] ⚡ Abs price friction ({juster['abs_price_tier']}): × {juster['abs_price_multiplier']}")
     print(f"[ReportAgent] Dynamic ceiling: {juster['dynamic_ceiling']*100:.1f}%")
     if juster['saturated_ceiling_applied']:
         print(f"[ReportAgent] ⚠ Saturated ceiling applied")
