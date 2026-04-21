@@ -627,6 +627,7 @@ async def generate_market_report(intel, debate, simulation_id="sim_dtc_001"):
         verdict_note = f"Strong rejection: {final_against} of {len(agents_final)} would not buy."
 
     report = {
+        "disclaimer": "Assembly Tier 2 Beta v0.1. Validated against 10 DTC products (Nielsen, IQVIA, Mintel). Current accuracy: 50% A-grade predictions, 90% correct verdict direction. Use for directional intelligence. Not a substitute for traditional market research.",
         "simulation_id":   simulation_id,
         "topic":           f"[DTC] {product.name} at ${product.price} — {product.description[:80]}",
         "mode":            "dtc",
