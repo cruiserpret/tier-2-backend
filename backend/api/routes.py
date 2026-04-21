@@ -20,35 +20,32 @@ api = Blueprint("api", __name__)
 simulations = {}
 
 # ── Tier 2 persistence ───────────────────────────────────────────
-# /tmp survives within a worker session but NOT across workers.
-# GODMODE FIX: Every GET reloads from disk so any worker can serve any sim.
-SIM_STORE = pathlib.Path("/tmp/dtc_simulations.json")
-_store_lock = threading.Lock()  # Prevent concurrent write corruption
+# GM4.0 PHASE 0 DAY 2: SQLite-backed persistence with WAL mode.
+# Replaces JSON file approach. Handles multi-worker Railway concurrency.
+# JSON fallback retained as belt-and-suspenders safety net.
+# Research: SQLite.org WAL documentation + Gray & Reuter (1993) ACID semantics.
+from backend.dtc import dtc_storage
 
 def _load_dtc_sims():
-    try:
-        return json.loads(SIM_STORE.read_text())
-    except Exception:
-        return {}
+    """Load all simulations from SQLite (JSON fallback on failure)."""
+    return dtc_storage.load_all()
 
 def _save_dtc_sims():
-    with _store_lock:
-        try:
-            SIM_STORE.write_text(json.dumps(dtc_simulations, default=str))
-        except Exception as e:
-            print(f"[API] Failed to persist simulations: {e}")
+    """Persist in-memory dtc_simulations dict to SQLite + JSON fallback."""
+    dtc_storage.save_all(dtc_simulations)
 
 def _fresh_sim(simulation_id: str) -> dict | None:
     """
-    GODMODE FIX: Always reload from disk before returning sim.
-    Prevents multi-worker 404 — any gunicorn worker can serve any simulation.
+    Return latest state of a simulation.
+    Fast path: in-memory dict (current worker's cache).
+    Slow path: SQLite lookup (handles cross-worker requests).
     """
-    # Check in-memory first (fast path)
     if simulation_id in dtc_simulations:
         return dtc_simulations[simulation_id]
-    # Reload from disk (slow path — handles cross-worker requests)
-    dtc_simulations.update(_load_dtc_sims())
-    return dtc_simulations.get(simulation_id)
+    sim = dtc_storage.load_one(simulation_id)
+    if sim is not None:
+        dtc_simulations[simulation_id] = sim
+    return sim
 
 # Load on startup
 dtc_simulations = _load_dtc_sims()
