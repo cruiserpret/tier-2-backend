@@ -174,12 +174,14 @@ def forecast(
     final = sigmoid(final_logit_val)
 
     # ── Stage 6: Confidence interval (weighted variance + adjustment + coverage) ──
+    # Variance is computed around effective_prior — the prior actually used
+    # for the forecast, which may be RAG, blended, or fallback.
     if neighbors and len(neighbors) > 1:
         weights = [n.source_weight for n in neighbors]
         total_w = sum(weights)
         if total_w > 0:
             weighted_var = sum(
-                w * (n.trial_rate_mid - rag_prior)**2
+                w * (n.trial_rate_mid - effective_prior)**2
                 for n, w in zip(neighbors, weights)
             ) / total_w
             base_hw = max(0.015, min(0.05, weighted_var ** 0.5 * 1.2))

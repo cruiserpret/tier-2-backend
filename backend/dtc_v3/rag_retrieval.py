@@ -371,9 +371,9 @@ def retrieve_neighbors(
         if product.category and product.category == record.category:
             adj_sim = min(1.0, adj_sim + CATEGORY_MATCH_BONUS)
 
-        if adj_sim < SIMILARITY_FLOOR:
-            continue
-
+        # Do not apply SIMILARITY_FLOOR here.
+        # retrieve_neighbors returns raw top candidates for transparency;
+        # get_eligible_neighbors() applies the floor before forecast math.
         candidates.append((record, adj_sim))
 
     candidates.sort(key=lambda x: x[1], reverse=True)

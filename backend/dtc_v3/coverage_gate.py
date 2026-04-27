@@ -251,6 +251,23 @@ def assess_coverage(
     if market_tier_match_share < 0.30:
         confidence_reasons.append(f"only {market_tier_match_share:.0%} of neighbors match query's market tier")
 
+    # ── HARD CAPS (per friend's non-negotiable rules) ──
+    # Rule 1: Zero eligible comparables → confidence cannot exceed "low"
+    n_eligible_at_floor = sum(1 for n in neighbors if n.similarity >= 0.45)
+    if n_eligible_at_floor == 0:
+        confidence = "low"
+        confidence_reasons = ["zero eligible comparables — confidence forced to low"]
+
+    # Rule 2: Low exact-subtype weight share → cap at medium
+    elif exact_subtype_weight_share < 0.50 and confidence in ("high", "medium-high"):
+        confidence = "medium"
+        confidence_reasons.append(f"capped at medium: subtype weight share {exact_subtype_weight_share:.0%} below 50%")
+
+    # Rule 3: High neighbor variance → cap at medium
+    elif rate_std > 0.08 and confidence in ("high", "medium-high"):
+        confidence = "medium"
+        confidence_reasons.append(f"capped at medium: neighbor variance {rate_std*100:.1f}pp exceeds 8pp")
+
     return {
         "tier": tier,
         "score": round(effective_coverage, 3),
