@@ -654,3 +654,24 @@ def get_by_brand(brand_query: str) -> GroundTruthRecord | None:
 
 def get_by_category(category: str) -> list[GroundTruthRecord]:
     return [r for r in GROUND_TRUTH_DB if r.category == category]
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# v3.1 — Aliases for canonical exclude_brand matching (P5.2)
+# Per friend's spec: surgical aliases for validation/demo-critical brands.
+# Populated post-construction to keep record syntax stable during YC sprint.
+# TODO post-YC: move aliases inline into GroundTruthRecord definitions.
+# ═══════════════════════════════════════════════════════════════════════
+
+_ALIAS_MAP = {
+    "YETI Rambler 20oz":              ["Yeti", "YETI"],
+    "Liquid IV Hydration Multiplier": ["Liquid I.V.", "Liquid IV"],
+    "MUD\\WTR Coffee Alternative":    ["MUD", "MUD WTR", "MUDWTR", "MUD\\WTR"],
+    "Athletic Brewing NA Beer":       ["Athletic", "Athletic Brewing", "Athletic Brewing Co", "Athletic Brewing Company"],
+    "Oura Ring Gen 3":                ["Oura Ring", "Oura"],
+    "AG1 Athletic Greens":            ["Athletic Greens", "AG 1", "AG-1", "Athletic-Greens"],
+}
+
+for _record in GROUND_TRUTH_DB:
+    if _record.brand in _ALIAS_MAP:
+        _record.aliases = list(_ALIAS_MAP[_record.brand])

@@ -58,6 +58,9 @@ class GroundTruthRecord:
     # razor_subscription | brow_makeup | skincare_active
     # (per friend: catches "demand-pattern similarity" embeddings miss)
 
+    # v3.1 — Optional alternate names for canonical exclude_brand matching
+    aliases: list[str] = field(default_factory=list)
+
     @property
     def source_weight(self) -> float:
         return {"A": 1.0, "B": 0.6, "C": 0.25, "D": 0.1}.get(self.confidence, 0.1)

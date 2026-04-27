@@ -14,6 +14,7 @@ similarity decides how much its trial rate matters."
 
 from __future__ import annotations
 import os
+import re
 import json
 import statistics
 from pathlib import Path
@@ -338,6 +339,49 @@ def _infer_query_market_structure(product: ProductBrief) -> tuple[str, str, str,
 # MAIN: TWO-STAGE RETRIEVAL
 # ═══════════════════════════════════════════════════════════════════════
 
+# ═══════════════════════════════════════════════════════════════════════
+# CANONICAL EXCLUDE_BRAND MATCHING (P5.3 — friend spec)
+# Replaces buggy bidirectional substring matching with normalized
+# exact match against record.brand + record.aliases.
+# ═══════════════════════════════════════════════════════════════════════
+
+def _normalize_brand_name(s: str) -> str:
+    """Lowercase + remove punctuation/separators + collapse whitespace."""
+    if not s:
+        return ""
+    s = (
+        s.lower()
+         .replace("&", "and")
+         .replace(".", "")
+         .replace("'", "")
+         .replace("-", " ")
+         .replace("\\", " ")
+    )
+    s = re.sub(r"[^a-z0-9]+", " ", s)
+    return re.sub(r"\s+", " ", s).strip()
+
+
+def _should_exclude(record, exclude_brand: str | None) -> bool:
+    """
+    Return True if record should be excluded based on canonical name match.
+    Compares normalized exclude_brand against:
+      - normalized record.brand
+      - normalized record.aliases (if any)
+    No prefix or substring matching — exact normalized match only.
+    """
+    if not exclude_brand:
+        return False
+
+    target = _normalize_brand_name(exclude_brand)
+    candidates = [_normalize_brand_name(record.brand)]
+    candidates.extend(_normalize_brand_name(a) for a in getattr(record, "aliases", []))
+
+    return target in candidates
+
+
+# ═══════════════════════════════════════════════════════════════════════
+
+
 def retrieve_neighbors(
     product: ProductBrief,
     k: int = 6,
@@ -361,9 +405,7 @@ def retrieve_neighbors(
         record_emb = db_embeddings.get(record.brand)
         if not record_emb:
             continue
-        if exclude_brand and exclude_brand.lower() in record.brand.lower():
-            continue
-        if exclude_brand and record.brand.lower() in exclude_brand.lower():
+        if _should_exclude(record, exclude_brand):
             continue
 
         base_sim = _cosine(query_emb, record_emb)
@@ -482,7 +524,7 @@ def debug_retrieval(product: ProductBrief, exclude_brand: str | None = None) -> 
 
     semantic = []
     for record in GROUND_TRUTH_DB:
-        if exclude_brand and exclude_brand.lower() in record.brand.lower():
+        if _should_exclude(record, exclude_brand):
             continue
         record_emb = db_embeddings.get(record.brand)
         if not record_emb:

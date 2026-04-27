@@ -256,7 +256,7 @@ def assess_coverage(
     n_eligible_at_floor = sum(1 for n in neighbors if n.similarity >= 0.45)
     if n_eligible_at_floor == 0:
         confidence = "low"
-        confidence_reasons = ["zero eligible comparables — confidence forced to low"]
+        confidence_reasons.append("zero eligible comparables — confidence forced to low")
 
     # Rule 2: Low exact-subtype weight share → cap at medium
     elif exact_subtype_weight_share < 0.50 and confidence in ("high", "medium-high"):
