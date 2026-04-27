@@ -1,0 +1,49 @@
+{
+  "version": "v1",
+  "method": "Ridge regression (alpha=1.0) + sign constraints + shrinkage (0.7)",
+  "computed_from": "signal_table_v0_from_v2.jsonl",
+  "n_clean_rows_used": 16,
+  "excluded_brands": [
+    "Athletic Brewing NA Beer",
+    "Liquid IV Hydration Multiplier",
+    "MUD\\WTR Coffee Alternative"
+  ],
+  "ridge_alpha": 1.0,
+  "shrinkage_factor": 0.7,
+  "raw_ridge_coefficients": {
+    "desirability": 0.0696850640767532,
+    "awareness": 0.07325483654751128,
+    "friction": 0.12623488396089255
+  },
+  "sign_violations": [
+    "friction was +0.1262 (clamped to 0)"
+  ],
+  "final_betas": {
+    "desirability": 0.04877954485372724,
+    "awareness": 0.05127838558325789,
+    "friction": 0.0
+  },
+  "validation_metrics": {
+    "weighted_mae_logit": 0.32075460531500344,
+    "mae_trial_rate_pp": 2.874946638681549,
+    "in_range_count": 3,
+    "in_range_pct": 18.75
+  },
+  "status": "conservative_calibration",
+  "production_role": "optional_small_adjustment",
+  "warning": "RAG-only currently outperforms RAG+persona on in-range metric. Use only when comparable coverage is strong.",
+  "friction_beta_clamped": true,
+  "max_adjustment_clamp": {
+    "strong_coverage": 0.25,
+    "medium_coverage": 0.1,
+    "weak_coverage": 0.0,
+    "note": "REPLACES the original \u00b10.75 clamp \u2014 too generous given small dataset"
+  },
+  "persona_layer_role": [
+    "drivers",
+    "objections",
+    "segments",
+    "counterfactual_strategy",
+    "buyer_explanations"
+  ]
+}

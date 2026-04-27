@@ -12,5 +12,6 @@ DEBUG = os.getenv("DEBUG", "false").lower() == "true"
 SECRET_KEY = os.getenv("SECRET_KEY", "assembly-dev")
 # ── Tier 2 DTC ────────────────────────────────────────────────
 RAINFOREST_API_KEY = os.getenv("RAINFOREST_API_KEY", "")
+OPENAI_API_KEY     = os.getenv("OPENAI_API_KEY", "")
 EASYPARSER_API_KEY = os.getenv("EASYPARSER_API_KEY", "")
 APIFY_API_KEY      = os.getenv("APIFY_API_KEY", "")

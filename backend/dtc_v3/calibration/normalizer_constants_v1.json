@@ -1,0 +1,33 @@
+{
+  "version": "v1",
+  "method": "median + IQR/1.349 (robust)",
+  "computed_from": "signal_table_v0_from_v2.jsonl",
+  "n_clean_rows_used": 16,
+  "excluded_brands": [
+    "Liquid IV Hydration Multiplier",
+    "Athletic Brewing NA Beer",
+    "MUD\\WTR Coffee Alternative"
+  ],
+  "exclusion_reason": "retrieval-contaminated (no in-subtype comparable in DB)",
+  "scale_floor": 0.05,
+  "normalizers": {
+    "desirability": {
+      "center": 0.4712,
+      "scale": 0.1326,
+      "iqr": 0.1789,
+      "n_samples": 16
+    },
+    "awareness": {
+      "center": 0.59,
+      "scale": 0.1038,
+      "iqr": 0.14,
+      "n_samples": 16
+    },
+    "friction": {
+      "center": 0.314,
+      "scale": 0.2305,
+      "iqr": 0.311,
+      "n_samples": 16
+    }
+  }
+}

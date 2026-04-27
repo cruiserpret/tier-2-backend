@@ -1,0 +1,98 @@
+{
+  "snapshot_date": "2026-04-25",
+  "version": "v3-lite-pre-calibration",
+  "description": "Frozen baseline before friend-recommended calibration. All hyperparameters are placeholders (z-score normalizers, beta coefficients, awareness thresholds).",
+  "configuration": {
+    "z_score_normalizers": {
+      "desirability_mean": 0.55, "desirability_sd": 0.15,
+      "awareness_mean": 0.50, "awareness_sd": 0.20,
+      "friction_mean": 0.45, "friction_sd": 0.15,
+      "method": "hand-picked guesses"
+    },
+    "beta_coefficients": {
+      "desirability": 0.35,
+      "awareness": 0.20,
+      "friction": -0.35,
+      "method": "friend's initial spec, untuned"
+    },
+    "awareness_thresholds": {
+      "method": "step function (review_count >= 50000 -> 0.90, etc)",
+      "issue": "cliff thresholds, should be log-scaled"
+    },
+    "structured_penalties": {
+      "tier_match": 1.0, "tier_soft": 0.65, "tier_severe": 0.35,
+      "scale_severe_mismatch": 0.25, "scale_default_mismatch": 0.85,
+      "price_band_match": 1.0, "price_band_mismatch": 0.70,
+      "dist_match": 1.0, "dist_dtc_to_dtc": 0.85, "dist_other": 0.65,
+      "method": "friend's spec values, fixed as architecture priors"
+    },
+    "confidence_interval": {
+      "weighted_variance_multiplier": 1.2,
+      "adjustment_uncertainty": 0.015,
+      "min_half_width": 0.015,
+      "max_half_width": 0.04,
+      "method": "ad-hoc placeholders"
+    }
+  },
+  "test_results": {
+    "oura_rag_only": {
+      "predicted": 0.055,
+      "interval": [0.015, 0.095],
+      "ground_truth_range": [0.06, 0.09],
+      "ground_truth_mid": 0.075,
+      "in_range": false,
+      "error_pp": 2.0
+    },
+    "oura_rag_plus_persona": {
+      "predicted": 0.062,
+      "interval": [0.020, 0.104],
+      "ground_truth_range": [0.06, 0.09],
+      "ground_truth_mid": 0.075,
+      "in_range": true,
+      "error_pp": 1.3,
+      "persona_signals": {
+        "desirability": 0.59, "desirability_z": 0.29,
+        "awareness": 0.61, "awareness_z": 0.53,
+        "friction": 0.48, "friction_z": 0.21
+      },
+      "adjustment_applied": 0.135,
+      "rag_prior": 0.055
+    },
+    "bombas_rag_only": {
+      "predicted": 0.10,
+      "interval": [0.080, 0.120],
+      "ground_truth_range": [0.06, 0.09],
+      "ground_truth_mid": 0.075,
+      "in_range": false,
+      "error_pp": 2.5
+    },
+    "mattress_rag_only": {
+      "predicted": 0.04,
+      "interval": [0.023, 0.057],
+      "ground_truth_range": [0.03, 0.05],
+      "ground_truth_mid": 0.04,
+      "in_range": true,
+      "error_pp": 0.0,
+      "note": "NEW product not in DB - dead center prediction"
+    }
+  },
+  "summary_stats": {
+    "products_tested": 4,
+    "in_range": 2,
+    "pct_in_range": 50.0,
+    "mean_error_pp": 1.45,
+    "comparison": {
+      "v1_pass_rate": "32% on 19-product baseline",
+      "v2_pass_rate": "5% on 19-product baseline (abandoned)",
+      "v3_lite_baseline_estimate": "~50% on 4-product partial test (will validate on 19)"
+    }
+  },
+  "next_steps": [
+    "Step 2: Build signal table for all 19 v1-baseline products",
+    "Step 3: Compute empirical z-score normalizers (median + IQR/1.349)",
+    "Step 4: Fit 3 beta coefficients via ridge regression on logit residuals",
+    "Step 5: Cross-mode comparison (v1 vs RAG-only vs RAG+placeholder vs RAG+fitted)",
+    "Step 6: Calibrate confidence intervals from validation MAE",
+    "Step 7: Optional coarse penalty profile selection (soft/medium/strict)"
+  ]
+}
