@@ -6,7 +6,14 @@ sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 import config
 from backend.api.routes import api
 from backend.dtc_v3.api import api_v3
-from backend.dtc_v2.routes import api_v2
+
+# v2 is abandoned funnel work, not in YC scope.
+# Optional import so deploys without backend/dtc_v2 in the tree do not crash.
+try:
+    from backend.dtc_v2.routes import api_v2
+    _HAS_V2 = True
+except ImportError:
+    _HAS_V2 = False
 
 app = Flask(__name__)
 app.secret_key = config.SECRET_KEY
@@ -14,7 +21,8 @@ app.secret_key = config.SECRET_KEY
 CORS(app, origins="*", allow_headers=["Content-Type", "ngrok-skip-browser-warning"], methods=["GET", "POST", "OPTIONS"])
 
 app.register_blueprint(api)
-app.register_blueprint(api_v2)
+if _HAS_V2:
+    app.register_blueprint(api_v2)
 app.register_blueprint(api_v3)
 
 @app.route("/", methods=["GET"])
