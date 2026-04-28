@@ -51,7 +51,7 @@ function payloadToForm(p: ProductPayload): FormState {
 export function HomeView() {
   const navigate = useNavigate();
   const [activeDemoKey, setActiveDemoKey] = useState<string | null>(null);
-  const [, setActiveDemoCount] = useState<20 | 50>(20);
+  const [, setActiveDemoCount] = useState<number>(20);
   const [formState, setFormState] = useState<FormState>(EMPTY_FORM);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -72,7 +72,7 @@ export function HomeView() {
   async function getAgentPanel(
     payload: ProductPayload,
     forecast: ForecastResponse,
-    agentCount: 20 | 50,
+    agentCount: number,
     cachedPanel: AgentPanel | null,
   ): Promise<{ panel: AgentPanel | null; source: PanelSource; error: string | null }> {
     try {
@@ -94,7 +94,7 @@ export function HomeView() {
       const isDemo = activeDemoKey !== null;
       let forecast: ForecastResponse;
       let cachedPanel: AgentPanel | null = null;
-      const agentCount = (formState.num_agents === 50 ? 50 : 20) as 20 | 50;
+      const agentCount = formState.num_agents;
       const sourceTag: "live" | "cached_demo" = isDemo ? "cached_demo" : "live";
 
       if (isDemo) {

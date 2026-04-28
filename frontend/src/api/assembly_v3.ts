@@ -21,7 +21,7 @@ export async function runForecast(payload: ProductPayload): Promise<ForecastResp
 export async function runDiscussion(
   product: ProductPayload,
   forecast: ForecastResponse,
-  agent_count: 20 | 50 = 20,
+  agent_count: number = 20,
   mode: "template" | "llm" = "llm",
 ): Promise<AgentPanel> {
   if (!API_BASE) throw new Error("VITE_TIER2_API_BASE_URL is not set");

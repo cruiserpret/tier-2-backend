@@ -397,7 +397,7 @@ export function ProductForm({ initial, onSubmit, loading }: Props) {
                 className="range"
                 min={20}
                 max={50}
-                step={30}
+                step={1}
                 value={form.num_agents}
                 onChange={(e) => update("num_agents", parseInt(e.target.value, 10))}
                 disabled={loading}

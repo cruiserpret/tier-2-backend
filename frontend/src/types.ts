@@ -226,7 +226,7 @@ export interface SimulationRecord {
   agent_panel: AgentPanel | null;
   panel_source: PanelSource;
   panel_error: string | null;
-  agent_count: 20 | 50;
+  agent_count: number;
   created_at: number;
   source: "live" | "cached_demo";
   demo_key?: string;
