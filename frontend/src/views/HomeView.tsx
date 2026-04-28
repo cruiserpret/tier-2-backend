@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import type { DemoProduct, FormState, ProductPayload } from "../types";
+import type { DemoProduct, FormState, ProductPayload, AgentPanel, ForecastResponse, PanelSource } from "../types";
 import { DEMOS } from "../data/demoProducts";
-import { runForecast, loadCachedDemo } from "../api/assembly_v3";
+import { runForecast, runDiscussion, loadCachedDemo } from "../api/assembly_v3";
 import { saveSim, newSimId } from "../lib/simulationStore";
 import { Hero } from "../components/Hero";
 import { DemoSelector } from "../components/DemoSelector";
@@ -27,7 +27,6 @@ const EMPTY_FORM: FormState = {
 };
 
 function payloadToForm(p: ProductPayload): FormState {
-  // Best-effort split of demographic string back into rich fields if possible
   const competitors = p.competitors.length
     ? [...p.competitors, ...Array(Math.max(0, 3 - p.competitors.length)).fill({ name: "" })]
     : [{ name: "" }, { name: "" }, { name: "" }];
@@ -52,6 +51,7 @@ function payloadToForm(p: ProductPayload): FormState {
 export function HomeView() {
   const navigate = useNavigate();
   const [activeDemoKey, setActiveDemoKey] = useState<string | null>(null);
+  const [activeDemoCount, setActiveDemoCount] = useState<20 | 50>(20);
   const [formState, setFormState] = useState<FormState>(EMPTY_FORM);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -68,36 +68,65 @@ export function HomeView() {
     setError(null);
   };
 
+  // Hybrid: try live /discuss with 3s timeout, fall back to cachedPanel if provided
+  async function getAgentPanel(
+    payload: ProductPayload,
+    forecast: ForecastResponse,
+    agentCount: 20 | 50,
+    cachedPanel: AgentPanel | null,
+  ): Promise<{ panel: AgentPanel | null; source: PanelSource; error: string | null }> {
+    try {
+      const panel = await runDiscussion(payload, forecast, agentCount, "template");
+      return { panel, source: "live", error: null };
+    } catch (e: any) {
+      if (cachedPanel) {
+        return { panel: cachedPanel, source: "cached_fallback", error: e.message };
+      }
+      return { panel: null, source: "unavailable", error: e.message };
+    }
+  }
+
   const handleSubmit = async (payload: ProductPayload) => {
     setLoading(true);
     setError(null);
+
     try {
-      // If active demo and payload matches → load cache for instant nav, then run live in background
       const isDemo = activeDemoKey !== null;
-      let forecast;
-      let source: "live" | "cached_demo" = "live";
+      let forecast: ForecastResponse;
+      let cachedPanel: AgentPanel | null = null;
+      const agentCount = (formState.num_agents === 50 ? 50 : 20) as 20 | 50;
+      const sourceTag: "live" | "cached_demo" = isDemo ? "cached_demo" : "live";
 
       if (isDemo) {
         try {
-          forecast = await loadCachedDemo(activeDemoKey!);
-          source = "cached_demo";
+          const cached = await loadCachedDemo(activeDemoKey!);
+          forecast = cached.forecast;
+          cachedPanel = cached.agent_panel;
         } catch {
           forecast = await runForecast(payload);
-          source = "live";
         }
       } else {
         forecast = await runForecast(payload);
       }
+
+      const { panel, source, error: panelError } = await getAgentPanel(
+        payload, forecast, agentCount, cachedPanel,
+      );
 
       const id = newSimId();
       saveSim({
         id,
         payload,
         forecast,
+        agent_panel: panel,
+        panel_source: source,
+        panel_error: panelError,
+        agent_count: agentCount,
         created_at: Date.now(),
-        source,
+        source: sourceTag,
         demo_key: activeDemoKey || undefined,
       });
+      setActiveDemoCount(agentCount);
       navigate(`/dtc-v3/simulation/${id}`);
     } catch (e: any) {
       setError(e.message || "Forecast failed. Try again.");

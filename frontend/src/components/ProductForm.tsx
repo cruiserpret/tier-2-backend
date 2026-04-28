@@ -397,13 +397,13 @@ export function ProductForm({ initial, onSubmit, loading }: Props) {
                 className="range"
                 min={20}
                 max={50}
-                step={5}
+                step={30}
                 value={form.num_agents}
-                onChange={() => { /* locked */ }}
-                disabled
+                onChange={(e) => update("num_agents", parseInt(e.target.value, 10))}
+                disabled={loading}
               />
-              <div className="range-labels"><span>20</span><span>50</span></div>
-              <p className="field-hint">20-agent panel enabled. 50-agent mode coming after validation.</p>
+              <div className="range-labels"><span>20 — faster, recommended</span><span>50 — broader coverage</span></div>
+              <p className="field-hint">{form.num_agents}-agent panel will discuss the forecast across 3 rounds.</p>
             </div>
 
             <div className="form-group">

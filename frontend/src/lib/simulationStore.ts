@@ -30,6 +30,13 @@ export function getSim(id: string): SimulationRecord | null {
   return all[id] || null;
 }
 
+export function updateSim(id: string, patch: Partial<SimulationRecord>) {
+  const all = readAll();
+  if (!all[id]) return;
+  all[id] = { ...all[id], ...patch };
+  writeAll(all);
+}
+
 export function newSimId(): string {
   return `sim_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 }

@@ -103,19 +103,36 @@ export interface Agent {
 export interface AgentPanel {
   agent_count: number;
   seed: string;
+  mode: "template" | "llm";
   rounds: AgentRound[];
   agents: Agent[];
   top_drivers: string[];
   top_objections: string[];
   most_receptive_segment: string;
+  winning_message: string;
+  risk_factors: string[];
   consensus: string;
+  coverage_warning: string;
 }
+
+export interface CachedDemo {
+  product: ProductPayload;
+  forecast: ForecastResponse;
+  agent_panel: AgentPanel;
+  cached_at: string;
+  version: string;
+}
+
+export type PanelSource = "live" | "cached_fallback" | "unavailable";
 
 export interface SimulationRecord {
   id: string;
   payload: ProductPayload;
   forecast: ForecastResponse;
-  agent_panel?: AgentPanel;
+  agent_panel: AgentPanel | null;
+  panel_source: PanelSource;
+  panel_error: string | null;
+  agent_count: 20 | 50;
   created_at: number;
   source: "live" | "cached_demo";
   demo_key?: string;

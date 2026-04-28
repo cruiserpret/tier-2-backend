@@ -3,15 +3,13 @@ import { useParams, useNavigate, Link } from "react-router-dom";
 import { getSim } from "../lib/simulationStore";
 import type { SimulationRecord } from "../types";
 
-const ROUND_NAMES = ["First Reaction", "Comparable Comparison", "Consensus"];
-
 const PHASES = [
-  { id: "intel", label: "Comparable retrieval", duration: 800 },
-  { id: "personas", label: "Buyer personas (preview)", duration: 800 },
+  { id: "intel", label: "Comparable retrieval", duration: 700 },
+  { id: "personas", label: "Buyer personas spawning", duration: 700 },
   { id: "round1", label: "Round 1 — First Reaction", duration: 800 },
   { id: "round2", label: "Round 2 — Comparable Comparison", duration: 800 },
   { id: "round3", label: "Round 3 — Consensus", duration: 800 },
-  { id: "report", label: "Market Report", duration: 600 },
+  { id: "report", label: "Compiling Market Report", duration: 600 },
 ];
 
 export function SimulationView() {
@@ -24,29 +22,20 @@ export function SimulationView() {
   useEffect(() => {
     if (!id) return;
     const rec = getSim(id);
-    if (!rec) {
-      navigate("/dtc-v3");
-      return;
-    }
+    if (!rec) { navigate("/dtc-v3"); return; }
     setSim(rec);
   }, [id, navigate]);
 
   useEffect(() => {
     if (!sim) return;
-    if (phaseIdx >= PHASES.length) {
-      setDone(true);
-      return;
-    }
+    if (phaseIdx >= PHASES.length) { setDone(true); return; }
     const t = setTimeout(() => setPhaseIdx((i) => i + 1), PHASES[phaseIdx].duration);
     return () => clearTimeout(t);
   }, [sim, phaseIdx]);
 
   if (!sim) return null;
-
   const f = sim.forecast;
-  const buyPct = 0; // agent panel not generated yet
-  const consideringPct = 0;
-  const wontPct = 0;
+  const panel = sim.agent_panel;
 
   const stepStatus = (i: number): "complete" | "active" | "pending" => {
     if (phaseIdx > i) return "complete";
@@ -64,7 +53,7 @@ export function SimulationView() {
             <span className="product-price mono">${sim.payload.price}</span>
           </div>
           <div className={`workbench-status ${done ? "status-complete" : "status-live"}`}>
-            {done ? "Forecast complete" : "Running…"}
+            {done ? "Forecast + panel complete" : "Running…"}
           </div>
         </div>
 
@@ -89,7 +78,6 @@ export function SimulationView() {
       </div>
 
       <div className="workbench-grid">
-        {/* LEFT: phase reveal */}
         <div className="agent-panel">
           {phaseIdx >= 1 && (
             <div className="market-dist fade-up">
@@ -107,37 +95,36 @@ export function SimulationView() {
           )}
 
           {[1, 2, 3].map((roundN) => {
-            const phaseForRound = 1 + roundN; // round 1 is phaseIdx 2, etc.
+            const phaseForRound = 1 + roundN;
             if (phaseIdx < phaseForRound) return null;
+            const rd = panel?.rounds.find((r) => r.round === roundN);
+            if (!rd) return (
+              <div key={roundN} className="round-block fade-up">
+                <div className="round-header">
+                  <span className="round-num">ROUND {roundN}</span>
+                  <span className="round-name">DISCUSSION UNAVAILABLE</span>
+                </div>
+                <div className="round-summary">
+                  Buyer-panel discussion did not complete for this run.
+                </div>
+              </div>
+            );
             return (
               <div key={roundN} className="round-block fade-up">
                 <div className="round-header">
                   <span className="round-num">ROUND {roundN}</span>
-                  <span className="round-name">{ROUND_NAMES[roundN - 1]}</span>
+                  <span className="round-name">{rd.title.toUpperCase()}</span>
                 </div>
-                <div className="round-summary">
-                  <em style={{ color: "var(--text-muted)" }}>
-                    AI buyer panel discussion ships in the next release. The {f.confidence}-confidence
-                    forecast above is grounded in {f.anchored_on.length} real comparable brands —
-                    that's the ground truth the panel will debate.
-                  </em>
+                <div className="round-meta">
+                  <span className="round-meta-item" style={{ color: "var(--for)" }}>↑ {rd.for_count} for</span>
+                  <span className="round-meta-item" style={{ color: "#f59e0b" }}>— {rd.neutral_count} neutral</span>
+                  <span className="round-meta-item" style={{ color: "var(--against)" }}>↓ {rd.against_count} against</span>
+                  <span className="round-meta-item">avg score: {rd.avg_score.toFixed(2)}</span>
                 </div>
+                <div className="round-summary">{rd.summary}</div>
               </div>
             );
           })}
-
-          {phaseIdx < 2 && (
-            <div className="simulation-pending-card">
-              <div className="simulation-pending-eyebrow">v3-lite forecast computed</div>
-              <div className="simulation-pending-title display">
-                {f.trial_rate.percentage.toFixed(1)}% predicted trial
-              </div>
-              <p className="simulation-pending-desc">
-                Anchored on <strong style={{ color: "var(--accent)" }}>{f.anchored_on.length} comparable brands</strong>.
-                Confidence: <strong>{f.confidence}</strong>. Verdict: <strong>{f.verdict.replace(/_/g, " ")}</strong>.
-              </p>
-            </div>
-          )}
 
           {!done && phaseIdx >= 1 && phaseIdx < PHASES.length && (
             <div className="round-summary mono" style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -147,7 +134,6 @@ export function SimulationView() {
           )}
         </div>
 
-        {/* RIGHT: stats */}
         <div className="stats-panel">
           <div className="stat-block">
             <div className="stat-label">Trial Rate</div>
@@ -166,27 +152,21 @@ export function SimulationView() {
           <div className="divider" />
 
           <div className="stat-block">
-            <div className="stat-label">Comparables</div>
-            <div className="stat-value" style={{ fontSize: 32 }}>{f.anchored_on.length}</div>
-            <div className="stat-sub">anchored brands</div>
+            <div className="stat-label">Buyer Panel</div>
+            <div className="stat-value" style={{ fontSize: 32 }}>{sim.agent_count}</div>
+            <div className="stat-sub">
+              {sim.panel_source === "live" && "live AI personas"}
+              {sim.panel_source === "cached_fallback" && "cached fallback"}
+              {sim.panel_source === "unavailable" && "panel unavailable"}
+            </div>
           </div>
 
           <div className="divider" />
 
           <div className="stat-block">
-            <div className="stat-label">Debate Phases</div>
-            <div className="round-pills">
-              {[1, 2, 3].map((n) => {
-                const phaseForRound = 1 + n;
-                const status = phaseIdx > phaseForRound ? "complete" : phaseIdx === phaseForRound ? "active" : "";
-                return (
-                  <div key={n} className={`round-pill ${status}`}>
-                    <span className="round-pill-num">{n}</span>
-                    <span className="round-pill-name">{ROUND_NAMES[n - 1]}</span>
-                  </div>
-                );
-              })}
-            </div>
+            <div className="stat-label">Comparables</div>
+            <div className="stat-value" style={{ fontSize: 32 }}>{f.anchored_on.length}</div>
+            <div className="stat-sub">anchored brands</div>
           </div>
 
           {done && (

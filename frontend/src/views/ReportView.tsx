@@ -6,7 +6,7 @@ import { ResultCard } from "../components/ResultCard";
 import { AnchorList } from "../components/AnchorList";
 import { ConfidenceReasons } from "../components/ConfidenceReasons";
 import { Counterfactuals } from "../components/Counterfactuals";
-import { AgentPanelPlaceholder } from "../components/AgentPanelPlaceholder";
+import { AgentPanel } from "../components/AgentPanel";
 import { DeterminismProof } from "../components/DeterminismProof";
 
 export function ReportView() {
@@ -34,11 +34,13 @@ export function ReportView() {
         </div>
         <h1 className="masthead-title">{sim.payload.product_name}</h1>
         <p className="masthead-sub">
-          Comparable-anchored forecast of 12-month trial rate, anchored on {f.anchored_on.length} real DTC brands
-          and their measured adoption rates. AI buyer panel discussion ships in the next release.
+          Comparable-anchored 12-month trial-rate forecast plus {sim.agent_count}-agent
+          AI buyer panel discussion. Anchored on {f.anchored_on.length} real DTC brands and
+          their measured adoption rates.
         </p>
         <div className="masthead-meta">
           {f.simulation_id} &nbsp;·&nbsp; {f.version} &nbsp;·&nbsp; coverage: {f.diagnostics.coverage_tier} &nbsp;·&nbsp; source: {sim.source === "cached_demo" ? "cached demo" : "live forecast"}
+          &nbsp;·&nbsp; panel: {sim.panel_source.replace("_", " ")}
         </div>
       </header>
 
@@ -48,7 +50,11 @@ export function ReportView() {
           <AnchorList anchors={f.anchored_on} />
           <ConfidenceReasons forecast={f} />
           <Counterfactuals cfs={f.counterfactuals} />
-          <AgentPanelPlaceholder />
+          <AgentPanel
+            panel={sim.agent_panel}
+            source={sim.panel_source}
+            error={sim.panel_error}
+          />
           {isLiquidIV && <DeterminismProof payload={sim.payload} />}
         </div>
 
@@ -68,10 +74,16 @@ export function ReportView() {
               </div>
             </div>
             <div className="divider" />
-            <div>
+            <div style={{ marginBottom: 16 }}>
               <div className="stat-label">Confidence</div>
               <div className="stat-value" style={{ fontSize: 22 }}>{f.confidence}</div>
               <div className="stat-sub">coverage: {f.diagnostics.coverage_tier}</div>
+            </div>
+            <div className="divider" />
+            <div>
+              <div className="stat-label">Buyer Panel</div>
+              <div className="stat-value" style={{ fontSize: 22 }}>{sim.agent_count}</div>
+              <div className="stat-sub">{sim.panel_source.replace("_", " ")}</div>
             </div>
           </div>
 
@@ -92,7 +104,7 @@ export function ReportView() {
       </div>
 
       <footer className="app-footer">
-        Assembly v3-lite · {f.version} · Forecast deterministic, panel coming next release
+        Assembly v3-lite · {f.version} · Forecast deterministic, panel grounded in comparable evidence
       </footer>
     </div>
   );
