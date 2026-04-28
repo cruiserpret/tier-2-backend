@@ -215,9 +215,9 @@ def create_discussion():
         return jsonify({"error": "Missing or invalid 'product'"}), 400
     if not isinstance(forecast, dict) or not forecast:
         return jsonify({"error": "Missing or invalid 'forecast'"}), 400
-    if agent_count not in ALLOWED_AGENT_COUNTS:
+    if not isinstance(agent_count, int) or agent_count < 20 or agent_count > 50:
         return jsonify({
-            "error": f"agent_count must be one of {list(ALLOWED_AGENT_COUNTS)}",
+            "error": "agent_count must be an integer between 20 and 50",
             "got": agent_count,
         }), 400
     if mode not in ALLOWED_MODES:
