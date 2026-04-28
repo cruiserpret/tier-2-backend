@@ -75,59 +75,32 @@ def determine_verdict(
     coverage_tier: str,
 ) -> tuple[VerdictLabel, str]:
     """
-    Returns (verdict_code, headline_sentence).
+    Verdict logic per friend's spec — confidence/fallback caps FIRST,
+    then rate brackets, then friction/desirability modifiers.
 
-    Verdict logic considers:
-    - Predicted trial rate (high/medium/low)
-    - Confidence in that prediction
-    - Persona desirability/friction signals
-    - Coverage tier (how trustworthy is the prior)
+    Trust-first principle: a fallback or low-confidence forecast can
+    NEVER reach launch verdicts, regardless of the predicted rate.
     """
     rate = forecast.trial_rate_median
-    confidence = forecast.confidence
+    confidence = (forecast.confidence or "").replace("_", "-").lower()
+    fallback_used = forecast.fallback_used
     desire = persona_signals.desirability
     friction = persona_signals.friction
 
-    # Coverage too weak → can't make a confident verdict
-    if coverage_tier == "weak":
-        return (
-            "test_before_launch",
-            "Comparable data is thin for this product type — pilot before scaling."
-        )
-
-    # High predicted trial + good signals
-    if rate >= 0.15 and confidence in ("high", "medium-high") and desire >= 0.55:
-        if friction <= 0.40:
+    # ─── Trust caps (fallback or low confidence cannot launch) ───
+    if fallback_used or confidence == "low":
+        if rate < 0.04 and desire < 0.45:
             return (
-                "launch_aggressively",
-                f"Strong demand signal ({rate*100:.0f}% predicted trial) with manageable friction. Aggressive launch warranted."
-            )
-        return (
-            "launch",
-            f"Solid demand ({rate*100:.0f}% predicted trial), friction is real but addressable. Launch and iterate."
-        )
-
-    # Decent rate but high friction
-    if rate >= 0.08 and friction >= 0.55:
-        return (
-            "launch_with_changes",
-            f"Predicted {rate*100:.0f}% trial, but friction signals are concerning. Address pricing/positioning before scaling."
-        )
-
-    # Medium rate
-    if 0.05 <= rate < 0.15:
-        if desire < 0.45:
-            return (
-                "reposition",
-                f"Trial prediction modest ({rate*100:.0f}%) and desirability signal is weak. Reposition product or target."
+                "do_not_launch_yet",
+                f"Low trial signal ({rate*100:.1f}%) with weak desirability and unreliable comparable data. Reconsider product-market fit."
             )
         return (
             "test_before_launch",
-            f"Moderate trial signal ({rate*100:.0f}%). Run controlled pilots to validate before scaling spend."
+            f"Comparable data is thin or unreliable for this product. Pilot before scaling — predicted {rate*100:.0f}% trial is directional, not validated."
         )
 
-    # Low rate
-    if rate < 0.05:
+    # ─── Very weak demand ───
+    if rate <= 0.045:
         if desire >= 0.55:
             return (
                 "reposition",
@@ -138,9 +111,51 @@ def determine_verdict(
             f"Low trial signal ({rate*100:.1f}%) and weak buyer enthusiasm. Reconsider product-market fit before launching."
         )
 
+    # ─── Weak-to-moderate demand ───
+    if rate < 0.08:
+        if friction >= 0.55:
+            return (
+                "launch_with_changes",
+                f"Predicted {rate*100:.0f}% trial, but friction signals are concerning. Address pricing or positioning before scaling."
+            )
+        return (
+            "test_before_launch",
+            f"Moderate trial signal ({rate*100:.0f}%). Run controlled pilots to validate before scaling spend."
+        )
+
+    # ─── Moderate demand ───
+    if rate < 0.15:
+        if confidence in ("medium", "medium-high", "high"):
+            return (
+                "launch_with_changes",
+                f"Decent demand signal ({rate*100:.0f}% predicted trial). Address friction or positioning gaps before full launch."
+            )
+        return (
+            "test_before_launch",
+            f"Moderate trial signal ({rate*100:.0f}%) but confidence is uncertain. Pilot to validate."
+        )
+
+    # ─── Strong demand (rate >= 0.15) ───
+    if confidence in ("medium-high", "high"):
+        if friction >= 0.55:
+            return (
+                "launch_with_changes",
+                f"Strong demand signal ({rate*100:.0f}% predicted trial), but friction is high. Address before scaling."
+            )
+        if rate >= 0.22 and confidence == "high":
+            return (
+                "launch_aggressively",
+                f"Strong demand ({rate*100:.0f}% predicted trial), high confidence, manageable friction. Strong launch candidate; scale with controlled measurement."
+            )
+        return (
+            "launch",
+            f"Strong demand signal ({rate*100:.0f}% predicted trial), confidence {confidence}, friction manageable. Launch and iterate."
+        )
+
+    # Strong rate but uncertain confidence — still cautious
     return (
-        "test_before_launch",
-        f"Mixed signals — predicted {rate*100:.0f}% trial. Pilot to learn before scaling."
+        "launch_with_changes",
+        f"Strong rate signal ({rate*100:.0f}%) but confidence is moderate. Tighten positioning before scaling."
     )
 
 
@@ -234,11 +249,17 @@ def generate_counterfactuals(
     """
     base_logit = _logit(forecast.trial_rate_median)
     base_pct = forecast.trial_rate_median
+
+    # P6.2: confidence-based delta scaling — halve movement when
+    # the underlying forecast is uncertain (per friend's spec).
+    confidence_norm = (forecast.confidence or "").replace("_", "-").lower()
+    delta_scale = 0.5 if confidence_norm in ("low", "medium-low") else 1.0
+
     counterfactuals = []
 
     # 1. Lower price 15%
     # Lower price typically reduces friction → +0.10 to +0.20 logit
-    price_drop_delta = 0.15
+    price_drop_delta = 0.15 * delta_scale
     cf = Counterfactual(
         label="Lower price 15%",
         description=f"Reduce ${product.price:.0f} to ${product.price*0.85:.0f}",
@@ -250,7 +271,7 @@ def generate_counterfactuals(
 
     # 2. Add strong guarantee/risk-reversal (only if friction is high)
     if persona_signals.friction >= 0.40:
-        guarantee_delta = 0.20
+        guarantee_delta = 0.20 * delta_scale
         counterfactuals.append(Counterfactual(
             label="Add risk-reversal guarantee",
             description="Money-back guarantee or 30-day free trial reduces trust friction",
@@ -260,7 +281,7 @@ def generate_counterfactuals(
         ))
 
     # 3. Expand to mass retail (if currently DTC)
-    expand_delta = 0.30
+    expand_delta = 0.30 * delta_scale
     counterfactuals.append(Counterfactual(
         label="Add retail distribution",
         description="Expand from DTC-only to Target/Walmart/grocery presence",
@@ -271,7 +292,7 @@ def generate_counterfactuals(
 
     # 4. Narrower target audience (if desirability is weak)
     if persona_signals.desirability < 0.50:
-        narrow_delta = 0.15
+        narrow_delta = 0.15 * delta_scale
         counterfactuals.append(Counterfactual(
             label="Narrow target to high-intent segment",
             description="Focus marketing on most-receptive buyer profile rather than mainstream",
@@ -282,7 +303,7 @@ def generate_counterfactuals(
 
     # 5. Raise price (negative cf — lifestyle premium positioning)
     if persona_signals.desirability >= 0.55:
-        raise_delta = -0.10
+        raise_delta = -0.10 * delta_scale
         counterfactuals.append(Counterfactual(
             label="Raise price 20% (premium positioning)",
             description=f"Position as premium at ${product.price*1.2:.0f} — fewer trial, higher LTV",
@@ -435,11 +456,18 @@ def render_report_text(report: CustomerReport) -> str:
 
     # Counterfactuals
     if report.counterfactuals:
-        lines.append("COUNTERFACTUAL SCENARIOS:")
+        lines.append("COUNTERFACTUAL SCENARIOS (directional, not causal):")
         lines.append(f"  Current forecast: {report.forecast_pct*100:.1f}%")
         for cf in report.counterfactuals:
             arrow = "↑" if cf.direction == "improves" else "↓" if cf.direction == "worsens" else "→"
-            lines.append(f"  {arrow} {cf.label:<40} {cf.new_prediction*100:.1f}%  ({cf.description})")
+            lines.append(f"  {arrow} {cf.label:<40} could move toward {cf.new_prediction*100:.1f}%  ({cf.description})")
         lines.append("")
+
+    # P6.2: Directional disclaimer footer
+    lines.append("─" * 70)
+    lines.append("Note: Counterfactuals are directional strategy simulations,")
+    lines.append("not validated causal estimates. Treat as planning guidance,")
+    lines.append("assuming execution matches comparable brands.")
+    lines.append("")
 
     return "\n".join(lines)
