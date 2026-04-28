@@ -1,0 +1,102 @@
+{
+  "anchored_on": [
+    {
+      "brand": "Athletic Brewing NA Beer",
+      "confidence_grade": "B",
+      "match_reason": "scale(growth_challenger)\u00d70.85, price\u00d70.7, subtype(nonalcoholic_beer)\u00d70.4",
+      "trial_rate": 0.05
+    },
+    {
+      "brand": "Poppi Prebiotic Soda",
+      "confidence_grade": "A",
+      "match_reason": "scale(growth_challenger)\u00d70.85, price\u00d70.7, subtype(functional_soda)\u00d70.4",
+      "trial_rate": 0.23
+    },
+    {
+      "brand": "Olipop Prebiotic Soda",
+      "confidence_grade": "B",
+      "match_reason": "scale(growth_challenger)\u00d70.85, price\u00d70.7, subtype(functional_soda)\u00d70.4",
+      "trial_rate": 0.27
+    },
+    {
+      "brand": "Liquid Death Mountain Water",
+      "confidence_grade": "B",
+      "match_reason": "scale(growth_challenger)\u00d70.85, price\u00d70.7, subtype(branded_water)\u00d70.4",
+      "trial_rate": 0.2
+    },
+    {
+      "brand": "Health-Ade Kombucha",
+      "confidence_grade": "B",
+      "match_reason": "scale(growth_challenger)\u00d70.85, price\u00d70.7, dist\u00d70.65, subtype(functional_fermented)\u00d70.4",
+      "trial_rate": 0.1
+    }
+  ],
+  "confidence": "medium-low",
+  "confidence_reasons": [
+    "thin coverage \u2014 relying partly on fallback prior"
+  ],
+  "counterfactuals": [
+    {
+      "delta_logit": 0.075,
+      "description": "Reduce $14 to $12",
+      "direction": "improves",
+      "label": "Lower price 15%",
+      "new_prediction_pct": 17.6
+    },
+    {
+      "delta_logit": 0.1,
+      "description": "Money-back guarantee or 30-day free trial reduces trust friction",
+      "direction": "improves",
+      "label": "Add risk-reversal guarantee",
+      "new_prediction_pct": 17.9
+    },
+    {
+      "delta_logit": 0.15,
+      "description": "Expand from DTC-only to Target/Walmart/grocery presence",
+      "direction": "improves",
+      "label": "Add retail distribution",
+      "new_prediction_pct": 18.7
+    }
+  ],
+  "diagnostics": {
+    "adjustment_applied": 0.0,
+    "coverage_tier": "thin",
+    "rag_prior": 0.2
+  },
+  "downweighted_brands": [
+    {
+      "brand": "Athletic Brewing NA Beer",
+      "combined_penalty": 0.24,
+      "penalty_reasons": "scale(growth_challenger)\u00d70.85, price\u00d70.7, subtype(nonalcoholic_beer)\u00d70.4",
+      "trial_rate": 0.05
+    },
+    {
+      "brand": "Poppi Prebiotic Soda",
+      "combined_penalty": 0.24,
+      "penalty_reasons": "scale(growth_challenger)\u00d70.85, price\u00d70.7, subtype(functional_soda)\u00d70.4",
+      "trial_rate": 0.23
+    },
+    {
+      "brand": "Olipop Prebiotic Soda",
+      "combined_penalty": 0.24,
+      "penalty_reasons": "scale(growth_challenger)\u00d70.85, price\u00d70.7, subtype(functional_soda)\u00d70.4",
+      "trial_rate": 0.27
+    }
+  ],
+  "headline": "Comparable data is thin or unreliable for this product. Pilot before scaling \u2014 predicted 17% trial is directional, not validated.",
+  "most_receptive_segment": "",
+  "simulation_id": "v3_45d55456",
+  "top_drivers": [],
+  "top_objections": [],
+  "trial_rate": {
+    "high": 0.25,
+    "low": 0.08,
+    "median": 0.165,
+    "percentage": 16.5
+  },
+  "verdict": "test_before_launch",
+  "version": "v3-lite",
+  "why_might_be_wrong": [
+    "Forecast leans partly on broader category data because exact-subtype comparables are thin."
+  ]
+}

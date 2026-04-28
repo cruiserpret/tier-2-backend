@@ -1,0 +1,104 @@
+{
+  "anchored_on": [
+    {
+      "brand": "Four Sigmatic Mushroom Coffee",
+      "confidence_grade": "C",
+      "match_reason": "scale(venture_challenger)\u00d70.85, price\u00d70.7",
+      "trial_rate": 0.03
+    },
+    {
+      "brand": "MUD\\WTR Coffee Alternative",
+      "confidence_grade": "C",
+      "match_reason": "scale(venture_challenger)\u00d70.85, price\u00d70.7",
+      "trial_rate": 0.04
+    },
+    {
+      "brand": "Ryze Mushroom Coffee",
+      "confidence_grade": "D",
+      "match_reason": "scale(venture_challenger)\u00d70.85, price\u00d70.7",
+      "trial_rate": 0.055
+    },
+    {
+      "brand": "Poppi Prebiotic Soda",
+      "confidence_grade": "A",
+      "match_reason": "tier(challenger)\u00d70.65, scale(growth_challenger)\u00d70.85, price\u00d70.7, dist\u00d70.85, subtype(functional_soda)\u00d70.4",
+      "trial_rate": 0.23
+    },
+    {
+      "brand": "Liquid Death Mountain Water",
+      "confidence_grade": "B",
+      "match_reason": "tier(challenger)\u00d70.65, scale(growth_challenger)\u00d70.85, dist\u00d70.85, subtype(branded_water)\u00d70.4",
+      "trial_rate": 0.2
+    }
+  ],
+  "confidence": "medium",
+  "confidence_reasons": [
+    "neighbor trial rate variance 9.6pp (high needs \u22646pp)",
+    "capped at medium: neighbor variance 9.6pp exceeds 8pp"
+  ],
+  "counterfactuals": [
+    {
+      "delta_logit": 0.15,
+      "description": "Reduce $40 to $34",
+      "direction": "improves",
+      "label": "Lower price 15%",
+      "new_prediction_pct": 4.6
+    },
+    {
+      "delta_logit": 0.2,
+      "description": "Money-back guarantee or 30-day free trial reduces trust friction",
+      "direction": "improves",
+      "label": "Add risk-reversal guarantee",
+      "new_prediction_pct": 4.8
+    },
+    {
+      "delta_logit": 0.3,
+      "description": "Expand from DTC-only to Target/Walmart/grocery presence",
+      "direction": "improves",
+      "label": "Add retail distribution",
+      "new_prediction_pct": 5.3
+    }
+  ],
+  "diagnostics": {
+    "adjustment_applied": 0.0,
+    "coverage_tier": "strong",
+    "rag_prior": 0.04
+  },
+  "downweighted_brands": [
+    {
+      "brand": "Poppi Prebiotic Soda",
+      "combined_penalty": 0.13,
+      "penalty_reasons": "tier(challenger)\u00d70.65, scale(growth_challenger)\u00d70.85, price\u00d70.7, dist\u00d70.85, subtype(functional_soda)\u00d70.4",
+      "trial_rate": 0.23
+    },
+    {
+      "brand": "Liquid Death Mountain Water",
+      "combined_penalty": 0.19,
+      "penalty_reasons": "tier(challenger)\u00d70.65, scale(growth_challenger)\u00d70.85, dist\u00d70.85, subtype(branded_water)\u00d70.4",
+      "trial_rate": 0.2
+    },
+    {
+      "brand": "Athletic Brewing NA Beer",
+      "combined_penalty": 0.19,
+      "penalty_reasons": "tier(challenger)\u00d70.65, scale(growth_challenger)\u00d70.85, dist\u00d70.85, subtype(nonalcoholic_beer)\u00d70.4",
+      "trial_rate": 0.05
+    }
+  ],
+  "headline": "Low trial signal (4.0%) and weak buyer enthusiasm. Reconsider product-market fit before launching.",
+  "most_receptive_segment": "",
+  "simulation_id": "v3_fed0cbbd",
+  "top_drivers": [],
+  "top_objections": [],
+  "trial_rate": {
+    "high": 0.09,
+    "low": 0.001,
+    "median": 0.04,
+    "percentage": 4.0
+  },
+  "verdict": "do_not_launch_yet",
+  "version": "v3-lite",
+  "why_might_be_wrong": [
+    "Trial rates among comparable brands vary widely \u2014 true outcome may shift based on distribution and positioning specifics.",
+    "Trial rates among comparable brands vary widely \u2014 true outcome may shift based on distribution and positioning specifics."
+  ]
+}

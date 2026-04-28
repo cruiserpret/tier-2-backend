@@ -1,0 +1,100 @@
+{
+  "anchored_on": [
+    {
+      "brand": "Casper Original Mattress",
+      "confidence_grade": "A",
+      "match_reason": "scale(large_public)\u00d70.85",
+      "trial_rate": 0.04
+    },
+    {
+      "brand": "Purple Original Mattress",
+      "confidence_grade": "A",
+      "match_reason": "scale(large_public)\u00d70.85, dist\u00d70.85",
+      "trial_rate": 0.03
+    },
+    {
+      "brand": "Brooklinen Luxe Sheets",
+      "confidence_grade": "B",
+      "match_reason": "scale(growth_challenger)\u00d70.85, price\u00d70.7, subtype(bedding_premium)\u00d70.65",
+      "trial_rate": 0.08
+    },
+    {
+      "brand": "YETI Rambler 20oz",
+      "confidence_grade": "A",
+      "match_reason": "tier(premium_niche)\u00d70.65, scale(large_public)\u00d70.85, price\u00d70.7, dist\u00d70.85, subtype(premium_drinkware)\u00d70.4",
+      "trial_rate": 0.16
+    },
+    {
+      "brand": "Parachute Home Percale Sheets",
+      "confidence_grade": "C",
+      "match_reason": "tier(premium_niche)\u00d70.65, scale(venture_challenger)\u00d70.85, price\u00d70.7, subtype(bedding_premium)\u00d70.65",
+      "trial_rate": 0.055
+    }
+  ],
+  "confidence": "high",
+  "confidence_reasons": [],
+  "counterfactuals": [
+    {
+      "delta_logit": 0.15,
+      "description": "Reduce $1295 to $1101",
+      "direction": "improves",
+      "label": "Lower price 15%",
+      "new_prediction_pct": 4.6
+    },
+    {
+      "delta_logit": 0.2,
+      "description": "Money-back guarantee or 30-day free trial reduces trust friction",
+      "direction": "improves",
+      "label": "Add risk-reversal guarantee",
+      "new_prediction_pct": 4.8
+    },
+    {
+      "delta_logit": 0.3,
+      "description": "Expand from DTC-only to Target/Walmart/grocery presence",
+      "direction": "improves",
+      "label": "Add retail distribution",
+      "new_prediction_pct": 5.3
+    }
+  ],
+  "diagnostics": {
+    "adjustment_applied": 0.0,
+    "coverage_tier": "strong",
+    "rag_prior": 0.04
+  },
+  "downweighted_brands": [
+    {
+      "brand": "Brooklinen Luxe Sheets",
+      "combined_penalty": 0.39,
+      "penalty_reasons": "scale(growth_challenger)\u00d70.85, price\u00d70.7, subtype(bedding_premium)\u00d70.65",
+      "trial_rate": 0.08
+    },
+    {
+      "brand": "YETI Rambler 20oz",
+      "combined_penalty": 0.13,
+      "penalty_reasons": "tier(premium_niche)\u00d70.65, scale(large_public)\u00d70.85, price\u00d70.7, dist\u00d70.85, subtype(premium_drinkware)\u00d70.4",
+      "trial_rate": 0.16
+    },
+    {
+      "brand": "Parachute Home Percale Sheets",
+      "combined_penalty": 0.25,
+      "penalty_reasons": "tier(premium_niche)\u00d70.65, scale(venture_challenger)\u00d70.85, price\u00d70.7, subtype(bedding_premium)\u00d70.65",
+      "trial_rate": 0.055
+    }
+  ],
+  "headline": "Low trial signal (4.0%) and weak buyer enthusiasm. Reconsider product-market fit before launching.",
+  "most_receptive_segment": "",
+  "simulation_id": "v3_56467eeb",
+  "top_drivers": [],
+  "top_objections": [],
+  "trial_rate": {
+    "high": 0.0647,
+    "low": 0.0153,
+    "median": 0.04,
+    "percentage": 4.0
+  },
+  "verdict": "do_not_launch_yet",
+  "version": "v3-lite",
+  "why_might_be_wrong": [
+    "Forecast is directional \u2014 actual launch outcome depends on execution, creative, channel mix, and seasonality."
+  ]
+}

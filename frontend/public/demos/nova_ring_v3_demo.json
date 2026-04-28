@@ -1,0 +1,102 @@
+{
+  "anchored_on": [
+    {
+      "brand": "Oura Ring Gen 3",
+      "confidence_grade": "B",
+      "match_reason": "scale(venture_challenger)\u00d70.85, price\u00d70.7",
+      "trial_rate": 0.075
+    },
+    {
+      "brand": "Whoop 4.0",
+      "confidence_grade": "C",
+      "match_reason": "scale(venture_challenger)\u00d70.85, price\u00d70.7, dist\u00d70.65",
+      "trial_rate": 0.055
+    },
+    {
+      "brand": "Eight Sleep Pod",
+      "confidence_grade": "C",
+      "match_reason": "tier(luxury)\u00d70.65, scale(venture_challenger)\u00d70.85, subtype(smart_sleep)\u00d70.4",
+      "trial_rate": 0.03
+    },
+    {
+      "brand": "Purple Original Mattress",
+      "confidence_grade": "A",
+      "match_reason": "tier(challenger)\u00d70.65, scale(large_public)\u00d70.85, dist\u00d70.85, subtype(mattress)\u00d70.25",
+      "trial_rate": 0.03
+    },
+    {
+      "brand": "Allbirds Wool Runners",
+      "confidence_grade": "A",
+      "match_reason": "tier(challenger)\u00d70.65, scale(large_public)\u00d70.85, price\u00d70.7, subtype(premium_sneaker)\u00d70.25",
+      "trial_rate": 0.1
+    }
+  ],
+  "confidence": "medium-high",
+  "confidence_reasons": [
+    "neighbor trial rate variance 6.8pp (high needs \u22646pp)"
+  ],
+  "counterfactuals": [
+    {
+      "delta_logit": 0.15,
+      "description": "Reduce $299 to $254",
+      "direction": "improves",
+      "label": "Lower price 15%",
+      "new_prediction_pct": 8.6
+    },
+    {
+      "delta_logit": 0.2,
+      "description": "Money-back guarantee or 30-day free trial reduces trust friction",
+      "direction": "improves",
+      "label": "Add risk-reversal guarantee",
+      "new_prediction_pct": 9.0
+    },
+    {
+      "delta_logit": 0.3,
+      "description": "Expand from DTC-only to Target/Walmart/grocery presence",
+      "direction": "improves",
+      "label": "Add retail distribution",
+      "new_prediction_pct": 9.9
+    }
+  ],
+  "diagnostics": {
+    "adjustment_applied": 0.0,
+    "coverage_tier": "strong",
+    "rag_prior": 0.075
+  },
+  "downweighted_brands": [
+    {
+      "brand": "Whoop 4.0",
+      "combined_penalty": 0.39,
+      "penalty_reasons": "scale(venture_challenger)\u00d70.85, price\u00d70.7, dist\u00d70.65",
+      "trial_rate": 0.055
+    },
+    {
+      "brand": "Eight Sleep Pod",
+      "combined_penalty": 0.22,
+      "penalty_reasons": "tier(luxury)\u00d70.65, scale(venture_challenger)\u00d70.85, subtype(smart_sleep)\u00d70.4",
+      "trial_rate": 0.03
+    },
+    {
+      "brand": "Purple Original Mattress",
+      "combined_penalty": 0.12,
+      "penalty_reasons": "tier(challenger)\u00d70.65, scale(large_public)\u00d70.85, dist\u00d70.85, subtype(mattress)\u00d70.25",
+      "trial_rate": 0.03
+    }
+  ],
+  "headline": "Moderate trial signal (8%). Run controlled pilots to validate before scaling spend.",
+  "most_receptive_segment": "",
+  "simulation_id": "v3_ff51ec8c",
+  "top_drivers": [],
+  "top_objections": [],
+  "trial_rate": {
+    "high": 0.1072,
+    "low": 0.0428,
+    "median": 0.075,
+    "percentage": 7.5
+  },
+  "verdict": "test_before_launch",
+  "version": "v3-lite",
+  "why_might_be_wrong": [
+    "Trial rates among comparable brands vary widely \u2014 true outcome may shift based on distribution and positioning specifics."
+  ]
+}

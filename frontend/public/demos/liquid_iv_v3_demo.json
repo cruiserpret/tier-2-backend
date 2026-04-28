@@ -1,0 +1,102 @@
+{
+  "anchored_on": [
+    {
+      "brand": "Liquid IV Hydration Multiplier",
+      "confidence_grade": "A",
+      "match_reason": "scale(large_public)\u00d70.85",
+      "trial_rate": 0.205
+    },
+    {
+      "brand": "Pedialyte",
+      "confidence_grade": "C",
+      "match_reason": "scale(global_giant)\u00d70.85",
+      "trial_rate": 0.22
+    },
+    {
+      "brand": "DripDrop Hydration",
+      "confidence_grade": "C",
+      "match_reason": "tier(challenger)\u00d70.65, scale(growth_challenger)\u00d70.85, dist\u00d70.65",
+      "trial_rate": 0.09
+    },
+    {
+      "brand": "Poppi Prebiotic Soda",
+      "confidence_grade": "A",
+      "match_reason": "tier(challenger)\u00d70.65, scale(growth_challenger)\u00d70.85, price\u00d70.7, dist\u00d70.65, subtype(functional_soda)\u00d70.65",
+      "trial_rate": 0.23
+    },
+    {
+      "brand": "LMNT Electrolytes",
+      "confidence_grade": "C",
+      "match_reason": "tier(premium_niche)\u00d70.35, scale(venture_challenger)\u00d70.85, price\u00d70.7, dist\u00d70.65",
+      "trial_rate": 0.065
+    }
+  ],
+  "confidence": "medium-high",
+  "confidence_reasons": [
+    "neighbor trial rate variance 7.6pp (high needs \u22646pp)"
+  ],
+  "counterfactuals": [
+    {
+      "delta_logit": 0.15,
+      "description": "Reduce $25 to $21",
+      "direction": "improves",
+      "label": "Lower price 15%",
+      "new_prediction_pct": 23.1
+    },
+    {
+      "delta_logit": 0.2,
+      "description": "Money-back guarantee or 30-day free trial reduces trust friction",
+      "direction": "improves",
+      "label": "Add risk-reversal guarantee",
+      "new_prediction_pct": 24.0
+    },
+    {
+      "delta_logit": 0.3,
+      "description": "Expand from DTC-only to Target/Walmart/grocery presence",
+      "direction": "improves",
+      "label": "Add retail distribution",
+      "new_prediction_pct": 25.8
+    }
+  ],
+  "diagnostics": {
+    "adjustment_applied": 0.0,
+    "coverage_tier": "strong",
+    "rag_prior": 0.205
+  },
+  "downweighted_brands": [
+    {
+      "brand": "DripDrop Hydration",
+      "combined_penalty": 0.36,
+      "penalty_reasons": "tier(challenger)\u00d70.65, scale(growth_challenger)\u00d70.85, dist\u00d70.65",
+      "trial_rate": 0.09
+    },
+    {
+      "brand": "Poppi Prebiotic Soda",
+      "combined_penalty": 0.16,
+      "penalty_reasons": "tier(challenger)\u00d70.65, scale(growth_challenger)\u00d70.85, price\u00d70.7, dist\u00d70.65, subtype(functional_soda)\u00d70.65",
+      "trial_rate": 0.23
+    },
+    {
+      "brand": "LMNT Electrolytes",
+      "combined_penalty": 0.14,
+      "penalty_reasons": "tier(premium_niche)\u00d70.35, scale(venture_challenger)\u00d70.85, price\u00d70.7, dist\u00d70.65",
+      "trial_rate": 0.065
+    }
+  ],
+  "headline": "Strong demand signal (20% predicted trial), confidence medium-high, friction manageable. Launch and iterate.",
+  "most_receptive_segment": "",
+  "simulation_id": "v3_2f9233c0",
+  "top_drivers": [],
+  "top_objections": [],
+  "trial_rate": {
+    "high": 0.2462,
+    "low": 0.1638,
+    "median": 0.205,
+    "percentage": 20.5
+  },
+  "verdict": "launch",
+  "version": "v3-lite",
+  "why_might_be_wrong": [
+    "Trial rates among comparable brands vary widely \u2014 true outcome may shift based on distribution and positioning specifics."
+  ]
+}
