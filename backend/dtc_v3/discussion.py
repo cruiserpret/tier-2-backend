@@ -395,6 +395,62 @@ AGAINST_OBJECTIONS = [
 ]
 
 
+WHAT_CHANGE_MIND_FOR = [
+    "A price increase or shrink in pack size could push me out.",
+    "If repeat-purchase numbers stay weak, I'd reconsider.",
+    "Bad reviews from buyers I trust would make me pause.",
+    "Differentiation versus {anchor} starts to blur and I'm out.",
+    "If a better incumbent option launches, I'd switch.",
+    "Cancellation friction would sour me fast.",
+    "Stockouts and supply issues would erode trust.",
+    "Quality slippage between batches would lose me.",
+    "If shipping or unboxing degrades, I'd churn.",
+    "Marketing claims that don't match the actual product would do it.",
+    "Switching cost from existing routine creeping up.",
+    "Customer-service response times getting worse.",
+    "Subscription pricing changes without warning.",
+    "Better-tasting or better-feeling competitor at same price.",
+    "Loss of the original team-led brand voice.",
+]
+
+WHAT_CHANGE_MIND_NEUTRAL = [
+    "A genuine starter offer or trial pack would push me to buy.",
+    "More proof from real long-term users would tip me.",
+    "Trusted reviews from someone in my world would matter.",
+    "A clearer head-to-head comparison with {anchor} would help.",
+    "Lower-risk trial like money-back or first-month-free.",
+    "A friend with similar needs giving a real recommendation.",
+    "Clinical or independent third-party data would be persuasive.",
+    "A smaller starter SKU at a lower entry price.",
+    "Stronger differentiation story versus {anchor} on a single dimension.",
+    "Retail availability so I can pick it up without committing online.",
+    "A clearer cancellation/return policy upfront.",
+    "Bundle pricing with something else I already buy.",
+    "Editorial reviews from outlets I read.",
+    "A creator I follow doing a real (not paid) review.",
+    "Clearer evidence the use case matches my actual day.",
+]
+
+WHAT_CHANGE_MIND_AGAINST = [
+    "Materially stronger proof of effect, not just claims.",
+    "A meaningfully lower price would force me to relook.",
+    "A trusted brand partnership or distribution deal.",
+    "Clearer differentiation on something I actually care about.",
+    "A genuine risk-free trial — full money back, no friction.",
+    "Multiple buyers in my circle reporting it actually works.",
+    "Independent testing or peer-reviewed data.",
+    "Removing the part that turns me off (price/format/claim).",
+    "Distribution into a channel I already shop.",
+    "A version sized or priced for someone in my situation.",
+    "Direct-comparison test against {anchor} I can verify myself.",
+    "Significant change in formulation or feature set.",
+    "Strong return policy I can use without arguing.",
+    "Real long-tail customer voice, not just early hype.",
+    "Better fit with my actual routine, not the marketing one.",
+]
+
+
+
 def _pick_variant(variants: list[str], seed_int: int, agent_index: int, anchor: str) -> str:
     """Deterministic pick by (seed_int + index) % len; substitutes {anchor}."""
     template = variants[(seed_int + agent_index) % len(variants)]
@@ -530,11 +586,12 @@ def _deterministic_in_range(low: float, high: float, seed_int: int,
 
 def _what_would_change_mind(stance: str, anchor: str, seed_int: int,
                              agent_idx: int) -> str:
+    """Stance-specific template (not cross-pool — each stance has its own list)."""
     pool = {
-        "for":     NEUTRAL_OBJECTIONS,
-        "neutral": FOR_OBJECTIONS,
-        "against": NEUTRAL_REASONS,
-    }.get(stance, NEUTRAL_OBJECTIONS)
+        "for":     WHAT_CHANGE_MIND_FOR,
+        "neutral": WHAT_CHANGE_MIND_NEUTRAL,
+        "against": WHAT_CHANGE_MIND_AGAINST,
+    }.get(stance, WHAT_CHANGE_MIND_NEUTRAL)
     template = pool[(seed_int + agent_idx + 7) % len(pool)]
     return template.replace("{anchor}", anchor)
 
@@ -777,6 +834,113 @@ def _template_panel(product: dict, forecast: dict, agent_count: int, seed: str) 
     else:
         most_receptive_seg = agents[0]["segment"] if agents else "Wellness-Conscious Pro"
 
+    # ── Build top-level panel fields (Commit 3c) ────────────────────────
+
+    # Intent distribution from bucket (forecast-leads-agents-follow)
+    intent_distribution = {
+        "buy":         round(bucket.n_buy / max(1, bucket.total), 3),
+        "considering": round(bucket.n_considering / max(1, bucket.total), 3),
+        "resistant":   round(bucket.n_resistant / max(1, bucket.total), 3),
+    }
+
+    # Buyer journeys: pick a narrative subset (shifted agents + best BUY + worst RESISTANT)
+    _shifted = [a for a in agents if a.get("shifted")]
+    _buys = sorted([a for a in agents if a.get("verdict") == "BUY"],
+                   key=lambda x: x.get("current_score_10", 0), reverse=True)
+    _wonts = sorted([a for a in agents if a.get("verdict") == "WON\'T BUY"],
+                    key=lambda x: x.get("current_score_10", 0))
+    _journey_pool = _shifted[:6] + _buys[:2] + _wonts[:2]
+    # Dedupe by name, preserve order
+    _seen = set()
+    _journey_picks = []
+    for a in _journey_pool:
+        if a["name"] not in _seen:
+            _seen.add(a["name"])
+            _journey_picks.append(a)
+    buyer_journeys = [
+        {
+            "agent_id":        a["id"],
+            "name":            a["name"],
+            "segment":         a["segment"],
+            "initial_verdict": a["journey"]["initial_verdict"],
+            "final_verdict":   a["journey"]["final_verdict"],
+            "shifted":         a["journey"]["shifted"],
+            "shift_reason":    a["journey"]["shift_reason"],
+            "key_quote":       a["journey"]["key_quote"],
+        }
+        for a in _journey_picks[:10]
+    ]
+
+    # Representative quotes — round-3 quote from one BUY, one CONS, one WON'T BUY
+    representative_quotes = []
+    for v_label in ("BUY", "CONSIDERING", "WON\'T BUY"):
+        _matches = [a for a in agents if a.get("verdict") == v_label]
+        if _matches:
+            _pick = _matches[0]
+            representative_quotes.append({
+                "verdict":  v_label,
+                "agent_id": _pick["id"],
+                "name":     _pick["name"],
+                "segment":  _pick["segment"],
+                "quote":    _pick["round_responses"][2]["response"],
+            })
+
+    # Hardest-to-convert: lowest-scoring WON'T BUY agent's segment
+    _wont_agents = [a for a in agents if a.get("verdict") == "WON\'T BUY"]
+    if _wont_agents:
+        _hardest = min(_wont_agents, key=lambda a: a.get("current_score_10", 10))
+        hardest_to_convert_segment = _hardest["segment"]
+    else:
+        hardest_to_convert_segment = "Brand-loyal incumbent buyer"
+
+    # Comparable price range — placeholder structure (full anchor-pricing
+    # arrives with the evidence-engine work). Frontend hides this section
+    # if min/max are None.
+    comparable_price_range = {
+        "user_price":    product.get("price"),
+        "min":           None,
+        "max":           None,
+        "anchor_brands": [a.get("brand") for a in anchored if a.get("brand")][:5],
+    }
+
+    # Actionable insight — derived from coverage tier + verdict distribution
+    if fallback_used or confidence == "low":
+        actionable_insight = (
+            "Coverage is thin. Run a $500-$2,000 validation test before scaling "
+            "spend. Lead with proof, reviews, and a low-risk starter offer."
+        )
+    elif intent_distribution["buy"] >= 0.30 and confidence in ("medium-high", "high"):
+        actionable_insight = (
+            "Strong launch candidate by comparable-brand evidence. Test the "
+            "winning message in a small paid landing-page run, then scale based on "
+            "signup/checkout intent versus category benchmarks."
+        )
+    elif intent_distribution["buy"] >= 0.15:
+        actionable_insight = (
+            "Moderate signal. Address the top objection with proof or a starter "
+            "offer before scaling. Run a small validation test to confirm intent."
+        )
+    else:
+        actionable_insight = (
+            "Weak buy signal. Reconsider price, positioning, or category fit. "
+            "Do not scale launch spend until objections are addressed."
+        )
+
+    # Risk factors — upgrade existing string to object format
+    _hardcore_count = sum(1 for a in agents if a.get("is_hardcore"))
+    _wont_count = len(_wont_agents)
+    risk_factors = {
+        "summary": f"{_wont_count} of {len(agents)} agents resisted — top objection: " + (
+            agents[0].get("top_objection", "differentiation") if _wont_agents else "n/a"
+        ),
+        "detail": (
+            f"Includes {_hardcore_count} hardcore resistors who did not move "
+            f"across rounds. Address differentiation versus comparable brands "
+            f"and trust signals."
+        ),
+        "holdout_agents": [a["id"] for a in _wont_agents[:5]],
+    }
+
     panel = {
         "rounds": rounds,
         "agents": agents,
@@ -798,6 +962,15 @@ def _template_panel(product: dict, forecast: dict, agent_count: int, seed: str) 
             f"Forecast of {trial_rate_pct:.1f}% trial is grounded in comparable-brand evidence. "
             f"Panel recommends '{verdict.replace('_', ' ')}'. Treat agent reasoning as explanation, not validation."
         ),
+
+        # ── New 3c top-level fields (additive) ──
+        "intent_distribution":         intent_distribution,
+        "buyer_journeys":              buyer_journeys,
+        "representative_quotes":       representative_quotes,
+        "hardest_to_convert_segment":  hardest_to_convert_segment,
+        "comparable_price_range":      comparable_price_range,
+        "actionable_insight":          actionable_insight,
+        "risk_factors_v3":             risk_factors,
     }
 
     return panel
