@@ -20,6 +20,7 @@ from typing import Any
 
 from backend.dtc_v3.bucket_allocator import allocate_buckets
 from backend.dtc_v3.persona_generator import select_personas_for_product
+from backend.dtc_v3.llm_dialogue_enricher import enrich_with_llm_dialogue
 
 DISCUSSION_VERSION = "discussion_v1"
 ALLOWED_AGENT_COUNTS = (20, 50)
@@ -84,16 +85,19 @@ def generate_discussion(
     if cached is not None:
         return cached
 
-    panel = None
+    # Build template panel first — structural ground truth.
+    panel = _template_panel(product, forecast, agent_count, seed)
     panel_source = "template"
-    if mode == "llm":
-        panel = _try_llm_panel(product, forecast, agent_count, seed)
-        if panel is not None:
-            panel_source = "llm"
 
-    if panel is None:
-        panel = _template_panel(product, forecast, agent_count, seed)
-        panel_source = "template"
+    # If mode=llm, overlay LLM-generated narrative onto the template panel.
+    # On any LLM failure, enricher returns None and we keep the template panel.
+    if mode == "llm":
+        enriched = enrich_with_llm_dialogue(
+            panel=panel, product=product, forecast=forecast, seed=seed,
+        )
+        if enriched is not None:
+            panel = enriched
+            panel_source = "llm"
 
     panel["seed"] = seed
     panel["agent_count"] = agent_count
