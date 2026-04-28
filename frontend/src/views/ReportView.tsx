@@ -6,7 +6,6 @@ import { ResultCard } from "../components/ResultCard";
 import { AnchorList } from "../components/AnchorList";
 import { ConfidenceReasons } from "../components/ConfidenceReasons";
 import { Counterfactuals } from "../components/Counterfactuals";
-import { AgentPanel } from "../components/AgentPanel";
 import { DeterminismProof } from "../components/DeterminismProof";
 
 export function ReportView() {
@@ -50,11 +49,26 @@ export function ReportView() {
           <AnchorList anchors={f.anchored_on} />
           <ConfidenceReasons forecast={f} />
           <Counterfactuals cfs={f.counterfactuals} />
-          <AgentPanel
-            panel={sim.agent_panel}
-            source={sim.panel_source}
-            error={sim.panel_error}
-          />
+          {sim.agent_panel?.rounds && sim.agent_panel.rounds.length > 0 && (
+            <div className="report-rounds">
+              <div className="report-card-eyebrow">Buyer Panel Discussion Rounds</div>
+              {sim.agent_panel.rounds.map((rd) => (
+                <div key={rd.round} className="round-block">
+                  <div className="round-header">
+                    <span className="round-num">ROUND {rd.round}</span>
+                    <span className="round-name">{rd.title.toUpperCase()}</span>
+                  </div>
+                  <div className="round-meta">
+                    <span className="round-meta-item" style={{ color: "var(--for)" }}>↑ {rd.for_count} for</span>
+                    <span className="round-meta-item" style={{ color: "#f59e0b" }}>— {rd.neutral_count} neutral</span>
+                    <span className="round-meta-item" style={{ color: "var(--against)" }}>↓ {rd.against_count} against</span>
+                    <span className="round-meta-item">avg score: {rd.avg_score.toFixed(2)}</span>
+                  </div>
+                  <div className="round-summary">{rd.summary}</div>
+                </div>
+              ))}
+            </div>
+          )}
           {isLiquidIV && <DeterminismProof payload={sim.payload} />}
         </div>
 

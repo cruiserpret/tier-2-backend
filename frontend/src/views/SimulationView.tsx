@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { getSim } from "../lib/simulationStore";
 import type { SimulationRecord } from "../types";
+import { AgentPanel } from "../components/AgentPanel";
 
 const PHASES = [
   { id: "intel", label: "Comparable retrieval", duration: 700 },
@@ -94,37 +95,15 @@ export function SimulationView() {
             </div>
           )}
 
-          {[1, 2, 3].map((roundN) => {
-            const phaseForRound = 1 + roundN;
-            if (phaseIdx < phaseForRound) return null;
-            const rd = panel?.rounds.find((r) => r.round === roundN);
-            if (!rd) return (
-              <div key={roundN} className="round-block fade-up">
-                <div className="round-header">
-                  <span className="round-num">ROUND {roundN}</span>
-                  <span className="round-name">DISCUSSION UNAVAILABLE</span>
-                </div>
-                <div className="round-summary">
-                  Buyer-panel discussion did not complete for this run.
-                </div>
-              </div>
-            );
-            return (
-              <div key={roundN} className="round-block fade-up">
-                <div className="round-header">
-                  <span className="round-num">ROUND {roundN}</span>
-                  <span className="round-name">{rd.title.toUpperCase()}</span>
-                </div>
-                <div className="round-meta">
-                  <span className="round-meta-item" style={{ color: "var(--for)" }}>↑ {rd.for_count} for</span>
-                  <span className="round-meta-item" style={{ color: "#f59e0b" }}>— {rd.neutral_count} neutral</span>
-                  <span className="round-meta-item" style={{ color: "var(--against)" }}>↓ {rd.against_count} against</span>
-                  <span className="round-meta-item">avg score: {rd.avg_score.toFixed(2)}</span>
-                </div>
-                <div className="round-summary">{rd.summary}</div>
-              </div>
-            );
-          })}
+          {done && panel && (
+            <div className="fade-up">
+              <AgentPanel
+                panel={panel}
+                source={sim.panel_source}
+                error={sim.panel_error}
+              />
+            </div>
+          )}
 
           {!done && phaseIdx >= 1 && phaseIdx < PHASES.length && (
             <div className="round-summary mono" style={{ display: "flex", alignItems: "center", gap: 10 }}>
