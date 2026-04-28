@@ -1,0 +1,427 @@
+[
+  {
+    "id": "hydramax_electrolyte",
+    "_bucket": "synthetic_parallel",
+    "_archetype": "Liquid IV / LMNT / Pedialyte-style",
+    "product": {
+      "name": "HydraMax Electrolyte Mix",
+      "product_name": "HydraMax Electrolyte Mix",
+      "description": "Electrolyte hydration drink mix for active adults. Sodium, potassium, magnesium. No added sugar.",
+      "price": 28,
+      "category": "supplements_health",
+      "demographic": "Active adults 25-45, fitness focused, hydration conscious",
+      "competitors": [{"name": "Liquid IV"}, {"name": "LMNT"}, {"name": "Pedialyte"}],
+      "market_tier_override": "challenger",
+      "distribution_hint": "retail_plus_dtc",
+      "exclude_brand": "HydraMax Electrolyte Mix"
+    }
+  },
+  {
+    "id": "voltrush_energy",
+    "_bucket": "synthetic_parallel",
+    "_archetype": "Red Bull / Monster / Celsius-style",
+    "product": {
+      "name": "VoltRush Energy",
+      "product_name": "VoltRush Energy",
+      "description": "Caffeinated energy drink for young adults. Zero sugar, B-vitamins, taurine. 12oz cans.",
+      "price": 3.49,
+      "category": "food_beverage",
+      "demographic": "Young adults 18-34, gym-goers, gamers, students",
+      "competitors": [{"name": "Red Bull"}, {"name": "Monster"}, {"name": "Celsius"}],
+      "market_tier_override": "challenger",
+      "distribution_hint": "retail_plus_dtc",
+      "exclude_brand": "VoltRush Energy"
+    }
+  },
+  {
+    "id": "pulsering_tracker",
+    "_bucket": "synthetic_parallel",
+    "_archetype": "Oura / Whoop-style premium niche",
+    "product": {
+      "name": "PulseRing Health Tracker",
+      "product_name": "PulseRing Health Tracker",
+      "description": "Smart ring for sleep tracking, recovery scoring, and heart rate variability. Companion app.",
+      "price": 299,
+      "category": "electronics_tech",
+      "demographic": "Health optimizers 28-50, sleep-focused, premium tech buyers",
+      "competitors": [{"name": "Oura"}, {"name": "Whoop"}],
+      "market_tier_override": "premium_niche",
+      "distribution_hint": "dtc_led",
+      "exclude_brand": "PulseRing Health Tracker"
+    }
+  },
+  {
+    "id": "zerohop_ipa",
+    "_bucket": "synthetic_parallel",
+    "_archetype": "Athletic Brewing / Heineken 0.0-style",
+    "product": {
+      "name": "ZeroHop IPA",
+      "product_name": "ZeroHop IPA",
+      "description": "Premium nonalcoholic craft IPA. 0% alcohol, full hop character. 6-pack cans.",
+      "price": 13.99,
+      "category": "food_beverage",
+      "demographic": "Sober-curious adults 25-45, craft beer drinkers, health-conscious",
+      "competitors": [{"name": "Athletic Brewing"}, {"name": "Heineken 0.0"}, {"name": "Partake"}],
+      "market_tier_override": "challenger",
+      "distribution_hint": "retail_plus_dtc",
+      "exclude_brand": "ZeroHop IPA"
+    }
+  },
+  {
+    "id": "adaptbrew_morning",
+    "_bucket": "synthetic_parallel",
+    "_archetype": "MUD\\WTR / Four Sigmatic-style",
+    "product": {
+      "name": "AdaptBrew Morning",
+      "product_name": "AdaptBrew Morning",
+      "description": "Mushroom coffee alternative with adaptogens. Lower caffeine than coffee, lion's mane, chaga.",
+      "price": 39,
+      "category": "food_beverage",
+      "demographic": "Wellness-focused adults 28-45, coffee drinkers seeking alternatives",
+      "competitors": [{"name": "MUD\\WTR"}, {"name": "Four Sigmatic"}, {"name": "Ryze"}],
+      "market_tier_override": "premium_niche",
+      "distribution_hint": "dtc_led",
+      "exclude_brand": "AdaptBrew Morning"
+    }
+  },
+  {
+    "id": "cloudfoam_mattress",
+    "_bucket": "synthetic_parallel",
+    "_archetype": "Casper / Nectar-style mattress in box",
+    "product": {
+      "name": "CloudFoam Mattress",
+      "product_name": "CloudFoam Mattress",
+      "description": "Memory foam mattress in a box, premium tier. Cooling gel, 100-night trial.",
+      "price": 1295,
+      "category": "home_lifestyle",
+      "demographic": "Adults 28-45 furnishing first apartment or upgrading bedroom",
+      "competitors": [{"name": "Casper"}, {"name": "Purple"}, {"name": "Nectar"}],
+      "market_tier_override": "challenger",
+      "distribution_hint": "dtc_led",
+      "exclude_brand": "CloudFoam Mattress"
+    }
+  },
+  {
+    "id": "glowdrop_vitamin_c",
+    "_bucket": "synthetic_new",
+    "_archetype": "vitamin C serum, skincare active",
+    "product": {
+      "name": "GlowDrop Vitamin C Serum",
+      "product_name": "GlowDrop Vitamin C Serum",
+      "description": "20% L-ascorbic acid vitamin C serum for daily use. Brightening, antioxidant, anti-aging.",
+      "price": 48,
+      "category": "beauty_skincare",
+      "demographic": "Skincare-conscious adults 25-50, anti-aging interested",
+      "competitors": [{"name": "Skinceuticals C E Ferulic"}, {"name": "The Ordinary"}, {"name": "Drunk Elephant"}],
+      "market_tier_override": "challenger",
+      "distribution_hint": "dtc_led",
+      "exclude_brand": "GlowDrop Vitamin C Serum"
+    }
+  },
+  {
+    "id": "clearskin_acne_patch",
+    "_bucket": "synthetic_new",
+    "_archetype": "hydrocolloid acne patch, skincare",
+    "product": {
+      "name": "ClearSkin Acne Patch",
+      "product_name": "ClearSkin Acne Patch",
+      "description": "Hydrocolloid pimple patches for overnight blemish reduction. 24-pack.",
+      "price": 14,
+      "category": "beauty_skincare",
+      "demographic": "Adults and teens 16-35 with occasional breakouts",
+      "competitors": [{"name": "Mighty Patch"}, {"name": "COSRX"}, {"name": "Starface"}],
+      "market_tier_override": "challenger",
+      "distribution_hint": "retail_plus_dtc",
+      "exclude_brand": "ClearSkin Acne Patch"
+    }
+  },
+  {
+    "id": "peakprotein_whey",
+    "_bucket": "synthetic_new",
+    "_archetype": "whey protein powder, supplement",
+    "product": {
+      "name": "PeakProtein Whey",
+      "product_name": "PeakProtein Whey",
+      "description": "Grass-fed whey protein isolate. 25g protein per scoop, no artificial sweeteners.",
+      "price": 49,
+      "category": "supplements_health",
+      "demographic": "Athletes and gym-goers 22-45, post-workout recovery focus",
+      "competitors": [{"name": "Optimum Nutrition"}, {"name": "Transparent Labs"}, {"name": "Legion"}],
+      "market_tier_override": "challenger",
+      "distribution_hint": "retail_plus_dtc",
+      "exclude_brand": "PeakProtein Whey"
+    }
+  },
+  {
+    "id": "greenfuel_greens",
+    "_bucket": "synthetic_new",
+    "_archetype": "greens powder, AG1-style",
+    "product": {
+      "name": "GreenFuel Daily Greens",
+      "product_name": "GreenFuel Daily Greens",
+      "description": "Daily superfood greens powder with adaptogens, probiotics, vitamins. One scoop in water.",
+      "price": 79,
+      "category": "supplements_health",
+      "demographic": "Wellness optimizers 28-50, busy professionals, nutrition gap fillers",
+      "competitors": [{"name": "AG1"}, {"name": "Athletic Greens"}, {"name": "Bloom"}],
+      "market_tier_override": "premium_niche",
+      "distribution_hint": "dtc_led",
+      "exclude_brand": "GreenFuel Daily Greens"
+    }
+  },
+  {
+    "id": "pupfuel_dog_supplement",
+    "_bucket": "weird_sparse",
+    "_archetype": "pet supplement, no DB coverage",
+    "product": {
+      "name": "PupFuel Joint Support",
+      "product_name": "PupFuel Joint Support",
+      "description": "Daily joint and mobility supplement chews for dogs. Glucosamine, chondroitin, MSM.",
+      "price": 35,
+      "category": "pet_products",
+      "demographic": "Dog owners 30-65 with senior or active dogs",
+      "competitors": [{"name": "Cosequin"}, {"name": "Dasuquin"}, {"name": "VetIQ"}],
+      "market_tier_override": "challenger",
+      "distribution_hint": "retail_plus_dtc",
+      "exclude_brand": "PupFuel Joint Support"
+    }
+  },
+  {
+    "id": "freshbite_dog_food",
+    "_bucket": "weird_sparse",
+    "_archetype": "premium dog food, no DB coverage",
+    "product": {
+      "name": "FreshBite Dog Food",
+      "product_name": "FreshBite Dog Food",
+      "description": "Fresh frozen dog food, human-grade ingredients, subscription delivery.",
+      "price": 89,
+      "category": "pet_products",
+      "demographic": "Premium pet parents 28-50, willing to pay for quality nutrition",
+      "competitors": [{"name": "The Farmer's Dog"}, {"name": "Ollie"}, {"name": "Nom Nom"}],
+      "market_tier_override": "premium_niche",
+      "distribution_hint": "subscription_led",
+      "exclude_brand": "FreshBite Dog Food"
+    }
+  },
+  {
+    "id": "cloudsocks_premium",
+    "_bucket": "synthetic_new",
+    "_archetype": "premium basics, sock subscription",
+    "product": {
+      "name": "CloudSocks Premium",
+      "product_name": "CloudSocks Premium",
+      "description": "Premium merino wool athletic socks. Cushioned, moisture-wicking, lifetime guarantee.",
+      "price": 18,
+      "category": "fashion_apparel",
+      "demographic": "Active adults 25-50, premium basics buyers",
+      "competitors": [{"name": "Bombas"}, {"name": "Smartwool"}, {"name": "Stance"}],
+      "market_tier_override": "challenger",
+      "distribution_hint": "retail_plus_dtc",
+      "exclude_brand": "CloudSocks Premium"
+    }
+  },
+  {
+    "id": "aerobasics_tee",
+    "_bucket": "synthetic_new",
+    "_archetype": "premium basics t-shirt",
+    "product": {
+      "name": "AeroBasics Essential Tee",
+      "product_name": "AeroBasics Essential Tee",
+      "description": "Premium pima cotton t-shirt, perfect fit, sustainable materials, 5-pack option.",
+      "price": 38,
+      "category": "fashion_apparel",
+      "demographic": "Adults 25-45 building a quality wardrobe",
+      "competitors": [{"name": "Buck Mason"}, {"name": "Everlane"}, {"name": "Cuts Clothing"}],
+      "market_tier_override": "challenger",
+      "distribution_hint": "dtc_led",
+      "exclude_brand": "AeroBasics Essential Tee"
+    }
+  },
+  {
+    "id": "smoothshave_razor",
+    "_bucket": "synthetic_new",
+    "_archetype": "razor subscription",
+    "product": {
+      "name": "SmoothShave Razor Club",
+      "product_name": "SmoothShave Razor Club",
+      "description": "Razor subscription with 5-blade cartridges, monthly or quarterly delivery.",
+      "price": 25,
+      "category": "personal_care",
+      "demographic": "Men 22-55, convenience-focused, subscription tolerant",
+      "competitors": [{"name": "Dollar Shave Club"}, {"name": "Harry's"}, {"name": "Gillette"}],
+      "market_tier_override": "challenger",
+      "distribution_hint": "subscription_led",
+      "exclude_brand": "SmoothShave Razor Club"
+    }
+  },
+  {
+    "id": "hydratekids_electrolyte",
+    "_bucket": "synthetic_new",
+    "_archetype": "kids electrolyte drink",
+    "product": {
+      "name": "HydrateKids Electrolyte",
+      "product_name": "HydrateKids Electrolyte",
+      "description": "Electrolyte drink mix for kids. Lower sodium, no artificial dyes, fruit flavors.",
+      "price": 22,
+      "category": "supplements_health",
+      "demographic": "Parents of active kids 5-15, sports parents",
+      "competitors": [{"name": "Pedialyte"}, {"name": "Liquid IV"}, {"name": "Cure Hydration"}],
+      "market_tier_override": "challenger",
+      "distribution_hint": "retail_plus_dtc",
+      "exclude_brand": "HydrateKids Electrolyte"
+    }
+  },
+  {
+    "id": "focusgum_caffeine",
+    "_bucket": "weird_sparse",
+    "_archetype": "caffeinated functional gum",
+    "product": {
+      "name": "FocusGum Caffeine",
+      "product_name": "FocusGum Caffeine",
+      "description": "Caffeinated chewing gum with L-theanine for focus. 40mg caffeine per piece.",
+      "price": 12,
+      "category": "supplements_health",
+      "demographic": "Knowledge workers 22-45, students, productivity hackers",
+      "competitors": [{"name": "Run Gum"}, {"name": "Jolt Gum"}, {"name": "Neuro Gum"}],
+      "market_tier_override": "niche",
+      "distribution_hint": "retail_plus_dtc",
+      "exclude_brand": "FocusGum Caffeine"
+    }
+  },
+  {
+    "id": "sleeppatch_melatonin",
+    "_bucket": "weird_sparse",
+    "_archetype": "transdermal sleep patch",
+    "product": {
+      "name": "SleepPatch Melatonin",
+      "product_name": "SleepPatch Melatonin",
+      "description": "Transdermal melatonin patch for nightly sleep support. 30 patches per box.",
+      "price": 28,
+      "category": "supplements_health",
+      "demographic": "Adults 30-55 with sleep concerns, melatonin pill alternatives",
+      "competitors": [{"name": "Patch MD"}, {"name": "The Good Patch"}, {"name": "Olly"}],
+      "market_tier_override": "niche",
+      "distribution_hint": "dtc_led",
+      "exclude_brand": "SleepPatch Melatonin"
+    }
+  },
+  {
+    "id": "luxebottle_drinkware",
+    "_bucket": "synthetic_new",
+    "_archetype": "premium drinkware tumbler",
+    "product": {
+      "name": "LuxeBottle Insulated Tumbler",
+      "product_name": "LuxeBottle Insulated Tumbler",
+      "description": "Stainless steel insulated tumbler with premium finish, 24oz, lifetime warranty.",
+      "price": 45,
+      "category": "home_lifestyle",
+      "demographic": "Outdoor and lifestyle buyers 25-55, premium drinkware seekers",
+      "competitors": [{"name": "YETI"}, {"name": "Stanley"}, {"name": "Hydro Flask"}],
+      "market_tier_override": "challenger",
+      "distribution_hint": "retail_plus_dtc",
+      "exclude_brand": "LuxeBottle Insulated Tumbler"
+    }
+  },
+  {
+    "id": "babyblend_organic",
+    "_bucket": "weird_sparse",
+    "_archetype": "organic baby food, no DB coverage",
+    "product": {
+      "name": "BabyBlend Organic Pouches",
+      "product_name": "BabyBlend Organic Pouches",
+      "description": "Organic baby food pouches, fresh-frozen, single-ingredient and blends. 6+ months.",
+      "price": 32,
+      "category": "food_beverage",
+      "demographic": "Parents of infants 6-24 months, organic-focused, premium baby food buyers",
+      "competitors": [{"name": "Once Upon a Farm"}, {"name": "Cerebelly"}, {"name": "Serenity Kids"}],
+      "market_tier_override": "premium_niche",
+      "distribution_hint": "retail_plus_dtc",
+      "exclude_brand": "BabyBlend Organic Pouches"
+    }
+  },
+  {
+    "id": "fitsnack_protein_chips",
+    "_bucket": "weird_sparse",
+    "_archetype": "protein chip snack",
+    "product": {
+      "name": "FitSnack Protein Chips",
+      "product_name": "FitSnack Protein Chips",
+      "description": "High-protein potato chips with 12g protein per bag, baked, multiple flavors.",
+      "price": 30,
+      "category": "food_beverage",
+      "demographic": "Fitness-focused snackers 22-45, high-protein dieters",
+      "competitors": [{"name": "Quest Chips"}, {"name": "Wilde Chips"}, {"name": "Kims Magic Pop"}],
+      "market_tier_override": "challenger",
+      "distribution_hint": "retail_plus_dtc",
+      "exclude_brand": "FitSnack Protein Chips"
+    }
+  },
+  {
+    "id": "calmtea_functional",
+    "_bucket": "weird_sparse",
+    "_archetype": "functional adaptogen tea",
+    "product": {
+      "name": "CalmTea Functional Blend",
+      "product_name": "CalmTea Functional Blend",
+      "description": "Functional tea with ashwagandha, l-theanine, chamomile. Stress and sleep support.",
+      "price": 24,
+      "category": "food_beverage",
+      "demographic": "Wellness-oriented adults 28-50, stress management, tea drinkers",
+      "competitors": [{"name": "Numi"}, {"name": "Yogi"}, {"name": "Pukka"}],
+      "market_tier_override": "challenger",
+      "distribution_hint": "retail_plus_dtc",
+      "exclude_brand": "CalmTea Functional Blend"
+    }
+  },
+  {
+    "id": "beardboost_serum",
+    "_bucket": "weird_sparse",
+    "_archetype": "beard care serum",
+    "product": {
+      "name": "BeardBoost Serum",
+      "product_name": "BeardBoost Serum",
+      "description": "Beard growth and care serum with biotin, castor oil, peppermint. Daily use.",
+      "price": 35,
+      "category": "personal_care",
+      "demographic": "Men 22-45 growing or maintaining facial hair",
+      "competitors": [{"name": "Beardbrand"}, {"name": "Honest Amish"}, {"name": "Wild Willies"}],
+      "market_tier_override": "niche",
+      "distribution_hint": "dtc_led",
+      "exclude_brand": "BeardBoost Serum"
+    }
+  },
+  {
+    "id": "homemist_air_freshener",
+    "_bucket": "weird_sparse",
+    "_archetype": "smart home air freshener",
+    "product": {
+      "name": "HomeMist Air Diffuser",
+      "product_name": "HomeMist Air Diffuser",
+      "description": "Programmable air diffuser with essential oil pods, app-controlled, monthly subscription.",
+      "price": 89,
+      "category": "home_lifestyle",
+      "demographic": "Home wellness buyers 28-55, smart home enthusiasts",
+      "competitors": [{"name": "Pura"}, {"name": "Aera"}, {"name": "Vitruvi"}],
+      "market_tier_override": "premium_niche",
+      "distribution_hint": "dtc_led",
+      "exclude_brand": "HomeMist Air Diffuser"
+    }
+  },
+  {
+    "id": "qiblasmart_prayer_mat",
+    "_bucket": "weird_sparse",
+    "_archetype": "smart prayer mat, sparse-coverage trust test",
+    "product": {
+      "name": "QiblaSmart Prayer Mat",
+      "product_name": "QiblaSmart Prayer Mat",
+      "description": "Smart prayer mat with posture sensors, timing reminders, and direction calibration for Muslim consumers.",
+      "price": 199,
+      "category": "electronics_tech",
+      "demographic": "Muslim consumers interested in prayer routine tools, smart home devices, and religious lifestyle products",
+      "competitors": [],
+      "market_tier_override": "niche",
+      "distribution_hint": "dtc_led",
+      "exclude_brand": "QiblaSmart Prayer Mat"
+    }
+  }
+]
