@@ -1710,3 +1710,360 @@ footer.app-footer {
   .panel-agent-grid { grid-template-columns: 1fr; }
   .panel-stance-row { grid-template-columns: 60px 1fr 50px; gap: 8px; }
 }
+/* ════════════════════════════════════════════════════════════════════
+   Slice 2A — Individual buyer agent cards (v3)
+   ════════════════════════════════════════════════════════════════════ */
+
+.panel-agents.v3 { margin-top: 28px; }
+
+.panel-distribution-caption {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-top: 8px;
+  margin-bottom: 16px;
+  font-style: italic;
+}
+
+/* Filter chip bar */
+.agent-filter-bar {
+  display: flex;
+  gap: 8px;
+  margin: 12px 0 18px;
+  flex-wrap: wrap;
+}
+
+.agent-filter-chip {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  padding: 6px 12px;
+  background: transparent;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.agent-filter-chip:hover {
+  border-color: var(--border-hi);
+  color: var(--text);
+}
+
+.agent-filter-chip.active {
+  color: var(--text);
+  background: var(--surface-2);
+  border-color: var(--border-hi);
+}
+
+/* Card grid */
+.agent-card-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+
+@media (min-width: 900px) {
+  .agent-card-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* Individual card */
+.agent-card-v3 {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 16px 16px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  transition: var(--transition);
+}
+
+.agent-card-v3:hover {
+  border-color: var(--border-hi);
+}
+
+.agent-card-v3.verdict-buy { border-left: 3px solid var(--for); }
+.agent-card-v3.verdict-considering { border-left: 3px solid #f59e0b; }
+.agent-card-v3.verdict-wont { border-left: 3px solid var(--against); }
+
+/* Header row: avatar + identity + verdict tag */
+.agent-card-head {
+  display: grid;
+  grid-template-columns: 40px 1fr auto;
+  gap: 12px;
+  align-items: start;
+}
+
+.agent-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 2px solid var(--border-hi);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  background: var(--surface-2);
+  letter-spacing: 0.02em;
+}
+
+.agent-identity {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.agent-name {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.3;
+}
+
+.agent-meta {
+  font-size: 10px;
+  color: var(--text-muted);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.agent-segment {
+  font-size: 11px;
+  color: var(--accent);
+  letter-spacing: 0.02em;
+  margin-top: 1px;
+}
+
+.verdict-tag {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  font-weight: 600;
+  text-transform: uppercase;
+  padding: 5px 10px;
+  border: 1px solid;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.02);
+  white-space: nowrap;
+  height: max-content;
+}
+
+/* Score row */
+.agent-score-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 12px;
+  align-items: center;
+}
+
+.agent-score-bar-wrap {
+  height: 4px;
+  background: var(--surface-2);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.agent-score-bar {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.5s ease;
+}
+
+.agent-score-num {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+/* Profile line */
+.agent-profile-line {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.5;
+  font-style: italic;
+}
+
+/* Round responses */
+.agent-rounds {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 0;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+
+.agent-round-row {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.agent-round-label {
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.agent-round-text {
+  font-size: 12px;
+  color: var(--text);
+  line-height: 1.5;
+  padding-left: 10px;
+  border-left: 1px solid var(--border);
+}
+
+/* Journey arc */
+.agent-journey {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.agent-journey-arc {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.journey-verdict {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  font-weight: 600;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  border-radius: 3px;
+  border: 1px solid;
+}
+
+.journey-verdict.tag-buy {
+  color: var(--for);
+  border-color: rgba(62, 232, 160, 0.4);
+  background: rgba(62, 232, 160, 0.06);
+}
+
+.journey-verdict.tag-considering {
+  color: #f59e0b;
+  border-color: rgba(245, 158, 11, 0.4);
+  background: rgba(245, 158, 11, 0.06);
+}
+
+.journey-verdict.tag-wont {
+  color: var(--against);
+  border-color: rgba(255, 77, 109, 0.4);
+  background: rgba(255, 77, 109, 0.06);
+}
+
+.journey-arrow {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.journey-shifted-tag,
+.journey-held-tag,
+.journey-hardcore-tag {
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: 3px;
+  border: 1px solid var(--border-hi);
+  color: var(--text-muted);
+}
+
+.journey-shifted-tag {
+  color: var(--accent);
+  border-color: rgba(200, 255, 87, 0.3);
+}
+
+.journey-hardcore-tag {
+  color: var(--against);
+  border-color: rgba(255, 77, 109, 0.4);
+  background: rgba(255, 77, 109, 0.06);
+}
+
+.agent-key-moment {
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.agent-key-moment-label {
+  color: var(--text);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  font-size: 9px;
+  margin-right: 4px;
+}
+
+/* Expandable details */
+.agent-card-expand-btn {
+  background: transparent;
+  border: 0;
+  color: var(--text-muted);
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+  padding: 4px 0 0;
+  text-align: left;
+  transition: var(--transition);
+}
+
+.agent-card-expand-btn:hover {
+  color: var(--text);
+}
+
+.agent-card-details {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+.agent-detail-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.agent-detail-label {
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.agent-detail-text {
+  font-size: 12px;
+  color: var(--text);
+  line-height: 1.5;
+}
+
+/* Mobile */
+@media (max-width: 600px) {
+  .agent-card-head {
+    grid-template-columns: 36px 1fr;
+    grid-template-rows: auto auto;
+  }
+  .verdict-tag {
+    grid-column: 1 / -1;
+    justify-self: start;
+  }
+}
