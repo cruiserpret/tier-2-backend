@@ -76,7 +76,7 @@ export function HomeView() {
     cachedPanel: AgentPanel | null,
   ): Promise<{ panel: AgentPanel | null; source: PanelSource; error: string | null }> {
     try {
-      const panel = await runDiscussion(payload, forecast, agentCount, "template");
+      const panel = await runDiscussion(payload, forecast, agentCount, "llm");
       return { panel, source: "live", error: null };
     } catch (e: any) {
       if (cachedPanel) {

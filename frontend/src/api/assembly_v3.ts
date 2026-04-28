@@ -2,7 +2,7 @@ import type { ForecastResponse, ProductPayload, CachedDemo, AgentPanel } from ".
 
 const API_BASE = (import.meta.env.VITE_TIER2_API_BASE_URL || "").replace(/\/$/, "");
 
-const DISCUSS_TIMEOUT_MS = 3000;
+const DISCUSS_TIMEOUT_MS = 90000;  // 90s covers async-batched LLM (~30-60s) + cache hits (~0.4s)
 
 export async function runForecast(payload: ProductPayload): Promise<ForecastResponse> {
   if (!API_BASE) throw new Error("VITE_TIER2_API_BASE_URL is not set");
@@ -22,7 +22,7 @@ export async function runDiscussion(
   product: ProductPayload,
   forecast: ForecastResponse,
   agent_count: 20 | 50 = 20,
-  mode: "template" | "llm" = "template",
+  mode: "template" | "llm" = "llm",
 ): Promise<AgentPanel> {
   if (!API_BASE) throw new Error("VITE_TIER2_API_BASE_URL is not set");
 
@@ -48,7 +48,7 @@ export async function runDiscussion(
     return data.agent_panel;
   } catch (e: any) {
     if (e.name === "AbortError") {
-      throw new Error(`Discussion timed out after ${DISCUSS_TIMEOUT_MS}ms`);
+      throw new Error(`Discussion timed out after ${Math.round(DISCUSS_TIMEOUT_MS/1000)}s`);
     }
     throw e;
   } finally {
