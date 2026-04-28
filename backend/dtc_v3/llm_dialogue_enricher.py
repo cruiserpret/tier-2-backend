@@ -33,7 +33,7 @@ LLM_CACHE_DIR.mkdir(exist_ok=True)
 OPENAI_MODEL = os.environ.get("DTC_DISCUSS_LLM_MODEL", "gpt-4o-mini")
 BATCH_SIZE = 5
 MAX_CONCURRENT_BATCHES = 4
-PER_BATCH_TIMEOUT_S = 40
+PER_BATCH_TIMEOUT_S = 55
 OVERALL_TIMEOUT_S = {20: 45, 50: 90}  # per agent_count
 DEFAULT_OVERALL_TIMEOUT_S = 45
 PROMPT_VERSION = "v2.0-batched"
@@ -101,10 +101,10 @@ def enrich_with_llm_dialogue(
     if result is None:
         return None
 
-    # 4. Save whole-panel cache (only if all batches succeeded)
-    if not result.get("_partial_fallback"):
-        cacheable = {k: v for k, v in result.items() if not k.startswith("_")}
-        _save_cache(cache_key, cacheable, latency_ms=result.get("_latency_ms", 0))
+    # 4. Save whole-panel cache (even partial success — beats template-only)
+    cacheable = {k: v for k, v in result.items() if not k.startswith("_")}
+    cacheable["_partial_fallback_count"] = result.get("_failed_batches", 0)
+    _save_cache(cache_key, cacheable, latency_ms=result.get("_latency_ms", 0))
 
     # 5. Merge into template panel
     merged = _merge_llm_into_panel(panel, result)

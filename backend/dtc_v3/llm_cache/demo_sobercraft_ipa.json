@@ -1,0 +1,533 @@
+{
+  "_meta": {
+    "latency_ms": 36676,
+    "prompt_version": "v2.0-batched",
+    "model": "gpt-4o-mini",
+    "saved_at": 1777399723.391242
+  },
+  "agents": [
+    {
+      "id": "agent_01",
+      "reason": "Adaeze is drawn to the health-conscious aspect of SoberCraft IPA, aligning with her lifestyle.",
+      "top_objection": "She is concerned about the price point of $14 for a nonalcoholic beer.",
+      "what_would_change_mind": "A lower price or a promotion would encourage her to buy.",
+      "key_moment": "The moment I saw the premium positioning of SoberCraft IPA as a craft option for sober-curious adults really resonated with me.",
+      "shift_reason": "",
+      "key_quote": "SoberCraft IPA speaks directly to my lifestyle and the need for quality in nonalcoholic options.",
+      "round_responses": [
+        {
+          "round": 1,
+          "title": "First Impression",
+          "response": "At first glance, SoberCraft IPA looks appealing as a premium nonalcoholic option for $14."
+        },
+        {
+          "round": 2,
+          "title": "Competitor Comparison",
+          "response": "Compared to Athletic Brewing, which I also like, SoberCraft seems to offer a more sophisticated craft experience."
+        },
+        {
+          "round": 3,
+          "title": "Final Verdict",
+          "response": "Overall, I feel confident buying SoberCraft IPA because it aligns with my health goals and offers a premium experience."
+        }
+      ]
+    },
+    {
+      "id": "agent_02",
+      "reason": "Carlos appreciates the craft aspect of SoberCraft IPA, which fits well with his taste as a Mexican-Lager Loyalist.",
+      "top_objection": "He worries that it might not satisfy his craving for a traditional beer flavor.",
+      "what_would_change_mind": "A tasting event or sample would push him to buy.",
+      "key_moment": "Seeing that SoberCraft IPA is marketed towards health-conscious drinkers made me think it could be a good fit for me.",
+      "shift_reason": "",
+      "key_quote": "If SoberCraft IPA can deliver on taste, I'm all in for a healthier alternative.",
+      "round_responses": [
+        {
+          "round": 1,
+          "title": "First Impression",
+          "response": "SoberCraft IPA caught my attention as a premium nonalcoholic beer for $14, which is intriguing."
+        },
+        {
+          "round": 2,
+          "title": "Competitor Comparison",
+          "response": "When I compare it to Heineken 0.0, I see SoberCraft offering a more authentic craft beer experience."
+        },
+        {
+          "round": 3,
+          "title": "Final Verdict",
+          "response": "I'm convinced to buy SoberCraft IPA because it aligns with my preference for quality and craft in beverages."
+        }
+      ]
+    },
+    {
+      "id": "agent_03",
+      "reason": "Xavier is intrigued by SoberCraft IPA but hesitant about the price and whether it will meet his expectations.",
+      "top_objection": "He feels $14 is steep for a nonalcoholic beer and wonders if it will taste as good as regular IPAs.",
+      "what_would_change_mind": "A lower price or a strong recommendation from friends could push him to buy.",
+      "key_moment": "The initial appeal of a nonalcoholic craft IPA for $14 caught my eye, but I'm still unsure about the taste.",
+      "shift_reason": "",
+      "key_quote": "I'm considering it, but I need to know it can deliver on flavor before I commit.",
+      "round_responses": [
+        {
+          "round": 1,
+          "title": "First Impression",
+          "response": "SoberCraft IPA seems interesting as a nonalcoholic option, but $14 feels a bit high."
+        },
+        {
+          "round": 2,
+          "title": "Competitor Comparison",
+          "response": "I think about how Athletic Brewing offers a similar product, but at a more competitive price."
+        },
+        {
+          "round": 3,
+          "title": "Final Verdict",
+          "response": "I'm still considering SoberCraft IPA because I need to weigh the price against the potential taste."
+        }
+      ]
+    },
+    {
+      "id": "agent_04",
+      "reason": "Camille is interested in SoberCraft IPA for its health-conscious branding but is unsure about the price.",
+      "top_objection": "She feels that $14 is a bit high for a nonalcoholic beer, especially when she can find cheaper options.",
+      "what_would_change_mind": "A promotion or a bundle deal would encourage her to make a purchase.",
+      "key_moment": "The focus on sober-curious adults in the marketing made me think it could fit my lifestyle, but the price is a concern.",
+      "shift_reason": "",
+      "key_quote": "I love the idea of a craft nonalcoholic beer, but I need to feel like I'm getting good value for my money.",
+      "round_responses": [
+        {
+          "round": 1,
+          "title": "First Impression",
+          "response": "SoberCraft IPA looks appealing as a premium nonalcoholic option, but $14 feels steep."
+        },
+        {
+          "round": 2,
+          "title": "Competitor Comparison",
+          "response": "I compare it to Partake, which is usually cheaper, and wonder if SoberCraft is worth the extra cost."
+        },
+        {
+          "round": 3,
+          "title": "Final Verdict",
+          "response": "I'm considering SoberCraft IPA, but I need to see better value before I commit."
+        }
+      ]
+    },
+    {
+      "id": "agent_05",
+      "reason": "Robert is interested in the premium aspect of SoberCraft IPA but is hesitant about the nonalcoholic nature.",
+      "top_objection": "He prefers traditional European beers and is skeptical about the taste of nonalcoholic options.",
+      "what_would_change_mind": "A strong endorsement from a trusted source would make him more likely to buy.",
+      "key_moment": "The premium positioning of SoberCraft IPA as a craft option for health-conscious drinkers piqued my interest, but I remain cautious.",
+      "shift_reason": "",
+      "key_quote": "I'm considering it, but I need assurance that it can match the quality of my usual imports.",
+      "round_responses": [
+        {
+          "round": 1,
+          "title": "First Impression",
+          "response": "SoberCraft IPA seems intriguing as a premium nonalcoholic craft beer for $14."
+        },
+        {
+          "round": 2,
+          "title": "Competitor Comparison",
+          "response": "I can't help but think of how traditional European brands like Heineken 0.0 compare in flavor."
+        },
+        {
+          "round": 3,
+          "title": "Final Verdict",
+          "response": "I'm still considering SoberCraft IPA, but I need to be convinced of its quality."
+        }
+      ]
+    },
+    {
+      "id": "agent_06",
+      "reason": "Yara is intrigued by the concept of a nonalcoholic craft IPA but has some reservations.",
+      "top_objection": "The price of $14 for SoberCraft IPA feels a bit steep compared to competitors like Athletic Brewing.",
+      "what_would_change_mind": "If I could see more positive reviews or a lower price point, I might be more inclined to buy.",
+      "key_moment": "The first impression of the product's premium positioning made me curious but hesitant.",
+      "shift_reason": "",
+      "key_quote": "I'm considering it, but the price is a sticking point for me.",
+      "round_responses": [
+        {
+          "round": 1,
+          "title": "First Impression",
+          "response": "Seeing SoberCraft IPA at $14 immediately caught my eye as a premium option for sober-curious adults."
+        },
+        {
+          "round": 2,
+          "title": "Competitor Comparison",
+          "response": "I think Athletic Brewing offers a similar product at a better price point, which makes me hesitant."
+        },
+        {
+          "round": 3,
+          "title": "Final Verdict",
+          "response": "Overall, I'm still considering it, but I need more assurance that it's worth the higher price."
+        }
+      ]
+    },
+    {
+      "id": "agent_07",
+      "reason": "Reginald appreciates the health-conscious angle but is unsure about the value proposition.",
+      "top_objection": "At $14, SoberCraft IPA feels pricey compared to Heineken 0.0, which I know is a solid choice.",
+      "what_would_change_mind": "A promotional offer or a unique flavor profile could sway me to make a purchase.",
+      "key_moment": "The comparison with Heineken 0.0 highlighted my concerns about the price versus value.",
+      "shift_reason": "",
+      "key_quote": "I'm on the fence; the price makes me think twice about trying it.",
+      "round_responses": [
+        {
+          "round": 1,
+          "title": "First Impression",
+          "response": "I found SoberCraft IPA's description appealing, but $14 feels a bit steep for a nonalcoholic beer."
+        },
+        {
+          "round": 2,
+          "title": "Competitor Comparison",
+          "response": "Heineken 0.0 is a well-known competitor, and at a lower price, it makes me question SoberCraft's value."
+        },
+        {
+          "round": 3,
+          "title": "Final Verdict",
+          "response": "I'm still considering it, but the price compared to competitors is a significant concern."
+        }
+      ]
+    },
+    {
+      "id": "agent_08",
+      "reason": "Jonas initially thought SoberCraft IPA could be a great addition to his collection but has some doubts.",
+      "top_objection": "The $14 price tag feels high compared to Partake, which I currently enjoy.",
+      "what_would_change_mind": "If I heard more about its unique flavor profile or saw some positive reviews, I'd be more likely to buy.",
+      "key_moment": "Realizing the price compared to Partake made me reconsider my initial excitement.",
+      "shift_reason": "I shifted from BUY to CONSIDERING because of concerns over the price versus expected quality.",
+      "key_quote": "I was excited at first, but the price has me second-guessing its value for my collection.",
+      "round_responses": [
+        {
+          "round": 1,
+          "title": "First Impression",
+          "response": "SoberCraft IPA looks promising for a nonalcoholic option, but $14 feels a bit high."
+        },
+        {
+          "round": 2,
+          "title": "Competitor Comparison",
+          "response": "Partake offers a comparable product at a better price, which is making me hesitate."
+        },
+        {
+          "round": 3,
+          "title": "Final Verdict",
+          "response": "I'm considering it now, but I need to see more value for that price."
+        }
+      ]
+    },
+    {
+      "id": "agent_09",
+      "reason": "Naomi is intrigued but cautious about the product's fit with her training regimen.",
+      "top_objection": "SoberCraft IPA's $14 price point feels high, especially when I could get Heineken 0.0 for less.",
+      "what_would_change_mind": "If I knew it had specific benefits for recovery or hydration, I might be more inclined to buy.",
+      "key_moment": "The initial impression of the product's health aspect made me curious, but the price is a concern.",
+      "shift_reason": "I shifted from WON'T BUY to CONSIDERING after realizing it might fit into my training lifestyle better than I thought.",
+      "key_quote": "I can see the appeal, but the price makes me cautious about adding it to my training routine.",
+      "round_responses": [
+        {
+          "round": 1,
+          "title": "First Impression",
+          "response": "SoberCraft IPA caught my attention as a nonalcoholic craft beer, but $14 is a lot."
+        },
+        {
+          "round": 2,
+          "title": "Competitor Comparison",
+          "response": "Heineken 0.0 is a solid competitor at a lower price, which makes me hesitate."
+        },
+        {
+          "round": 3,
+          "title": "Final Verdict",
+          "response": "I'm considering it now, but I need to know it offers more benefits for my training."
+        }
+      ]
+    },
+    {
+      "id": "agent_10",
+      "reason": "Brooke is not convinced that SoberCraft IPA offers enough value for her dry months.",
+      "top_objection": "At $14, I don't see how SoberCraft IPA stands out from other nonalcoholic options like Athletic Brewing.",
+      "what_would_change_mind": "If it had unique flavors or health benefits, I might reconsider my stance.",
+      "key_moment": "The initial impression of the price made me question its worth compared to other brands.",
+      "shift_reason": "",
+      "key_quote": "I'm not buying it; the price just doesn't match what I'm looking for in a nonalcoholic beer.",
+      "round_responses": [
+        {
+          "round": 1,
+          "title": "First Impression",
+          "response": "SoberCraft IPA looks appealing, but $14 seems excessive for a nonalcoholic beer."
+        },
+        {
+          "round": 2,
+          "title": "Competitor Comparison",
+          "response": "I think Athletic Brewing offers better value for a similar product."
+        },
+        {
+          "round": 3,
+          "title": "Final Verdict",
+          "response": "I won't buy it; the price doesn't justify trying it over my usual options."
+        }
+      ]
+    },
+    {
+      "id": "agent_11",
+      "reason": "As a lifelong beer fan, I find the concept of a nonalcoholic IPA unappealing.",
+      "top_objection": "The SoberCraft IPA at $14 doesn't offer the authentic beer experience I crave.",
+      "what_would_change_mind": "Maybe if it had a significantly lower price or a unique flavor profile that rivals real IPAs.",
+      "key_moment": "Seeing the price and knowing competitors like Athletic Brewing offer similar products at the same price point made my decision clearer.",
+      "shift_reason": "",
+      "key_quote": "Nonalcoholic just doesn't cut it for me; I want the real deal.",
+      "round_responses": [
+        {
+          "round": 1,
+          "title": "First Impression",
+          "response": "I was skeptical seeing the SoberCraft IPA priced at $14, thinking it can't compete with traditional beers."
+        },
+        {
+          "round": 2,
+          "title": "Competitor Comparison",
+          "response": "Compared to Athletic Brewing, which has a solid reputation for NA beers, SoberCraft doesn't seem to offer anything special."
+        },
+        {
+          "round": 3,
+          "title": "Final Verdict",
+          "response": "Overall, I can't justify spending $14 on a nonalcoholic IPA when I could have a real craft beer."
+        }
+      ]
+    },
+    {
+      "id": "agent_12",
+      "reason": "As an ultra runner, I'm focused on performance, and I don't see the value in a nonalcoholic beer.",
+      "top_objection": "The SoberCraft IPA doesn't provide any performance benefits that I need for my training.",
+      "what_would_change_mind": "If it had added electrolytes or recovery benefits, I might consider it for post-run hydration.",
+      "key_moment": "Realizing that the product is just a nonalcoholic beer, without any functional benefits for athletes, solidified my decision.",
+      "shift_reason": "",
+      "key_quote": "I need my drinks to serve a purpose, and this just doesn't fit the bill.",
+      "round_responses": [
+        {
+          "round": 1,
+          "title": "First Impression",
+          "response": "I was curious about the SoberCraft IPA, but the idea of a nonalcoholic beer just doesn't resonate with my athletic lifestyle."
+        },
+        {
+          "round": 2,
+          "title": "Competitor Comparison",
+          "response": "Athletic Brewing offers a better selection for nonalcoholic options that are more appealing to someone like me."
+        },
+        {
+          "round": 3,
+          "title": "Final Verdict",
+          "response": "In the end, I can't see myself buying a nonalcoholic IPA when I prioritize drinks that support my training."
+        }
+      ]
+    },
+    {
+      "id": "agent_13",
+      "reason": "As a mindful drinker, I appreciate nonalcoholic options, but this one doesn't appeal to me.",
+      "top_objection": "The SoberCraft IPA at $14 feels overpriced for a product that doesn't excite me.",
+      "what_would_change_mind": "If it had unique flavors or a lower price point, I might reconsider for social occasions.",
+      "key_moment": "Seeing the price and lack of distinct features compared to Heineken 0.0 made my decision firm.",
+      "shift_reason": "",
+      "key_quote": "I want something that feels special, and this just doesn't do it for me.",
+      "round_responses": [
+        {
+          "round": 1,
+          "title": "First Impression",
+          "response": "I was intrigued by the SoberCraft IPA, but the $14 price tag made me hesitate."
+        },
+        {
+          "round": 2,
+          "title": "Competitor Comparison",
+          "response": "Heineken 0.0 offers a more established nonalcoholic option at a similar price, making SoberCraft less appealing."
+        },
+        {
+          "round": 3,
+          "title": "Final Verdict",
+          "response": "Ultimately, I can't justify buying a nonalcoholic IPA that doesn't stand out in any way."
+        }
+      ]
+    },
+    {
+      "id": "agent_14",
+      "reason": "As a trainer, I enjoy craft beers, but I don't see the appeal of a nonalcoholic version.",
+      "top_objection": "The SoberCraft IPA lacks the flavor depth I expect from a craft beer, especially at $14.",
+      "what_would_change_mind": "If it had a more robust flavor profile or unique ingredients, I might consider it for social settings.",
+      "key_moment": "Realizing that it doesn't offer any unique features compared to competitors like Partake solidified my decision.",
+      "shift_reason": "",
+      "key_quote": "I want my drinks to have character, and this one just feels flat.",
+      "round_responses": [
+        {
+          "round": 1,
+          "title": "First Impression",
+          "response": "I was curious about the SoberCraft IPA, but the nonalcoholic aspect and price made me skeptical."
+        },
+        {
+          "round": 2,
+          "title": "Competitor Comparison",
+          "response": "Partake has more interesting flavors and a better reputation in the nonalcoholic space."
+        },
+        {
+          "round": 3,
+          "title": "Final Verdict",
+          "response": "In the end, I can't see myself buying a nonalcoholic IPA that doesn't excite my taste buds."
+        }
+      ]
+    },
+    {
+      "id": "agent_15",
+      "reason": "As a rugby player, I prefer drinks that enhance my performance, not just mimic beer.",
+      "top_objection": "The SoberCraft IPA doesn't offer any functional benefits for my training or recovery.",
+      "what_would_change_mind": "If it had additional health benefits or was marketed as a recovery drink, I might reconsider.",
+      "key_moment": "Understanding that this is just a nonalcoholic beer without any added value confirmed my stance.",
+      "shift_reason": "",
+      "key_quote": "I need drinks that work for me, not just something that tastes like beer.",
+      "round_responses": [
+        {
+          "round": 1,
+          "title": "First Impression",
+          "response": "I was intrigued by the idea of a nonalcoholic IPA, but the $14 price tag gave me pause."
+        },
+        {
+          "round": 2,
+          "title": "Competitor Comparison",
+          "response": "Athletic Brewing has a better reputation and offers more appealing options for nonalcoholic beers."
+        },
+        {
+          "round": 3,
+          "title": "Final Verdict",
+          "response": "Ultimately, I can't justify buying a nonalcoholic beer that doesn't serve a purpose for my training."
+        }
+      ]
+    },
+    {
+      "id": "agent_16",
+      "reason": "Theo believes SoberCraft IPA lacks the necessary appeal for his performance-oriented lifestyle.",
+      "top_objection": "At $14, it feels overpriced for a nonalcoholic beer compared to Athletic Brewing's offerings.",
+      "what_would_change_mind": "If it had a stronger flavor profile or health benefits, he might reconsider.",
+      "key_moment": "The initial impression of the price made him skeptical right away.",
+      "shift_reason": "",
+      "key_quote": "I need something that fuels my recovery, and this just doesn't cut it.",
+      "round_responses": [
+        {
+          "round": 1,
+          "title": "First Impression",
+          "response": "Seeing SoberCraft IPA at $14 made me think it\u2019s not worth the price for a nonalcoholic option."
+        },
+        {
+          "round": 2,
+          "title": "Competitor Comparison",
+          "response": "Athletic Brewing offers a better value and taste for a similar price, which makes SoberCraft less appealing."
+        },
+        {
+          "round": 3,
+          "title": "Final Verdict",
+          "response": "Overall, I just can't justify spending $14 on a nonalcoholic IPA when there are better options out there."
+        }
+      ]
+    },
+    {
+      "id": "agent_17",
+      "reason": "Diego appreciates craft beers but finds SoberCraft IPA lacking compared to traditional options.",
+      "top_objection": "The flavor profile of SoberCraft does not match the depth of traditional IPAs like those from Lagunitas.",
+      "what_would_change_mind": "A more robust flavor or unique ingredients could sway him to try it.",
+      "key_moment": "Realizing it\u2019s nonalcoholic made him question if it could deliver the same experience as real craft beers.",
+      "shift_reason": "After considering the flavor, he felt it wouldn't meet his expectations for an IPA.",
+      "key_quote": "If I'm going nonalcoholic, I want it to taste just as good as the real thing, and this doesn't do that.",
+      "round_responses": [
+        {
+          "round": 1,
+          "title": "First Impression",
+          "response": "I was intrigued by SoberCraft IPA but skeptical about its taste at $14."
+        },
+        {
+          "round": 2,
+          "title": "Competitor Comparison",
+          "response": "Compared to Heineken 0.0, I feel like SoberCraft doesn't have the same level of flavor complexity."
+        },
+        {
+          "round": 3,
+          "title": "Final Verdict",
+          "response": "In the end, I can't commit to a nonalcoholic IPA that doesn't satisfy my craft beer standards."
+        }
+      ]
+    },
+    {
+      "id": "agent_18",
+      "reason": "Saanvi is focused on her fitness goals and doesn't see SoberCraft IPA fitting into her regimen.",
+      "top_objection": "At $14, it seems like an unnecessary expense for something that might not help her cutting phase.",
+      "what_would_change_mind": "If it had proven benefits for recovery or muscle preservation, she might buy it.",
+      "key_moment": "The price and the nonalcoholic aspect made her doubt its value for her fitness goals.",
+      "shift_reason": "She realized that the product might not align with her current dietary focus.",
+      "key_quote": "I need every calorie to count, and a nonalcoholic beer just doesn't fit that bill for me.",
+      "round_responses": [
+        {
+          "round": 1,
+          "title": "First Impression",
+          "response": "SoberCraft IPA caught my eye, but I was put off by the $14 price tag."
+        },
+        {
+          "round": 2,
+          "title": "Competitor Comparison",
+          "response": "Athletic Brewing offers more variety and better value for someone like me."
+        },
+        {
+          "round": 3,
+          "title": "Final Verdict",
+          "response": "Ultimately, I can't justify adding this to my diet when there are better options for my goals."
+        }
+      ]
+    },
+    {
+      "id": "agent_19",
+      "reason": "Talia prioritizes mental health but finds SoberCraft IPA not appealing enough for her lifestyle.",
+      "top_objection": "The price of $14 feels excessive for a nonalcoholic beer that may not enhance her wellness routine.",
+      "what_would_change_mind": "If it had additional health benefits or a unique flavor profile, she might consider it.",
+      "key_moment": "The price and lack of health benefits made her decision clear early on.",
+      "shift_reason": "After weighing its benefits, she felt it wouldn't contribute positively to her wellness journey.",
+      "key_quote": "I\u2019m looking for products that enhance my mental health, and this just doesn\u2019t seem to fit that need.",
+      "round_responses": [
+        {
+          "round": 1,
+          "title": "First Impression",
+          "response": "SoberCraft IPA intrigued me, but the $14 price made me hesitate."
+        },
+        {
+          "round": 2,
+          "title": "Competitor Comparison",
+          "response": "Heineken 0.0 offers a more familiar taste and better value for nonalcoholic options."
+        },
+        {
+          "round": 3,
+          "title": "Final Verdict",
+          "response": "In the end, I can't see myself buying this when it doesn't align with my wellness priorities."
+        }
+      ]
+    },
+    {
+      "id": "agent_20",
+      "reason": "Hiroshi, a brewery veteran, finds SoberCraft IPA lacking authenticity compared to real craft beers.",
+      "top_objection": "At $14, it feels like a premium price for something that's not a true craft experience.",
+      "what_would_change_mind": "If it had a unique brewing process or flavor that stood out, he might reconsider.",
+      "key_moment": "The initial impression of it being nonalcoholic sealed his decision against it immediately.",
+      "shift_reason": "",
+      "key_quote": "I\u2019ve tasted countless craft beers, and a nonalcoholic IPA just doesn\u2019t cut it for me.",
+      "round_responses": [
+        {
+          "round": 1,
+          "title": "First Impression",
+          "response": "SoberCraft IPA at $14 felt like a gimmick rather than a genuine craft beer."
+        },
+        {
+          "round": 2,
+          "title": "Competitor Comparison",
+          "response": "Athletic Brewing has a more authentic approach to nonalcoholic beers that I respect."
+        },
+        {
+          "round": 3,
+          "title": "Final Verdict",
+          "response": "I just can't buy into a nonalcoholic IPA when I know what real craft beer tastes like."
+        }
+      ]
+    }
+  ],
+  "consensus": "The group shows a mix of enthusiasm and hesitation towards SoberCraft IPA, mainly due to pricing and taste concerns.",
+  "winning_message": "SoberCraft IPA is positioned as a premium nonalcoholic craft beer for health-conscious consumers.",
+  "actionable_insight": "Consider promotional pricing or tasting events to encourage trial among potential buyers."
+}
