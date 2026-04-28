@@ -1,0 +1,450 @@
+"""
+backend/dtc_v3/discussion.py — AI buyer panel generator for v3-lite.
+
+CRITICAL INVARIANTS:
+  1. Discussion MUST NOT change the forecast number.
+  2. Same input → same output (deterministic via seed + cache).
+  3. If LLM fails or returns invalid JSON, fallback to deterministic template.
+  4. Never claim agents are "real buyers" — they are AI buyer personas
+     explaining a comparable-brand forecast.
+  5. agent_count must be in {20, 50}.
+"""
+
+from __future__ import annotations
+import os
+import json
+import hashlib
+from typing import Any
+
+DISCUSSION_VERSION = "discussion_v1"
+ALLOWED_AGENT_COUNTS = (20, 50)
+DEFAULT_AGENT_COUNT = 20
+
+_DISCUSSION_CACHE: dict[str, dict] = {}
+
+
+# ────────────────────────────────────────────────────────────────────
+# Seed
+# ────────────────────────────────────────────────────────────────────
+def generate_seed(product: dict, forecast: dict, agent_count: int) -> str:
+    """
+    Deterministic seed for caching + LLM reproducibility.
+
+    Per friend's spec: do NOT use forecast.simulation_id (random per run).
+    Use canonical product + forecast core + version.
+    """
+    canonical_payload = {
+        "product": product,
+        "forecast_core": {
+            "trial_rate_median": forecast.get("trial_rate", {}).get("median"),
+            "confidence": forecast.get("confidence"),
+            "verdict": forecast.get("verdict"),
+            "prior_source": forecast.get("diagnostics", {}).get("prior_source"),
+            "version": forecast.get("version", "v3-lite"),
+        },
+        "agent_count": agent_count,
+        "discussion_version": DISCUSSION_VERSION,
+    }
+    canonical = json.dumps(canonical_payload, sort_keys=True, default=str)
+    return hashlib.sha256(canonical.encode()).hexdigest()
+
+
+# ────────────────────────────────────────────────────────────────────
+# Public entrypoint
+# ────────────────────────────────────────────────────────────────────
+def generate_discussion(product: dict, forecast: dict, agent_count: int = DEFAULT_AGENT_COUNT) -> dict:
+    """
+    Returns {"agent_panel": {...}}.
+
+    Tries one structured LLM call. On any failure, falls back to a
+    deterministic template panel. Never raises (other than invalid input).
+    """
+    if agent_count not in ALLOWED_AGENT_COUNTS:
+        raise ValueError(f"agent_count must be in {ALLOWED_AGENT_COUNTS}, got {agent_count}")
+    if not isinstance(product, dict) or not product:
+        raise ValueError("product must be a non-empty dict")
+    if not isinstance(forecast, dict) or not forecast:
+        raise ValueError("forecast must be a non-empty dict")
+
+    seed = generate_seed(product, forecast, agent_count)
+
+    cached = _DISCUSSION_CACHE.get(seed)
+    if cached is not None:
+        return cached
+
+    panel = _try_llm_panel(product, forecast, agent_count, seed)
+    if panel is None:
+        panel = _template_panel(product, forecast, agent_count, seed)
+
+    panel["seed"] = seed
+    panel["agent_count"] = agent_count
+    panel["coverage_warning"] = _coverage_warning(forecast)
+
+    response = {"agent_panel": panel}
+    _DISCUSSION_CACHE[seed] = response
+    return response
+
+
+def clear_cache() -> None:
+    """Test helper."""
+    _DISCUSSION_CACHE.clear()
+
+
+# ────────────────────────────────────────────────────────────────────
+# Coverage warning copy
+# ────────────────────────────────────────────────────────────────────
+def _coverage_warning(forecast: dict) -> str:
+    confidence = (forecast.get("confidence") or "").lower()
+    coverage_tier = (forecast.get("diagnostics", {}).get("coverage_tier") or "").lower()
+    prior_source = (forecast.get("diagnostics", {}).get("prior_source") or "").lower()
+
+    is_low_or_fallback = (
+        confidence == "low"
+        or coverage_tier in ("weak", "thin")
+        or prior_source.startswith("fallback")
+    )
+    if is_low_or_fallback:
+        return (
+            "Comparable coverage is weak for this product subtype, so this buyer-panel "
+            "discussion is directional — it explains the forecast's logic, not validated buyer behavior."
+        )
+    return ""
+
+
+# ────────────────────────────────────────────────────────────────────
+# LLM path
+# ────────────────────────────────────────────────────────────────────
+def _try_llm_panel(product: dict, forecast: dict, agent_count: int, seed: str) -> dict | None:
+    """
+    One structured LLM call, low temperature, strict JSON.
+    Returns parsed panel dict on success, None on any failure.
+    """
+    api_key = os.environ.get("OPENAI_API_KEY")
+    if not api_key:
+        return None
+
+    try:
+        from openai import OpenAI
+    except ImportError:
+        return None
+
+    try:
+        client = OpenAI(api_key=api_key)
+        system_prompt, user_prompt = _build_prompts(product, forecast, agent_count)
+
+        seed_int = int(seed[:15], 16)
+
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            temperature=0,
+            seed=seed_int,
+            response_format={"type": "json_object"},
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            timeout=30,
+        )
+
+        raw = response.choices[0].message.content
+        if not raw:
+            return None
+
+        parsed = json.loads(raw)
+        validated = _validate_llm_panel(parsed, agent_count)
+        return validated
+
+    except Exception:
+        return None
+
+
+def _build_prompts(product: dict, forecast: dict, agent_count: int) -> tuple[str, str]:
+    system = (
+        "You are generating a panel of AI buyer personas to explain a comparable-brand "
+        "trial-rate forecast for a DTC product. Strict rules:\n"
+        "1. DO NOT change or recompute the forecast number — it is fixed.\n"
+        "2. DO NOT claim these are real buyers. They are AI personas explaining the forecast.\n"
+        "3. DO NOT make causal guarantees ('will lift trial', 'guarantees adoption').\n"
+        "4. Use the comparable-brand anchors as evidence for stances.\n"
+        "5. Stances are 'for', 'against', or 'neutral'.\n"
+        "6. Score is 0.0-1.0 (purchase intent). 'for' agents score >= 0.55, 'against' <= 0.4, 'neutral' between.\n"
+        "7. Round summaries describe what the panel discussed, not what they decided about the rate.\n"
+        "8. top_drivers and top_objections are short phrases (3-7 words each).\n"
+        "9. consensus is one sentence summarizing where the panel landed.\n"
+        "10. Return strict JSON matching the schema. No prose outside JSON.\n"
+    )
+
+    schema_text = (
+        '{\n'
+        '  "rounds": [\n'
+        '    {"round": 1, "title": "First Reaction", "summary": "...", "for_count": int, "neutral_count": int, "against_count": int, "avg_score": 0.0-1.0},\n'
+        '    {"round": 2, "title": "Comparable Comparison", "summary": "...", "for_count": int, "neutral_count": int, "against_count": int, "avg_score": 0.0-1.0},\n'
+        '    {"round": 3, "title": "Consensus", "summary": "...", "for_count": int, "neutral_count": int, "against_count": int, "avg_score": 0.0-1.0}\n'
+        '  ],\n'
+        f'  "agents": [exactly {agent_count} agents, each with: id (agent_01..agent_{agent_count:02d}), segment, profile, stance, score, reason, top_objection],\n'
+        '  "top_drivers": [4-6 short phrases],\n'
+        '  "top_objections": [4-6 short phrases],\n'
+        '  "most_receptive_segment": "short phrase",\n'
+        '  "winning_message": "one sentence",\n'
+        '  "risk_factors": [3-5 short phrases],\n'
+        '  "consensus": "one sentence"\n'
+        '}'
+    )
+
+    forecast_summary = {
+        "trial_rate_pct": forecast.get("trial_rate", {}).get("percentage"),
+        "confidence": forecast.get("confidence"),
+        "verdict": forecast.get("verdict"),
+        "anchored_on": forecast.get("anchored_on", [])[:6],
+        "top_drivers_seed": forecast.get("top_drivers", []),
+        "top_objections_seed": forecast.get("top_objections", []),
+        "why_might_be_wrong": forecast.get("why_might_be_wrong", []),
+    }
+
+    product_summary = {
+        "name": product.get("product_name") or product.get("name"),
+        "description": product.get("description"),
+        "price": product.get("price"),
+        "category": product.get("category"),
+        "demographic": product.get("demographic"),
+        "competitors": product.get("competitors", []),
+    }
+
+    user = (
+        f"PRODUCT:\n{json.dumps(product_summary, indent=2)}\n\n"
+        f"FORECAST (do not change):\n{json.dumps(forecast_summary, indent=2)}\n\n"
+        f"Generate exactly {agent_count} agents across diverse buyer segments. "
+        f"Stance distribution should reflect the forecast's trial rate and confidence. "
+        f"Return JSON matching this schema:\n{schema_text}"
+    )
+
+    return system, user
+
+
+def _validate_llm_panel(parsed: Any, agent_count: int) -> dict | None:
+    """Light schema validation. Returns panel dict if valid, else None."""
+    if not isinstance(parsed, dict):
+        return None
+    required = ("rounds", "agents", "top_drivers", "top_objections",
+                "most_receptive_segment", "winning_message", "risk_factors", "consensus")
+    if not all(k in parsed for k in required):
+        return None
+    if not isinstance(parsed["rounds"], list) or len(parsed["rounds"]) != 3:
+        return None
+    if not isinstance(parsed["agents"], list):
+        return None
+    if len(parsed["agents"]) != agent_count:
+        return None
+    for a in parsed["agents"]:
+        if not isinstance(a, dict):
+            return None
+        for k in ("id", "segment", "profile", "stance", "score", "reason", "top_objection"):
+            if k not in a:
+                return None
+        if a["stance"] not in ("for", "against", "neutral"):
+            return None
+    return parsed
+
+
+# ────────────────────────────────────────────────────────────────────
+# Deterministic template fallback
+# ────────────────────────────────────────────────────────────────────
+SEGMENT_TEMPLATES = [
+    ("Health optimizer", "Tracks sleep, supplements, recovery. Reads labels."),
+    ("Cost-conscious skeptic", "Compares unit price. Questions DTC premiums."),
+    ("Subscription veteran", "Has 4+ active DTC subs. Cancels often."),
+    ("Retail-first shopper", "Trusts what's on Costco / Target shelves."),
+    ("Early adopter", "Tries new launches within 60 days."),
+    ("Wellness routine builder", "Stacks 3+ daily supplements."),
+    ("Influencer-led buyer", "Buys what creators they trust use."),
+    ("Skeptic with a need", "Has the problem, doubts the solution."),
+    ("Brand-loyal incumbent user", "Currently uses a comparable brand."),
+    ("Convenience prioritizer", "Pays for fast shipping, hates lock-in."),
+    ("Functional ingredient nerd", "Reads studies. Knows actives."),
+    ("Gift / household buyer", "Buys for spouse / family."),
+    ("Reddit researcher", "Lurks niche subreddits before buying."),
+    ("Aesthetic-driven buyer", "Cares how it looks on the shelf / counter."),
+    ("Trial-then-bulk buyer", "Buys small to test, large if it works."),
+    ("Price-anchored", "Has a strong reference price in their head."),
+    ("Performance-focused athlete", "Buys for measurable outcomes."),
+    ("Time-pressed parent", "Buys what works fast, no learning curve."),
+    ("Eco / sustainable buyer", "Reads packaging. Cares about waste."),
+    ("Wait-and-see buyer", "Lets others try first, buys after reviews."),
+    ("Urban professional", "Lifestyle fit > price."),
+    ("Suburban household", "Buys family-size, retail-first."),
+    ("Beginner / first-timer", "Doesn't know category norms yet."),
+    ("Aging into category", "New life stage triggered the search."),
+    ("Quitting another category", "Replacing an old habit (alcohol, soda, coffee)."),
+    ("Performance plateau", "Tried 2+ alternatives, looking for next."),
+    ("Recovering from injury / setback", "Buying for a specific bounce-back."),
+    ("Lifestyle adjacent", "Doesn't need it, but it fits the identity."),
+    ("Flash-sale watcher", "Only buys on promo."),
+    ("Bundle hunter", "Wants stacked discounts, never single-item."),
+    ("Routine experimenter", "Cycles products every 30-60 days."),
+    ("Loyalist of incumbent", "Won't switch unless 2x value."),
+    ("Brand-agnostic value buyer", "Whatever's cheapest with decent reviews."),
+    ("Hardcore optimizer", "Tracks everything; looking for marginal gain."),
+    ("Casual curious", "Saw an ad, half-interested."),
+    ("Lapsed user", "Used something similar 2 yrs ago, dropped it."),
+    ("New parent / lifestage shift", "Recently changed needs."),
+    ("Returning to category", "Was out, now back in."),
+    ("Aspirational buyer", "Wants the lifestyle the brand sells."),
+    ("Guilt buyer", "Knows they should, hasn't yet."),
+    ("DIY-er", "Could make it themselves, weighing convenience."),
+    ("Group buyer", "Coordinates with friends / partner."),
+    ("Brand-new to wellness", "First-time category entrant."),
+    ("Switching from prescription / Rx-adjacent", "OTC alternative seeker."),
+    ("Skeptical journalist type", "Will read all the fine print."),
+    ("Practical experimenter", "Buys 1, tests, then commits or drops."),
+    ("Late-night impulse buyer", "Mobile, social-driven."),
+    ("Workplace gifter", "Buys for team / coworkers."),
+    ("Returns-and-refunds savvy", "Tries everything, sends back what doesn't fit."),
+    ("Price-tier downgrader", "Was premium, now shopping mid-tier."),
+]
+
+
+def _template_panel(product: dict, forecast: dict, agent_count: int, seed: str) -> dict:
+    """
+    Deterministic template panel. Used when LLM is unavailable or fails.
+    Stance distribution mirrors the forecast trial rate.
+    """
+    trial_rate_pct = forecast.get("trial_rate", {}).get("percentage", 10.0) or 10.0
+    confidence = (forecast.get("confidence") or "medium").lower()
+    verdict = forecast.get("verdict", "")
+    anchored = forecast.get("anchored_on", []) or []
+    forecast_drivers = forecast.get("top_drivers", []) or []
+    forecast_objections = forecast.get("top_objections", []) or []
+
+    rate_frac = max(0.0, min(1.0, trial_rate_pct / 100.0))
+
+    # Stance distribution scales with rate, modulated by confidence
+    base_for = max(2, round(agent_count * (0.30 + 0.40 * rate_frac)))
+    base_against = max(2, round(agent_count * (0.45 - 0.30 * rate_frac)))
+    base_neutral = max(0, agent_count - base_for - base_against)
+
+    if confidence in ("low", "medium-low"):
+        shift = max(1, agent_count // 10)
+        base_for = max(2, base_for - shift)
+        base_neutral += shift
+
+    while base_for + base_neutral + base_against > agent_count:
+        if base_neutral > 0:
+            base_neutral -= 1
+        elif base_against > 1:
+            base_against -= 1
+        else:
+            base_for = max(1, base_for - 1)
+    while base_for + base_neutral + base_against < agent_count:
+        base_neutral += 1
+
+    agents: list[dict] = []
+    seg_idx = int(seed[:8], 16) % len(SEGMENT_TEMPLATES)
+
+    anchor_text = ""
+    if anchored:
+        top_anchor = anchored[0].get("brand", "comparable brands")
+        anchor_text = f"Anchored against {top_anchor}: "
+
+    for i in range(agent_count):
+        seg = SEGMENT_TEMPLATES[(seg_idx + i) % len(SEGMENT_TEMPLATES)]
+        if i < base_for:
+            stance = "for"
+            score = 0.62 + (i % 5) * 0.05
+            reason = f"{anchor_text}fit aligns with my routine; price feels reasonable for the comparable category."
+            obj = "Want to see one trial cycle before fully committing."
+        elif i < base_for + base_neutral:
+            stance = "neutral"
+            score = 0.45 + (i % 3) * 0.03
+            reason = f"{anchor_text}interested but waiting on more reviews and a clearer differentiator."
+            obj = "Not sure it's better than what I'm already using."
+        else:
+            stance = "against"
+            score = 0.20 + (i % 4) * 0.04
+            reason = f"{anchor_text}existing alternatives serve me, friction outweighs upside."
+            obj = "Subscription fatigue / no clear reason to switch."
+
+        agents.append({
+            "id": f"agent_{i+1:02d}",
+            "segment": seg[0],
+            "profile": seg[1],
+            "stance": stance,
+            "score": round(min(1.0, max(0.0, score)), 2),
+            "reason": reason,
+            "top_objection": obj,
+        })
+
+    avg_score = sum(a["score"] for a in agents) / len(agents)
+
+    rounds = [
+        {
+            "round": 1,
+            "title": "First Reaction",
+            "summary": (
+                f"Panel reacted to the {trial_rate_pct:.1f}% comparable-anchored trial estimate. "
+                f"Stance split: {base_for} for / {base_neutral} neutral / {base_against} against. "
+                f"Initial enthusiasm tempered by typical DTC friction."
+            ),
+            "for_count": base_for,
+            "neutral_count": base_neutral,
+            "against_count": base_against,
+            "avg_score": round(avg_score - 0.03, 2),
+        },
+        {
+            "round": 2,
+            "title": "Comparable Comparison",
+            "summary": (
+                f"Panel weighed the product against {len(anchored)} anchored comparables. "
+                f"Discussion centered on whether differentiation justifies switching cost from incumbents."
+            ),
+            "for_count": base_for,
+            "neutral_count": base_neutral,
+            "against_count": base_against,
+            "avg_score": round(avg_score, 2),
+        },
+        {
+            "round": 3,
+            "title": "Consensus",
+            "summary": (
+                f"Panel converged: trial rate of {trial_rate_pct:.1f}% is consistent with comparable-brand "
+                f"adoption patterns. Verdict aligns with '{verdict.replace('_', ' ')}'."
+            ),
+            "for_count": base_for,
+            "neutral_count": base_neutral,
+            "against_count": base_against,
+            "avg_score": round(avg_score + 0.02, 2),
+        },
+    ]
+
+    template_drivers = forecast_drivers[:4] if forecast_drivers else [
+        "Comparable-brand precedent", "Reasonable price-to-value", "Distribution match", "Category timing"
+    ]
+    template_objections = forecast_objections[:4] if forecast_objections else [
+        "Subscription fatigue", "Switching cost from incumbent", "Differentiation unclear", "Category skepticism"
+    ]
+
+    most_receptive_seg = SEGMENT_TEMPLATES[(seg_idx + 3) % len(SEGMENT_TEMPLATES)][0]
+
+    panel = {
+        "rounds": rounds,
+        "agents": agents,
+        "top_drivers": template_drivers,
+        "top_objections": template_objections,
+        "most_receptive_segment": most_receptive_seg,
+        "winning_message": (
+            f"Position against the strongest anchor ({anchored[0].get('brand', 'category leader')}) "
+            f"by leading with category-specific differentiation."
+            if anchored else
+            "Lead with category-specific differentiation and comparable-brand evidence."
+        ),
+        "risk_factors": [
+            "Same-category retail dominance by incumbents",
+            "DTC subscription fatigue compresses repeat",
+            "Differentiation may not survive shelf comparison",
+        ],
+        "consensus": (
+            f"Forecast of {trial_rate_pct:.1f}% trial is grounded in comparable-brand evidence. "
+            f"Panel recommends '{verdict.replace('_', ' ')}'. Treat agent reasoning as explanation, not validation."
+        ),
+    }
+
+    return panel

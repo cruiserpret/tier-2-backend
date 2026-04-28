@@ -170,3 +170,49 @@ def lookup_comparables(brand_query: str):
             for n in neighbors
         ],
     })
+
+
+@api_v3.route("/discuss", methods=["POST"])
+def create_discussion():
+    """
+    AI buyer panel for an existing forecast.
+
+    Input JSON:
+      {
+        "product": {...},        # full product payload (same as /forecast input)
+        "forecast": {...},       # full forecast response from /forecast
+        "agent_count": 20 | 50   # default 20
+      }
+
+    Output JSON:
+      { "agent_panel": {...} }
+
+    Invariants:
+      - Discussion does NOT change the forecast number.
+      - Same input → same output (deterministic via seed + cache).
+    """
+    from .discussion import generate_discussion, ALLOWED_AGENT_COUNTS, DEFAULT_AGENT_COUNT
+
+    data = request.get_json() or {}
+    product = data.get("product")
+    forecast = data.get("forecast")
+    agent_count = data.get("agent_count", DEFAULT_AGENT_COUNT)
+
+    if not isinstance(product, dict) or not product:
+        return jsonify({"error": "Missing or invalid 'product'"}), 400
+    if not isinstance(forecast, dict) or not forecast:
+        return jsonify({"error": "Missing or invalid 'forecast'"}), 400
+    if agent_count not in ALLOWED_AGENT_COUNTS:
+        return jsonify({
+            "error": f"agent_count must be one of {list(ALLOWED_AGENT_COUNTS)}",
+            "got": agent_count,
+        }), 400
+
+    try:
+        result = generate_discussion(product, forecast, agent_count)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        return jsonify({"error": f"Discussion failed: {e}"}), 500
+
+    return jsonify(result)
