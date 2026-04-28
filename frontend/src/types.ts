@@ -10,6 +10,10 @@ export type Confidence = "high" | "medium-high" | "medium" | "medium-low" | "low
 
 export type Stance = "for" | "against" | "neutral";
 
+// New 3b verdict labels — what's shown in the UI per agent.
+// JSON value is "WON'T BUY" with apostrophe, kept exact for backend match.
+export type AgentVerdict = "BUY" | "CONSIDERING" | "WON'T BUY";
+
 export interface Anchor {
   brand: string;
   trial_rate: number;
@@ -90,14 +94,93 @@ export interface AgentRound {
   avg_score: number;
 }
 
+// ─────────────────────────────────────────────────────────────────────
+// 3b — Per-agent enrichment
+// ─────────────────────────────────────────────────────────────────────
+
+export interface RoundResponse {
+  round: 1 | 2 | 3;
+  title: "First Impression" | "Competitor Comparison" | "Final Verdict" | string;
+  response: string;
+}
+
+export interface AgentJourney {
+  initial_verdict: AgentVerdict;
+  final_verdict: AgentVerdict;
+  shifted: boolean;
+  shift_reason: string;
+  key_moment: string;
+  key_quote: string;
+}
+
 export interface Agent {
+  // Backward-compat fields (legacy frontend continues to read these)
   id: string;
   segment: string;
   profile: string;
   stance: Stance;
-  score: number;
+  score: number;       // 0-1 legacy scale
   reason: string;
   top_objection: string;
+
+  // 3b additive fields — present on every agent from /discuss
+  name: string;
+  age: number;
+  profession: string;
+  verdict: AgentVerdict;
+  initial_score_10: number;
+  current_score_10: number;
+  score_10: number;
+  initial_stance: Stance;
+  current_stance: Stance;
+  is_hardcore: boolean;
+  shifted: boolean;
+  key_moment: string;
+  what_would_change_mind: string;
+  round_responses: RoundResponse[];
+  journey: AgentJourney;
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// 3c — Top-level panel additions
+// ─────────────────────────────────────────────────────────────────────
+
+export interface IntentDistribution {
+  buy: number;          // 0..1
+  considering: number;  // 0..1
+  resistant: number;    // 0..1
+}
+
+export interface BuyerJourneySummary {
+  agent_id: string;
+  name: string;
+  segment: string;
+  initial_verdict: AgentVerdict;
+  final_verdict: AgentVerdict;
+  shifted: boolean;
+  shift_reason: string;
+  key_quote: string;
+}
+
+export interface RepresentativeQuote {
+  verdict: AgentVerdict;
+  agent_id: string;
+  name: string;
+  segment: string;
+  quote: string;
+}
+
+export interface ComparablePriceRange {
+  user_price: number | null;
+  min: number | null;
+  max: number | null;
+  anchor_brands: string[];
+}
+
+export interface RiskFactorsV3 {
+  summary: string;
+  detail: string;
+  holdout_agents: string[];
 }
 
 export interface AgentPanel {
@@ -106,13 +189,24 @@ export interface AgentPanel {
   mode: "template" | "llm";
   rounds: AgentRound[];
   agents: Agent[];
+
+  // Existing top-level fields
   top_drivers: string[];
   top_objections: string[];
   most_receptive_segment: string;
   winning_message: string;
-  risk_factors: string[];
+  risk_factors: string[];     // legacy string-list (kept for backward compat)
   consensus: string;
   coverage_warning: string;
+
+  // 3c additive top-level fields
+  intent_distribution?: IntentDistribution;
+  buyer_journeys?: BuyerJourneySummary[];
+  representative_quotes?: RepresentativeQuote[];
+  hardest_to_convert_segment?: string;
+  comparable_price_range?: ComparablePriceRange;
+  actionable_insight?: string;
+  risk_factors_v3?: RiskFactorsV3;
 }
 
 export interface CachedDemo {
@@ -136,4 +230,27 @@ export interface SimulationRecord {
   created_at: number;
   source: "live" | "cached_demo";
   demo_key?: string;
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// UI helpers — display labels + colors
+// ─────────────────────────────────────────────────────────────────────
+
+export const VERDICT_LABEL: Record<AgentVerdict, string> = {
+  "BUY": "BUY",
+  "CONSIDERING": "CONSIDERING",
+  "WON'T BUY": "WON'T BUY",
+};
+
+export const VERDICT_COLOR: Record<AgentVerdict, string> = {
+  "BUY": "#7CFC9C",         // green
+  "CONSIDERING": "#F0C24A", // amber
+  "WON'T BUY": "#FF6E80",   // red/pink
+};
+
+// Helper: derive AgentVerdict from a stance, when only stance is available.
+export function stanceToVerdict(stance: Stance): AgentVerdict {
+  if (stance === "for") return "BUY";
+  if (stance === "neutral") return "CONSIDERING";
+  return "WON'T BUY";
 }
