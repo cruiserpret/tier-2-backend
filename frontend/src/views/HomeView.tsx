@@ -51,7 +51,7 @@ function payloadToForm(p: ProductPayload): FormState {
 export function HomeView() {
   const navigate = useNavigate();
   const [activeDemoKey, setActiveDemoKey] = useState<string | null>(null);
-  const [activeDemoCount, setActiveDemoCount] = useState<20 | 50>(20);
+  const [, setActiveDemoCount] = useState<20 | 50>(20);
   const [formState, setFormState] = useState<FormState>(EMPTY_FORM);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);

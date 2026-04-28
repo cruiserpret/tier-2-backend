@@ -70,8 +70,6 @@ export function explainMatchReason(reason: string): string {
     return "Strong subtype match across price, scale, and distribution.";
   }
 
-  // Sort by weight ascending (lowest weight = most penalized = most informative)
-  const sorted = [...signals].sort((a, b) => a.weight - b.weight);
   const strongMatches = signals.filter((s) => s.weight >= 0.85);
   const weakerMatches = signals.filter((s) => s.weight < 0.85 && s.weight >= 0.6);
   const heavyPenalties = signals.filter((s) => s.weight < 0.6);
