@@ -18,6 +18,9 @@ import json
 import hashlib
 from typing import Any
 
+from backend.dtc_v3.bucket_allocator import allocate_buckets
+from backend.dtc_v3.persona_generator import select_personas_for_product
+
 DISCUSSION_VERSION = "discussion_v1"
 ALLOWED_AGENT_COUNTS = (20, 50)
 DEFAULT_AGENT_COUNT = 20
@@ -398,6 +401,266 @@ def _pick_variant(variants: list[str], seed_int: int, agent_index: int, anchor: 
     return template.replace("{anchor}", anchor)
 
 
+# ────────────────────────────────────────────────────────────────────
+# Phase 3b — Per-agent enrichment (score arcs, journeys, round responses)
+# ────────────────────────────────────────────────────────────────────
+
+
+def _score_to_verdict(score_10: float) -> str:
+    """7.0-10 = BUY, 4.6-6.9 = CONSIDERING, 1.0-4.5 = WON\'T BUY."""
+    if score_10 >= 7.0:
+        return "BUY"
+    if score_10 >= 4.6:
+        return "CONSIDERING"
+    return "WON\'T BUY"
+
+
+def _verdict_to_stance(verdict: str) -> str:
+    return {"BUY": "for", "CONSIDERING": "neutral", "WON\'T BUY": "against"}.get(
+        verdict, "neutral"
+    )
+
+
+ROUND_FRAMES = {
+    1: {
+        "for":     "First impression: {body}",
+        "neutral": "First impression: {body}",
+        "against": "First impression: {body}",
+    },
+    2: {
+        "for":     "Compared with {anchor} and similar brands: {body}",
+        "neutral": "Stacked against {anchor}: {body}",
+        "against": "Versus {anchor}: {body}",
+    },
+    3: {
+        "for":     "Final read: {body} I\'d be willing to try it.",
+        "neutral": "Final read: {body} Still on the fence.",
+        "against": "Final read: {body} Not for me right now.",
+    },
+}
+
+
+KEY_MOMENT_TEMPLATES = {
+    "steady_buy":         "Round 1: immediately saw strong fit with their existing buying habits.",
+    "considering_to_buy": "Round 2: competitor comparison made the product feel more differentiated.",
+    "steady_considering": "Round 3: remained interested but wanted more proof before committing.",
+    "drifted_into_considering_from_buy":  "Round 2: price or trust concerns reduced initial enthusiasm.",
+    "drifted_into_considering_from_wont": "Round 3: softened slightly after seeing a clearer use case.",
+    "considering_to_wont": "Round 2: trust or differentiation concerns became stronger.",
+    "steady_wont":         "Round 1: did not see enough reason to switch from current alternatives.",
+    "hardcore":            "Round 1: strongly preferred existing solutions and resisted later arguments.",
+}
+
+
+_ARC_SCORE_RANGES = {
+    "steady_buy":                          (7.0, 8.5, 7.2, 9.5),
+    "considering_to_buy":                  (5.0, 6.5, 7.0, 8.8),
+    "steady_considering":                  (4.8, 6.7, 4.6, 6.9),
+    "drifted_into_considering_from_buy":   (7.0, 7.8, 5.0, 6.8),
+    "drifted_into_considering_from_wont":  (3.8, 4.5, 5.0, 6.8),
+    "steady_wont":                         (2.5, 4.5, 1.8, 4.5),
+    "considering_to_wont":                 (4.8, 6.2, 2.5, 4.5),
+    "hardcore":                            (1.0, 3.0, 1.0, 3.0),
+}
+
+
+_ARC_INITIAL_VERDICT = {
+    "steady_buy":                          "BUY",
+    "considering_to_buy":                  "CONSIDERING",
+    "steady_considering":                  "CONSIDERING",
+    "drifted_into_considering_from_buy":   "BUY",
+    "drifted_into_considering_from_wont":  "WON\'T BUY",
+    "steady_wont":                         "WON\'T BUY",
+    "considering_to_wont":                 "CONSIDERING",
+    "hardcore":                            "WON\'T BUY",
+}
+
+
+_ARC_FINAL_VERDICT = {
+    "steady_buy":                          "BUY",
+    "considering_to_buy":                  "BUY",
+    "steady_considering":                  "CONSIDERING",
+    "drifted_into_considering_from_buy":   "CONSIDERING",
+    "drifted_into_considering_from_wont":  "CONSIDERING",
+    "steady_wont":                         "WON\'T BUY",
+    "considering_to_wont":                 "WON\'T BUY",
+    "hardcore":                            "WON\'T BUY",
+}
+
+
+_ARC_SHIFT_REASON = {
+    "steady_buy":                          "Read the product as a strong fit from the start.",
+    "considering_to_buy":                  "Competitor comparison reduced uncertainty about the value.",
+    "steady_considering":                  "Stayed interested but wanted more proof.",
+    "drifted_into_considering_from_buy":   "Initial enthusiasm cooled after closer inspection.",
+    "drifted_into_considering_from_wont":  "Use case became clearer over the discussion.",
+    "steady_wont":                         "Saw no compelling reason to switch from existing alternatives.",
+    "considering_to_wont":                 "Trust and differentiation concerns hardened the position.",
+    "hardcore":                            "Strongly preferred existing solutions and did not move.",
+}
+
+
+def _pick_arc_type(bucket_label: str, seed_int: int, agent_idx: int) -> str:
+    """Per friend's Option B distribution. Deterministic from (seed, idx)."""
+    sel = (seed_int + agent_idx * 1009) % 100
+    if bucket_label == "buy":
+        return "steady_buy" if sel < 50 else "considering_to_buy"
+    if bucket_label == "considering":
+        if sel < 80:
+            return "steady_considering"
+        return ("drifted_into_considering_from_buy"
+                if sel < 90
+                else "drifted_into_considering_from_wont")
+    if sel < 60:
+        return "steady_wont"
+    if sel < 90:
+        return "considering_to_wont"
+    return "hardcore"
+
+
+def _deterministic_in_range(low: float, high: float, seed_int: int,
+                             agent_idx: int, salt: int) -> float:
+    """Pick a float in [low, high] deterministically."""
+    span = high - low
+    if span <= 0:
+        return low
+    step = ((seed_int + agent_idx * 31 + salt * 17) % 100) / 100.0
+    return low + span * step
+
+
+def _what_would_change_mind(stance: str, anchor: str, seed_int: int,
+                             agent_idx: int) -> str:
+    pool = {
+        "for":     NEUTRAL_OBJECTIONS,
+        "neutral": FOR_OBJECTIONS,
+        "against": NEUTRAL_REASONS,
+    }.get(stance, NEUTRAL_OBJECTIONS)
+    template = pool[(seed_int + agent_idx + 7) % len(pool)]
+    return template.replace("{anchor}", anchor)
+
+
+def _round_response(stance: str, round_num: int, anchor: str, seed_int: int,
+                     agent_idx: int) -> dict:
+    pool = {
+        "for":     FOR_REASONS,
+        "neutral": NEUTRAL_REASONS,
+        "against": AGAINST_REASONS,
+    }[stance]
+    raw = pool[(seed_int + agent_idx + round_num * 11) % len(pool)]
+    body = raw.replace("{anchor}", anchor)
+    frame = ROUND_FRAMES[round_num][stance]
+    response = frame.replace("{body}", body).replace("{anchor}", anchor)
+    title = {1: "First Impression", 2: "Competitor Comparison", 3: "Final Verdict"}[round_num]
+    return {"round": round_num, "title": title, "response": response}
+
+
+def _build_enriched_agents(*, personas, bucket, seed_int, anchor_for):
+    """Build enriched per-agent records. Bucket-ordered: BUY then CONS then WON\'T BUY."""
+    agents = []
+    n_buy = bucket.n_buy
+    n_consid = bucket.n_considering
+    agent_count = bucket.total
+
+    for i in range(agent_count):
+        persona = personas[i] if i < len(personas) else {
+            "name": f"Buyer #{i+1:03d}",
+            "age": 30,
+            "profession": "Adult Consumer",
+            "segment": "Generic Buyer",
+            "profile": "Generic profile.",
+        }
+
+        if i < n_buy:
+            bucket_label = "buy"
+        elif i < n_buy + n_consid:
+            bucket_label = "considering"
+        else:
+            bucket_label = "wont_buy"
+
+        arc_type = _pick_arc_type(bucket_label, seed_int, i)
+        i_lo, i_hi, f_lo, f_hi = _ARC_SCORE_RANGES[arc_type]
+        initial_score_10 = _deterministic_in_range(i_lo, i_hi, seed_int, i, 1)
+        current_score_10 = _deterministic_in_range(f_lo, f_hi, seed_int, i, 2)
+
+        initial_verdict = _ARC_INITIAL_VERDICT[arc_type]
+        target_final = _ARC_FINAL_VERDICT[arc_type]
+        derived_final = _score_to_verdict(current_score_10)
+
+        if derived_final != target_final:
+            if target_final == "BUY":
+                current_score_10 = max(7.0, min(9.5, current_score_10))
+            elif target_final == "CONSIDERING":
+                current_score_10 = max(4.6, min(6.9, current_score_10))
+            else:
+                current_score_10 = max(1.0, min(4.5, current_score_10))
+
+        final_verdict = target_final
+        stance = _verdict_to_stance(final_verdict)
+        initial_stance = _verdict_to_stance(initial_verdict)
+        shifted = (initial_verdict != final_verdict)
+        is_hardcore = (arc_type == "hardcore")
+        key_moment = KEY_MOMENT_TEMPLATES[arc_type]
+
+        anchor = anchor_for(i)
+
+        objection_pool = {
+            "for":     FOR_OBJECTIONS,
+            "neutral": NEUTRAL_OBJECTIONS,
+            "against": AGAINST_OBJECTIONS,
+        }[stance]
+        top_objection = _pick_variant(objection_pool, seed_int, i, anchor)
+
+        reason_pool = {
+            "for":     FOR_REASONS,
+            "neutral": NEUTRAL_REASONS,
+            "against": AGAINST_REASONS,
+        }[stance]
+        reason = _pick_variant(reason_pool, seed_int, i, anchor)
+
+        round_responses = [
+            _round_response(stance, r, anchor, seed_int, i)
+            for r in (1, 2, 3)
+        ]
+
+        journey = {
+            "initial_verdict": initial_verdict,
+            "final_verdict":   final_verdict,
+            "shifted":         shifted,
+            "shift_reason":    _ARC_SHIFT_REASON[arc_type],
+            "key_moment":      key_moment,
+            "key_quote":       round_responses[2]["response"],
+        }
+
+        legacy_score = round(current_score_10 / 10.0, 2)
+
+        agents.append({
+            "id":            f"agent_{i+1:02d}",
+            "segment":       persona["segment"],
+            "profile":       persona["profile"],
+            "stance":        stance,
+            "score":         legacy_score,
+            "reason":        reason,
+            "top_objection": top_objection,
+            "name":             persona["name"],
+            "age":              persona.get("age", 30),
+            "profession":       persona.get("profession", "Adult Consumer"),
+            "verdict":          final_verdict,
+            "initial_score_10": round(initial_score_10, 1),
+            "current_score_10": round(current_score_10, 1),
+            "score_10":         round(current_score_10, 1),
+            "initial_stance":   initial_stance,
+            "current_stance":   stance,
+            "is_hardcore":      is_hardcore,
+            "shifted":          shifted,
+            "key_moment":       key_moment,
+            "what_would_change_mind": _what_would_change_mind(stance, anchor, seed_int, i),
+            "round_responses":  round_responses,
+            "journey":          journey,
+        })
+
+    return agents
+
+
 def _template_panel(product: dict, forecast: dict, agent_count: int, seed: str) -> dict:
     """Deterministic template panel with diverse reason/objection variants."""
     trial_rate_pct = forecast.get("trial_rate", {}).get("percentage", 10.0) or 10.0
@@ -407,28 +670,33 @@ def _template_panel(product: dict, forecast: dict, agent_count: int, seed: str) 
     forecast_drivers = forecast.get("top_drivers", []) or []
     forecast_objections = forecast.get("top_objections", []) or []
 
-    rate_frac = max(0.0, min(1.0, trial_rate_pct / 100.0))
     seed_int = int(seed[:8], 16)
+    trial_rate = trial_rate_pct / 100.0
 
-    base_for = max(2, round(agent_count * (0.30 + 0.40 * rate_frac)))
-    base_against = max(2, round(agent_count * (0.45 - 0.30 * rate_frac)))
-    base_neutral = max(0, agent_count - base_for - base_against)
+    # Safe getter for fallback_used (per friend's spec — may live in
+    # diagnostics depending on response shape).
+    fallback_used = bool(
+        forecast.get("fallback_used")
+        or forecast.get("diagnostics", {}).get("fallback_used")
+    )
 
-    if confidence in ("low", "medium-low"):
-        shift = max(1, agent_count // 10)
-        base_for = max(2, base_for - shift)
-        base_neutral += shift
+    # Forecast-driven bucket counts (forecast leads, agents follow).
+    bucket = allocate_buckets(
+        trial_rate=trial_rate,
+        confidence=confidence,
+        fallback_used=fallback_used,
+        n_agents=agent_count,
+    )
+    base_for = bucket.n_buy
+    base_neutral = bucket.n_considering
+    base_against = bucket.n_resistant
 
-    while base_for + base_neutral + base_against > agent_count:
-        if base_neutral > 0:
-            base_neutral -= 1
-        elif base_against > 1:
-            base_against -= 1
-        else:
-            base_for = max(1, base_for - 1)
-    while base_for + base_neutral + base_against < agent_count:
-        base_neutral += 1
+    # Product-aware persona selection (deterministic, no duplicate names).
+    personas, routing_info = select_personas_for_product(
+        product, agent_count, seed
+    )
 
+    # Anchor helpers reused by the agent enrichment.
     top_anchor = anchored[0].get("brand") if anchored else "the category leader"
     secondary_anchors = [a.get("brand") for a in anchored[1:4] if a.get("brand")]
 
@@ -438,38 +706,13 @@ def _template_panel(product: dict, forecast: dict, agent_count: int, seed: str) 
         pool = [top_anchor] + secondary_anchors
         return pool[idx % len(pool)] if pool else top_anchor
 
-    seg_idx = seed_int % len(SEGMENT_TEMPLATES)
-    agents: list[dict] = []
-
-    for i in range(agent_count):
-        seg = SEGMENT_TEMPLATES[(seg_idx + i) % len(SEGMENT_TEMPLATES)]
-        anchor = anchor_for(i)
-
-        if i < base_for:
-            stance = "for"
-            score = 0.62 + (i % 5) * 0.05
-            reason = _pick_variant(FOR_REASONS, seed_int, i, anchor)
-            objection = _pick_variant(FOR_OBJECTIONS, seed_int, i, anchor)
-        elif i < base_for + base_neutral:
-            stance = "neutral"
-            score = 0.45 + (i % 3) * 0.03
-            reason = _pick_variant(NEUTRAL_REASONS, seed_int, i, anchor)
-            objection = _pick_variant(NEUTRAL_OBJECTIONS, seed_int, i, anchor)
-        else:
-            stance = "against"
-            score = 0.20 + (i % 4) * 0.04
-            reason = _pick_variant(AGAINST_REASONS, seed_int, i, anchor)
-            objection = _pick_variant(AGAINST_OBJECTIONS, seed_int, i, anchor)
-
-        agents.append({
-            "id": f"agent_{i+1:02d}",
-            "segment": seg[0],
-            "profile": seg[1],
-            "stance": stance,
-            "score": round(min(1.0, max(0.0, score)), 2),
-            "reason": reason,
-            "top_objection": objection,
-        })
+    # Build enriched agents (verdict + score arc + journey + round_responses).
+    agents = _build_enriched_agents(
+        personas=personas,
+        bucket=bucket,
+        seed_int=seed_int,
+        anchor_for=anchor_for,
+    )
 
     avg_score = sum(a["score"] for a in agents) / len(agents)
 
@@ -526,7 +769,13 @@ def _template_panel(product: dict, forecast: dict, agent_count: int, seed: str) 
         "Category skepticism",
     ]
 
-    most_receptive_seg = SEGMENT_TEMPLATES[(seg_idx + 3) % len(SEGMENT_TEMPLATES)][0]
+    # Most receptive: highest-scoring BUY agent's segment (or first agent's segment)
+    _buy_agents = [a for a in agents if a.get("verdict") == "BUY"]
+    if _buy_agents:
+        _top_buy = max(_buy_agents, key=lambda a: a.get("current_score_10", 0))
+        most_receptive_seg = _top_buy["segment"]
+    else:
+        most_receptive_seg = agents[0]["segment"] if agents else "Wellness-Conscious Pro"
 
     panel = {
         "rounds": rounds,
