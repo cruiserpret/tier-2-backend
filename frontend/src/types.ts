@@ -58,6 +58,7 @@ export interface ProductPayload {
   market_tier_override?: string;
   distribution_hint?: string;
   exclude_brand?: string;
+  num_agents?: number;
 }
 
 export interface DemoProduct {

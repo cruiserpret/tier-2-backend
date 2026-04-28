@@ -146,6 +146,7 @@ export function ProductForm({ initial, onSubmit, loading }: Props) {
     if (form.market_tier_override) payload.market_tier_override = form.market_tier_override;
     if (form.distribution_hint) payload.distribution_hint = form.distribution_hint;
     if (form.exclude_brand.trim()) payload.exclude_brand = form.exclude_brand.trim();
+    payload.num_agents = form.num_agents;
     onSubmit(payload);
   };
 

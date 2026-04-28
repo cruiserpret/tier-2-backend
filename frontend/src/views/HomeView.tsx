@@ -94,7 +94,7 @@ export function HomeView() {
       const isDemo = activeDemoKey !== null;
       let forecast: ForecastResponse;
       let cachedPanel: AgentPanel | null = null;
-      const agentCount = formState.num_agents;
+      const agentCount = payload.num_agents ?? formState.num_agents ?? 20;
       const sourceTag: "live" | "cached_demo" = isDemo ? "cached_demo" : "live";
 
       if (isDemo) {
