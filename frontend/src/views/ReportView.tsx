@@ -3,8 +3,6 @@ import { useParams, useNavigate } from "react-router-dom";
 import { getSim } from "../lib/simulationStore";
 import type { SimulationRecord } from "../types";
 import { ResultCard } from "../components/ResultCard";
-import { AnchorList } from "../components/AnchorList";
-import { ConfidenceReasons } from "../components/ConfidenceReasons";
 import { Counterfactuals } from "../components/Counterfactuals";
 import { DeterminismProof } from "../components/DeterminismProof";
 
@@ -46,8 +44,6 @@ export function ReportView() {
       <div className="report-body">
         <div className="report-main">
           <ResultCard data={f} />
-          <AnchorList anchors={f.anchored_on} />
-          <ConfidenceReasons forecast={f} />
           <Counterfactuals cfs={f.counterfactuals} />
           {sim.agent_panel?.rounds && sim.agent_panel.rounds.length > 0 && (
             <div className="report-rounds">
