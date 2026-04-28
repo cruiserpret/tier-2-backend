@@ -108,7 +108,7 @@ def test_discussion_agent_count_50(liquid_iv_product, liquid_iv_forecast):
 
 def test_discussion_invalid_agent_count_raises(liquid_iv_product, liquid_iv_forecast):
     with pytest.raises(ValueError):
-        generate_discussion(liquid_iv_product, liquid_iv_forecast, agent_count=30)
+        generate_discussion(liquid_iv_product, liquid_iv_forecast, agent_count=10)
     with pytest.raises(ValueError):
         generate_discussion(liquid_iv_product, liquid_iv_forecast, agent_count=0)
 

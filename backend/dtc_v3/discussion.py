@@ -23,7 +23,7 @@ from backend.dtc_v3.persona_generator import select_personas_for_product
 from backend.dtc_v3.llm_dialogue_enricher import enrich_with_llm_dialogue
 
 DISCUSSION_VERSION = "discussion_v1"
-ALLOWED_AGENT_COUNTS = (20, 50)
+ALLOWED_AGENT_COUNTS = tuple(range(20, 51))  # 20-50 inclusive
 DEFAULT_AGENT_COUNT = 20
 ALLOWED_MODES = ("template", "llm")
 DEFAULT_MODE = "template"
@@ -70,8 +70,8 @@ def generate_discussion(
 
     Never raises (other than invalid input).
     """
-    if agent_count not in ALLOWED_AGENT_COUNTS:
-        raise ValueError(f"agent_count must be in {ALLOWED_AGENT_COUNTS}, got {agent_count}")
+    if agent_count < 20 or agent_count > 50:
+        raise ValueError(f"agent_count must be 20-50, got {agent_count}")
     if mode not in ALLOWED_MODES:
         raise ValueError(f"mode must be in {ALLOWED_MODES}, got {mode}")
     if not isinstance(product, dict) or not product:
