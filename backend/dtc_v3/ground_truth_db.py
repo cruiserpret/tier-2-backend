@@ -612,6 +612,132 @@ GROUND_TRUTH_DB: list[GroundTruthRecord] = [
         category_subtype="hydration_supplement"
     ),
 
+    # ═══════════════════════════════════════════════════════════════════
+    # ENERGY DRINKS (8) — retrieval-first anchors, not calibration-grade
+    # Per friend Day 2 Step 7: grade C/D, conservative midpoints,
+    # source_notes flag retrieval-only intent.
+    # ═══════════════════════════════════════════════════════════════════
+    GroundTruthRecord(
+        brand="Red Bull",
+        category="food_beverage",
+        trial_rate_low=0.18, trial_rate_high=0.22, trial_rate_mid=0.22,
+        confidence="C",
+        price_band="mid",
+        purchase_frequency="frequent",
+        target_demo=["young adults", "students", "athletes", "blue collar"],
+        frictions=["caffeine concerns", "sugar content", "price per can"],
+        drivers=["instant energy", "category leader", "ubiquitous distribution"],
+        source_notes="retrieval-first energy drink anchor; not calibration-grade",
+        market_tier="mass_market", brand_scale="global_giant",
+        distribution_model="mass_retail", category_role="generalist",
+        category_subtype="energy_drink"
+    ),
+    GroundTruthRecord(
+        brand="Monster Energy",
+        category="food_beverage",
+        trial_rate_low=0.16, trial_rate_high=0.20, trial_rate_mid=0.20,
+        confidence="C",
+        price_band="mid",
+        purchase_frequency="frequent",
+        target_demo=["young adults", "gamers", "blue collar", "extreme sports fans"],
+        frictions=["caffeine concerns", "sugar content", "perception of unhealthy"],
+        drivers=["bold flavor variety", "lifestyle marketing", "mass retail presence"],
+        source_notes="retrieval-first energy drink anchor; not calibration-grade",
+        market_tier="mass_market", brand_scale="global_giant",
+        distribution_model="mass_retail", category_role="generalist",
+        category_subtype="energy_drink"
+    ),
+    GroundTruthRecord(
+        brand="Prime Energy",
+        category="food_beverage",
+        trial_rate_low=0.18, trial_rate_high=0.25, trial_rate_mid=0.18,
+        confidence="C",
+        price_band="mid",
+        purchase_frequency="occasional",
+        target_demo=["gen z", "teens", "social media followers"],
+        frictions=["caffeine content for teens", "viral fad risk"],
+        drivers=["influencer-led launch", "viral social media", "youth appeal"],
+        source_notes="retrieval-first energy drink anchor; not calibration-grade",
+        market_tier="challenger", brand_scale="growth_challenger",
+        distribution_model="retail_plus_dtc", category_role="specialist",
+        category_subtype="energy_drink"
+    ),
+    GroundTruthRecord(
+        brand="Celsius",
+        category="food_beverage",
+        trial_rate_low=0.12, trial_rate_high=0.16, trial_rate_mid=0.14,
+        confidence="C",
+        price_band="mid",
+        purchase_frequency="frequent",
+        target_demo=["fitness focused", "young women", "gym-goers"],
+        frictions=["price per can", "caffeine sensitivity"],
+        drivers=["fitness positioning", "zero sugar", "thermogenic claim"],
+        source_notes="retrieval-first energy drink anchor; not calibration-grade",
+        market_tier="challenger", brand_scale="growth_challenger",
+        distribution_model="retail_plus_dtc", category_role="specialist",
+        category_subtype="energy_drink"
+    ),
+    GroundTruthRecord(
+        brand="C4 Energy",
+        category="food_beverage",
+        trial_rate_low=0.08, trial_rate_high=0.12, trial_rate_mid=0.10,
+        confidence="C",
+        price_band="mid",
+        purchase_frequency="frequent",
+        target_demo=["pre-workout users", "gym-goers", "supplement stack users"],
+        frictions=["pre-workout perception", "high caffeine"],
+        drivers=["pre-workout heritage", "performance positioning", "gym channel"],
+        source_notes="retrieval-first energy drink anchor; not calibration-grade",
+        market_tier="challenger", brand_scale="venture_challenger",
+        distribution_model="retail_plus_dtc", category_role="specialist",
+        category_subtype="energy_drink"
+    ),
+    GroundTruthRecord(
+        brand="Alani Nu Energy",
+        category="food_beverage",
+        trial_rate_low=0.08, trial_rate_high=0.12, trial_rate_mid=0.10,
+        confidence="C",
+        price_band="mid",
+        purchase_frequency="frequent",
+        target_demo=["young women", "fitness influencer followers", "wellness adjacent"],
+        frictions=["female-coded brand limits male reach"],
+        drivers=["women-targeted positioning", "influencer-led", "low calorie"],
+        source_notes="retrieval-first energy drink anchor; not calibration-grade",
+        market_tier="challenger", brand_scale="venture_challenger",
+        distribution_model="retail_plus_dtc", category_role="specialist",
+        category_subtype="energy_drink"
+    ),
+    GroundTruthRecord(
+        brand="Ghost Energy",
+        category="food_beverage",
+        trial_rate_low=0.06, trial_rate_high=0.10, trial_rate_mid=0.08,
+        confidence="D",
+        price_band="mid",
+        purchase_frequency="frequent",
+        target_demo=["lifestyle athletes", "young adults", "supplement crossover"],
+        frictions=["niche brand awareness", "supplement-store distribution"],
+        drivers=["transparent label", "supplement crossover positioning"],
+        source_notes="retrieval-first energy drink anchor; not calibration-grade",
+        market_tier="challenger", brand_scale="venture_challenger",
+        distribution_model="retail_plus_dtc", category_role="specialist",
+        category_subtype="energy_drink"
+    ),
+    GroundTruthRecord(
+        brand="G Fuel",
+        category="food_beverage",
+        trial_rate_low=0.05, trial_rate_high=0.09, trial_rate_mid=0.07,
+        confidence="D",
+        price_band="mid",
+        purchase_frequency="occasional",
+        target_demo=["gamers", "esports fans", "young men"],
+        frictions=["narrow audience", "powder format friction", "DTC-led"],
+        drivers=["esports sponsorships", "creator partnerships", "flavor variety"],
+        source_notes="retrieval-first energy drink anchor; not calibration-grade",
+        market_tier="niche", brand_scale="venture_challenger",
+        distribution_model="dtc_led", category_role="specialist",
+        category_subtype="energy_drink"
+    ),
+
 ]
 
 

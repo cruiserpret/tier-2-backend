@@ -123,3 +123,104 @@ def test_deterministic_liquid_iv_5_runs():
     assert first.prior_source == "rag_weighted_median", (
         f"Liquid IV expected rag_weighted_median; got {first.prior_source!r}"
     )
+
+
+# ── Step 7 routing tests (energy_drink subtype) ────────────────────
+def _energy_text_brief():
+    return ProductBrief(
+        name="Triton drinks",
+        description="energy drink for athletes and gamers",
+        price=3.99,
+        category="food_beverage",
+        demographic="young adults",
+        competitors=[],
+    )
+
+
+def _energy_competitor_brief():
+    return ProductBrief(
+        name="Triton drinks",
+        description="A new beverage",
+        price=3.99,
+        category="food_beverage",
+        demographic="young adults",
+        competitors=[{"name": "Red Bull"}, {"name": "Monster"}],
+    )
+
+
+def _liquid_death_brief():
+    return ProductBrief(
+        name="Liquid Death",
+        description="Mountain water canned",
+        price=2,
+        category="food_beverage",
+        demographic="adults",
+        competitors=[{"name": "Aquafina"}, {"name": "Dasani"}],
+    )
+
+
+def _sobercraft_brief():
+    return ProductBrief(
+        name="SoberCraft IPA",
+        description="Premium nonalcoholic craft IPA",
+        price=14,
+        category="food_beverage",
+        demographic="adults",
+        competitors=[{"name": "Athletic Brewing"}, {"name": "Heineken 0.0"}],
+    )
+
+
+def test_energy_drink_text_routes_to_energy_subtype():
+    from backend.dtc_v3.rag_retrieval import _infer_query_subtype
+    assert _infer_query_subtype(_energy_text_brief()) == "energy_drink"
+
+
+def test_energy_drink_competitor_heuristic_routes_to_energy_subtype():
+    from backend.dtc_v3.rag_retrieval import _infer_query_subtype
+    assert _infer_query_subtype(_energy_competitor_brief()) == "energy_drink"
+
+
+def test_liquid_iv_still_routes_to_hydration_supplement():
+    from backend.dtc_v3.rag_retrieval import _infer_query_subtype
+    assert _infer_query_subtype(_liquid_iv_brief()) == "hydration_supplement"
+
+
+def test_water_brand_still_routes_to_branded_water():
+    from backend.dtc_v3.rag_retrieval import _infer_query_subtype
+    assert _infer_query_subtype(_liquid_death_brief()) == "branded_water"
+
+
+def test_na_beer_still_routes_to_nonalcoholic_beer():
+    from backend.dtc_v3.rag_retrieval import _infer_query_subtype
+    assert _infer_query_subtype(_sobercraft_brief()) == "nonalcoholic_beer"
+
+
+def test_triton_drinks_anchored_on_energy_drinks():
+    """
+    Per friend Step 7 spec: do NOT assert exact forecast number or confidence.
+    Assert at least 2 energy-drink anchors appear, and Liquid IV invariant
+    is unaffected.
+    """
+    triton = ProductBrief(
+        name="Triton drinks",
+        description="A new energy drink for the US market",
+        price=3.99,
+        category="food_beverage",
+        demographic="active adults 18-35",
+        competitors=[{"name": "Red Bull"}, {"name": "Monster"}, {"name": "Celsius"}],
+    )
+    f = forecast(triton)
+
+    energy_brands = {
+        "Red Bull", "Monster Energy", "Celsius", "C4 Energy",
+        "Alani Nu Energy", "Ghost Energy", "G Fuel", "Prime Energy",
+    }
+    anchor_brands = {n.brand for n in f.neighbors}
+    overlap = anchor_brands & energy_brands
+    assert len(overlap) >= 2, (
+        f"Triton Drinks should anchor on >=2 energy drink brands, got {sorted(overlap)} "
+        f"(all neighbors: {sorted(anchor_brands)})"
+    )
+    assert not f.fallback_used or len(overlap) == 0, (
+        "If energy drink anchors found, prior_source should not be fallback"
+    )

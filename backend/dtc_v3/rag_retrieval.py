@@ -69,6 +69,7 @@ SUBTYPE_RETRIEVAL_TERMS = {
     "athletic_apparel": "activewear workout clothing fitness apparel athletic wear",
     "mattress": "mattress in box memory foam bed in box online mattress",
     "bedding_premium": "premium sheets bedding luxury linens cotton sheets",
+    "energy_drink": "energy drink caffeinated beverage performance energy functional energy zero sugar energy carbonated energy caffeine drink pre workout energy preworkout",
 }
 
 
@@ -214,7 +215,36 @@ def _infer_query_subtype(product: ProductBrief) -> str:
     
     # F&B subtypes
     if cat == "food_beverage":
-        if any(x in text for x in ["non-alcoholic", "non alcoholic", "na beer", "zero alcohol"]):
+        # Energy drinks — check first because "energy" / brand competitors are strong signals
+        energy_text_triggers = [
+            "energy drink", "energy drinks", "energy beverage",
+            "caffeinated beverage", "caffeinated drink",
+            "performance energy", "functional energy",
+            "zero sugar energy", "carbonated energy", "caffeine drink",
+            "pre workout energy", "preworkout energy", "pre workout drink",
+        ]
+        if any(x in text for x in energy_text_triggers):
+            return "energy_drink"
+        # Competitor heuristic: 2+ named energy drink brands → energy_drink
+        energy_brand_aliases = {
+            "red bull", "redbull", "monster", "monster energy",
+            "celsius", "c4", "c4 energy",
+            "alani", "alani nu", "alani nu energy",
+            "ghost", "ghost energy", "g fuel", "gfuel",
+            "prime", "prime energy",
+        }
+        comp_norm = [
+            (c.get("name", "") or "").lower().replace(".", "").replace("-", " ").strip()
+            for c in product.competitors
+        ]
+        comp_matches = sum(
+            1 for c in comp_norm
+            if any(brand in c or c in brand for brand in energy_brand_aliases) and c
+        )
+        if comp_matches >= 2:
+            return "energy_drink"
+
+        if any(x in text for x in ["non-alcoholic", "non alcoholic", "nonalcoholic", "na beer", "zero alcohol"]):
             return "nonalcoholic_beer"
         if any(x in text for x in ["mushroom", "coffee alternative", "adaptogen"]):
             return "coffee_alternative"
