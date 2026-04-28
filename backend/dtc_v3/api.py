@@ -191,12 +191,25 @@ def create_discussion():
       - Discussion does NOT change the forecast number.
       - Same input → same output (deterministic via seed + cache).
     """
-    from .discussion import generate_discussion, ALLOWED_AGENT_COUNTS, DEFAULT_AGENT_COUNT
+    from .discussion import (
+        generate_discussion,
+        ALLOWED_AGENT_COUNTS,
+        DEFAULT_AGENT_COUNT,
+        ALLOWED_MODES,
+        DEFAULT_MODE,
+    )
 
     data = request.get_json() or {}
     product = data.get("product")
     forecast = data.get("forecast")
     agent_count = data.get("agent_count", DEFAULT_AGENT_COUNT)
+
+    mode = (
+        request.args.get("mode")
+        or data.get("mode")
+        or ("llm" if str(request.args.get("llm", "")).lower() == "true" else None)
+        or DEFAULT_MODE
+    )
 
     if not isinstance(product, dict) or not product:
         return jsonify({"error": "Missing or invalid 'product'"}), 400
@@ -207,9 +220,14 @@ def create_discussion():
             "error": f"agent_count must be one of {list(ALLOWED_AGENT_COUNTS)}",
             "got": agent_count,
         }), 400
+    if mode not in ALLOWED_MODES:
+        return jsonify({
+            "error": f"mode must be one of {list(ALLOWED_MODES)}",
+            "got": mode,
+        }), 400
 
     try:
-        result = generate_discussion(product, forecast, agent_count)
+        result = generate_discussion(product, forecast, agent_count, mode=mode)
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
     except Exception as e:

@@ -3,11 +3,13 @@ backend/dtc_v3/discussion.py — AI buyer panel generator for v3-lite.
 
 CRITICAL INVARIANTS:
   1. Discussion MUST NOT change the forecast number.
-  2. Same input → same output (deterministic via seed + cache).
+  2. Same input -> same output (deterministic via seed + cache).
   3. If LLM fails or returns invalid JSON, fallback to deterministic template.
   4. Never claim agents are "real buyers" — they are AI buyer personas
      explaining a comparable-brand forecast.
   5. agent_count must be in {20, 50}.
+  6. Default mode is "template" (fast, free, diverse).
+     LLM is only used when mode="llm" is explicitly passed.
 """
 
 from __future__ import annotations
@@ -19,6 +21,8 @@ from typing import Any
 DISCUSSION_VERSION = "discussion_v1"
 ALLOWED_AGENT_COUNTS = (20, 50)
 DEFAULT_AGENT_COUNT = 20
+ALLOWED_MODES = ("template", "llm")
+DEFAULT_MODE = "template"
 
 _DISCUSSION_CACHE: dict[str, dict] = {}
 
@@ -26,13 +30,8 @@ _DISCUSSION_CACHE: dict[str, dict] = {}
 # ────────────────────────────────────────────────────────────────────
 # Seed
 # ────────────────────────────────────────────────────────────────────
-def generate_seed(product: dict, forecast: dict, agent_count: int) -> str:
-    """
-    Deterministic seed for caching + LLM reproducibility.
-
-    Per friend's spec: do NOT use forecast.simulation_id (random per run).
-    Use canonical product + forecast core + version.
-    """
+def generate_seed(product: dict, forecast: dict, agent_count: int, mode: str = DEFAULT_MODE) -> str:
+    """Deterministic seed for caching + LLM reproducibility."""
     canonical_payload = {
         "product": product,
         "forecast_core": {
@@ -43,6 +42,7 @@ def generate_seed(product: dict, forecast: dict, agent_count: int) -> str:
             "version": forecast.get("version", "v3-lite"),
         },
         "agent_count": agent_count,
+        "mode": mode,
         "discussion_version": DISCUSSION_VERSION,
     }
     canonical = json.dumps(canonical_payload, sort_keys=True, default=str)
@@ -52,32 +52,49 @@ def generate_seed(product: dict, forecast: dict, agent_count: int) -> str:
 # ────────────────────────────────────────────────────────────────────
 # Public entrypoint
 # ────────────────────────────────────────────────────────────────────
-def generate_discussion(product: dict, forecast: dict, agent_count: int = DEFAULT_AGENT_COUNT) -> dict:
+def generate_discussion(
+    product: dict,
+    forecast: dict,
+    agent_count: int = DEFAULT_AGENT_COUNT,
+    mode: str = DEFAULT_MODE,
+) -> dict:
     """
     Returns {"agent_panel": {...}}.
 
-    Tries one structured LLM call. On any failure, falls back to a
-    deterministic template panel. Never raises (other than invalid input).
+    mode="template" (default): deterministic, fast, diverse template path.
+    mode="llm": one structured LLM call. Falls back to template on any failure.
+
+    Never raises (other than invalid input).
     """
     if agent_count not in ALLOWED_AGENT_COUNTS:
         raise ValueError(f"agent_count must be in {ALLOWED_AGENT_COUNTS}, got {agent_count}")
+    if mode not in ALLOWED_MODES:
+        raise ValueError(f"mode must be in {ALLOWED_MODES}, got {mode}")
     if not isinstance(product, dict) or not product:
         raise ValueError("product must be a non-empty dict")
     if not isinstance(forecast, dict) or not forecast:
         raise ValueError("forecast must be a non-empty dict")
 
-    seed = generate_seed(product, forecast, agent_count)
+    seed = generate_seed(product, forecast, agent_count, mode)
 
     cached = _DISCUSSION_CACHE.get(seed)
     if cached is not None:
         return cached
 
-    panel = _try_llm_panel(product, forecast, agent_count, seed)
+    panel = None
+    panel_source = "template"
+    if mode == "llm":
+        panel = _try_llm_panel(product, forecast, agent_count, seed)
+        if panel is not None:
+            panel_source = "llm"
+
     if panel is None:
         panel = _template_panel(product, forecast, agent_count, seed)
+        panel_source = "template"
 
     panel["seed"] = seed
     panel["agent_count"] = agent_count
+    panel["mode"] = panel_source
     panel["coverage_warning"] = _coverage_warning(forecast)
 
     response = {"agent_panel": panel}
@@ -112,13 +129,10 @@ def _coverage_warning(forecast: dict) -> str:
 
 
 # ────────────────────────────────────────────────────────────────────
-# LLM path
+# LLM path (only fires when mode="llm")
 # ────────────────────────────────────────────────────────────────────
 def _try_llm_panel(product: dict, forecast: dict, agent_count: int, seed: str) -> dict | None:
-    """
-    One structured LLM call, low temperature, strict JSON.
-    Returns parsed panel dict on success, None on any failure.
-    """
+    """One structured LLM call, low temperature, strict JSON. Returns None on any failure."""
     api_key = os.environ.get("OPENAI_API_KEY")
     if not api_key:
         return None
@@ -129,9 +143,8 @@ def _try_llm_panel(product: dict, forecast: dict, agent_count: int, seed: str) -
         return None
 
     try:
-        client = OpenAI(api_key=api_key)
+        client = OpenAI(api_key=api_key, max_retries=0, timeout=20)
         system_prompt, user_prompt = _build_prompts(product, forecast, agent_count)
-
         seed_int = int(seed[:15], 16)
 
         response = client.chat.completions.create(
@@ -143,7 +156,7 @@ def _try_llm_panel(product: dict, forecast: dict, agent_count: int, seed: str) -
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ],
-            timeout=30,
+            timeout=20,
         )
 
         raw = response.choices[0].message.content
@@ -151,8 +164,7 @@ def _try_llm_panel(product: dict, forecast: dict, agent_count: int, seed: str) -
             return None
 
         parsed = json.loads(raw)
-        validated = _validate_llm_panel(parsed, agent_count)
-        return validated
+        return _validate_llm_panel(parsed, agent_count)
 
     except Exception:
         return None
@@ -222,7 +234,6 @@ def _build_prompts(product: dict, forecast: dict, agent_count: int) -> tuple[str
 
 
 def _validate_llm_panel(parsed: Any, agent_count: int) -> dict | None:
-    """Light schema validation. Returns panel dict if valid, else None."""
     if not isinstance(parsed, dict):
         return None
     required = ("rounds", "agents", "top_drivers", "top_objections",
@@ -247,7 +258,7 @@ def _validate_llm_panel(parsed: Any, agent_count: int) -> dict | None:
 
 
 # ────────────────────────────────────────────────────────────────────
-# Deterministic template fallback
+# Deterministic template (default mode)
 # ────────────────────────────────────────────────────────────────────
 SEGMENT_TEMPLATES = [
     ("Health optimizer", "Tracks sleep, supplements, recovery. Reads labels."),
@@ -302,12 +313,93 @@ SEGMENT_TEMPLATES = [
     ("Price-tier downgrader", "Was premium, now shopping mid-tier."),
 ]
 
+FOR_REASONS = [
+    "Anchor brands like {anchor} prove the category has real pull at this price.",
+    "Distribution and category fit match what worked for {anchor} — feels grounded.",
+    "Price is in line with what I already pay for {anchor} or its peers.",
+    "Comparable-brand evidence is strong; this is the type of launch I'd back.",
+    "If {anchor} hits the trial rate it does, this product is in striking range.",
+    "I'd try this once: the comparable-brand math is reasonable and the price isn't crazy.",
+    "Category timing works — buyers are already paying for {anchor}-style products.",
+    "Differentiation is small but real, and the price gives it room to breathe.",
+    "Solid bet given the comparable-brand anchors. I'd put it in my next order.",
+    "The retail/DTC distribution lines up; that's usually what makes or breaks trial.",
+]
+
+NEUTRAL_REASONS = [
+    "Interested but waiting on independent reviews before pulling the trigger.",
+    "Comparable to {anchor}, but I'd want a clearer differentiation story first.",
+    "Price is fine; the question is whether it earns its spot in my routine.",
+    "Could go either way. I'd watch how the first buyer cohort reacts.",
+    "Not against it — just need a reason to switch from what already works.",
+    "Decent fit with {anchor}-style adoption, but I haven't seen enough of it yet.",
+    "Open to it, but I'd want a sample or money-back guarantee before committing.",
+    "Comparable-brand anchors look reasonable. Real test is whether it sticks.",
+    "I'd consider it if the brand showed up consistently in my feed for 3 months.",
+    "On the fence — the category is right but the moment isn't urgent for me.",
+]
+
+AGAINST_REASONS = [
+    "I already use {anchor}; switching cost is real and the upside isn't obvious.",
+    "Price feels high for what looks like another {anchor} variant.",
+    "Subscription fatigue — I've cancelled enough of these to know my pattern.",
+    "Differentiation is too thin against incumbent {anchor}-style brands.",
+    "Retail dominance of {anchor} makes a DTC-first launch hard for me to bother with.",
+    "Marketing claim doesn't match what comparable brands actually deliver.",
+    "I'd rather wait for {anchor} to release a similar product than try this one.",
+    "Friction outweighs upside; one more thing to manage in my routine.",
+    "Existing alternatives serve me — I'd need a 2x reason, not a 1.1x reason.",
+    "The category is crowded; I don't have shelf-space (mental or physical) for another.",
+]
+
+FOR_OBJECTIONS = [
+    "Want to see one trial cycle before fully committing.",
+    "Need confirmation it lasts longer than {anchor} promised.",
+    "Would prefer single-purchase before subscription.",
+    "Hope shipping doesn't slip during peak season.",
+    "Want at least 60 days of consistent supply.",
+    "Need to verify retail pricing matches DTC.",
+    "Want a clear cancellation policy upfront.",
+    "Hope the formulation matches the marketing claims.",
+    "Want a money-back guarantee for first order.",
+    "Need to confirm it's compatible with my current routine.",
+]
+
+NEUTRAL_OBJECTIONS = [
+    "Not sure it's better than what I'm already using.",
+    "Need more independent reviews before deciding.",
+    "Differentiation from {anchor} isn't yet clear to me.",
+    "Want to see longer-term user data first.",
+    "Price-to-value ratio is borderline — could go either way.",
+    "Would prefer to see it on a retail shelf before committing.",
+    "Need a clearer use-case for my specific situation.",
+    "Brand authenticity is hard to judge this early.",
+    "Want to see how customer service handles complaints.",
+    "Need more time to evaluate vs. existing alternatives.",
+]
+
+AGAINST_OBJECTIONS = [
+    "Subscription fatigue / no clear reason to switch.",
+    "Loyal to {anchor}; switching cost outweighs benefit.",
+    "Price is too high for marginal differentiation.",
+    "Crowded category — too many lookalikes already.",
+    "No retail presence yet — DTC-only is friction.",
+    "Marketing claims feel exaggerated vs. comparable brands.",
+    "I'd rather stick with what's proven over what's new.",
+    "Doesn't solve a problem I have right now.",
+    "Reviews aren't strong enough to justify a try.",
+    "Brand story doesn't differentiate from {anchor}.",
+]
+
+
+def _pick_variant(variants: list[str], seed_int: int, agent_index: int, anchor: str) -> str:
+    """Deterministic pick by (seed_int + index) % len; substitutes {anchor}."""
+    template = variants[(seed_int + agent_index) % len(variants)]
+    return template.replace("{anchor}", anchor)
+
 
 def _template_panel(product: dict, forecast: dict, agent_count: int, seed: str) -> dict:
-    """
-    Deterministic template panel. Used when LLM is unavailable or fails.
-    Stance distribution mirrors the forecast trial rate.
-    """
+    """Deterministic template panel with diverse reason/objection variants."""
     trial_rate_pct = forecast.get("trial_rate", {}).get("percentage", 10.0) or 10.0
     confidence = (forecast.get("confidence") or "medium").lower()
     verdict = forecast.get("verdict", "")
@@ -316,8 +408,8 @@ def _template_panel(product: dict, forecast: dict, agent_count: int, seed: str) 
     forecast_objections = forecast.get("top_objections", []) or []
 
     rate_frac = max(0.0, min(1.0, trial_rate_pct / 100.0))
+    seed_int = int(seed[:8], 16)
 
-    # Stance distribution scales with rate, modulated by confidence
     base_for = max(2, round(agent_count * (0.30 + 0.40 * rate_frac)))
     base_against = max(2, round(agent_count * (0.45 - 0.30 * rate_frac)))
     base_neutral = max(0, agent_count - base_for - base_against)
@@ -337,31 +429,37 @@ def _template_panel(product: dict, forecast: dict, agent_count: int, seed: str) 
     while base_for + base_neutral + base_against < agent_count:
         base_neutral += 1
 
-    agents: list[dict] = []
-    seg_idx = int(seed[:8], 16) % len(SEGMENT_TEMPLATES)
+    top_anchor = anchored[0].get("brand") if anchored else "the category leader"
+    secondary_anchors = [a.get("brand") for a in anchored[1:4] if a.get("brand")]
 
-    anchor_text = ""
-    if anchored:
-        top_anchor = anchored[0].get("brand", "comparable brands")
-        anchor_text = f"Anchored against {top_anchor}: "
+    def anchor_for(idx: int) -> str:
+        if not anchored:
+            return "the category leader"
+        pool = [top_anchor] + secondary_anchors
+        return pool[idx % len(pool)] if pool else top_anchor
+
+    seg_idx = seed_int % len(SEGMENT_TEMPLATES)
+    agents: list[dict] = []
 
     for i in range(agent_count):
         seg = SEGMENT_TEMPLATES[(seg_idx + i) % len(SEGMENT_TEMPLATES)]
+        anchor = anchor_for(i)
+
         if i < base_for:
             stance = "for"
             score = 0.62 + (i % 5) * 0.05
-            reason = f"{anchor_text}fit aligns with my routine; price feels reasonable for the comparable category."
-            obj = "Want to see one trial cycle before fully committing."
+            reason = _pick_variant(FOR_REASONS, seed_int, i, anchor)
+            objection = _pick_variant(FOR_OBJECTIONS, seed_int, i, anchor)
         elif i < base_for + base_neutral:
             stance = "neutral"
             score = 0.45 + (i % 3) * 0.03
-            reason = f"{anchor_text}interested but waiting on more reviews and a clearer differentiator."
-            obj = "Not sure it's better than what I'm already using."
+            reason = _pick_variant(NEUTRAL_REASONS, seed_int, i, anchor)
+            objection = _pick_variant(NEUTRAL_OBJECTIONS, seed_int, i, anchor)
         else:
             stance = "against"
             score = 0.20 + (i % 4) * 0.04
-            reason = f"{anchor_text}existing alternatives serve me, friction outweighs upside."
-            obj = "Subscription fatigue / no clear reason to switch."
+            reason = _pick_variant(AGAINST_REASONS, seed_int, i, anchor)
+            objection = _pick_variant(AGAINST_OBJECTIONS, seed_int, i, anchor)
 
         agents.append({
             "id": f"agent_{i+1:02d}",
@@ -370,7 +468,7 @@ def _template_panel(product: dict, forecast: dict, agent_count: int, seed: str) 
             "stance": stance,
             "score": round(min(1.0, max(0.0, score)), 2),
             "reason": reason,
-            "top_objection": obj,
+            "top_objection": objection,
         })
 
     avg_score = sum(a["score"] for a in agents) / len(agents)
@@ -416,10 +514,16 @@ def _template_panel(product: dict, forecast: dict, agent_count: int, seed: str) 
     ]
 
     template_drivers = forecast_drivers[:4] if forecast_drivers else [
-        "Comparable-brand precedent", "Reasonable price-to-value", "Distribution match", "Category timing"
+        "Comparable-brand precedent",
+        "Reasonable price-to-value",
+        "Distribution match",
+        "Category timing",
     ]
     template_objections = forecast_objections[:4] if forecast_objections else [
-        "Subscription fatigue", "Switching cost from incumbent", "Differentiation unclear", "Category skepticism"
+        "Subscription fatigue",
+        "Switching cost from incumbent",
+        "Differentiation unclear",
+        "Category skepticism",
     ]
 
     most_receptive_seg = SEGMENT_TEMPLATES[(seg_idx + 3) % len(SEGMENT_TEMPLATES)][0]
@@ -431,7 +535,7 @@ def _template_panel(product: dict, forecast: dict, agent_count: int, seed: str) 
         "top_objections": template_objections,
         "most_receptive_segment": most_receptive_seg,
         "winning_message": (
-            f"Position against the strongest anchor ({anchored[0].get('brand', 'category leader')}) "
+            f"Position against the strongest anchor ({top_anchor}) "
             f"by leading with category-specific differentiation."
             if anchored else
             "Lead with category-specific differentiation and comparable-brand evidence."

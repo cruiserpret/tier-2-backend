@@ -164,3 +164,49 @@ def test_seed_stable_for_simulation_id_change(liquid_iv_product, liquid_iv_forec
     forecast_with_diff_id["simulation_id"] = "v3_completely_different"
     seed_b = generate_seed(liquid_iv_product, forecast_with_diff_id, 20)
     assert seed_a == seed_b, "seed must not include simulation_id (random per run)"
+
+
+def test_template_reasons_are_diverse(liquid_iv_product, liquid_iv_forecast):
+    """At least 5 unique reason strings across 20 agents."""
+    result = generate_discussion(liquid_iv_product, liquid_iv_forecast, agent_count=20, mode="template")
+    panel = result["agent_panel"]
+    reasons = [a["reason"] for a in panel["agents"]]
+    unique_reasons = set(reasons)
+    assert len(unique_reasons) >= 5, (
+        f"Template reasons not diverse enough: only {len(unique_reasons)} unique "
+        f"out of {len(reasons)} agents"
+    )
+
+
+def test_template_objections_are_diverse(liquid_iv_product, liquid_iv_forecast):
+    """At least 5 unique objection strings across 20 agents."""
+    result = generate_discussion(liquid_iv_product, liquid_iv_forecast, agent_count=20, mode="template")
+    panel = result["agent_panel"]
+    objections = [a["top_objection"] for a in panel["agents"]]
+    unique_objections = set(objections)
+    assert len(unique_objections) >= 5, (
+        f"Template objections not diverse enough: only {len(unique_objections)} unique "
+        f"out of {len(objections)} agents"
+    )
+
+
+def test_mode_field_in_panel(liquid_iv_product, liquid_iv_forecast):
+    """Panel must report which mode actually fired (template vs llm)."""
+    result = generate_discussion(liquid_iv_product, liquid_iv_forecast, agent_count=20, mode="template")
+    panel = result["agent_panel"]
+    assert "mode" in panel
+    assert panel["mode"] == "template"
+
+
+def test_invalid_mode_raises(liquid_iv_product, liquid_iv_forecast):
+    with pytest.raises(ValueError):
+        generate_discussion(liquid_iv_product, liquid_iv_forecast, agent_count=20, mode="random")
+    with pytest.raises(ValueError):
+        generate_discussion(liquid_iv_product, liquid_iv_forecast, agent_count=20, mode="")
+
+
+def test_mode_affects_seed(liquid_iv_product, liquid_iv_forecast):
+    """template and llm modes produce different seeds (different cache keys)."""
+    seed_template = generate_seed(liquid_iv_product, liquid_iv_forecast, 20, mode="template")
+    seed_llm = generate_seed(liquid_iv_product, liquid_iv_forecast, 20, mode="llm")
+    assert seed_template != seed_llm
