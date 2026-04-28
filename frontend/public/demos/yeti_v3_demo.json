@@ -33,22 +33,22 @@
         "trial_rate": 0.2
       },
       {
-        "brand": "Brooklinen Luxe Sheets",
-        "confidence_grade": "B",
-        "match_reason": "tier(challenger)\u00d70.65, scale(growth_challenger)\u00d70.85, price\u00d70.7, dist\u00d70.85, subtype(bedding_premium)\u00d70.4",
-        "trial_rate": 0.08
-      },
-      {
-        "brand": "Athletic Brewing NA Beer",
-        "confidence_grade": "B",
-        "match_reason": "tier(challenger)\u00d70.65, scale(growth_challenger)\u00d70.85, subtype(nonalcoholic_beer)\u00d70.25",
-        "trial_rate": 0.05
-      },
-      {
         "brand": "DripDrop Hydration",
         "confidence_grade": "C",
         "match_reason": "tier(challenger)\u00d70.65, scale(growth_challenger)\u00d70.85, subtype(hydration_supplement)\u00d70.25",
         "trial_rate": 0.09
+      },
+      {
+        "brand": "Health-Ade Kombucha",
+        "confidence_grade": "B",
+        "match_reason": "tier(challenger)\u00d70.65, scale(growth_challenger)\u00d70.85, price\u00d70.7, dist\u00d70.65, subtype(functional_fermented)\u00d70.25",
+        "trial_rate": 0.1
+      },
+      {
+        "brand": "Red Bull",
+        "confidence_grade": "C",
+        "match_reason": "scale(global_giant)\u00d70.85, dist\u00d70.65, subtype(energy_drink)\u00d70.25",
+        "trial_rate": 0.22
       }
     ],
     "confidence": "low",
@@ -98,15 +98,15 @@
         "trial_rate": 0.2
       },
       {
-        "brand": "Brooklinen Luxe Sheets",
-        "combined_penalty": 0.13,
-        "penalty_reasons": "tier(challenger)\u00d70.65, scale(growth_challenger)\u00d70.85, price\u00d70.7, dist\u00d70.85, subtype(bedding_premium)\u00d70.4",
-        "trial_rate": 0.08
+        "brand": "DripDrop Hydration",
+        "combined_penalty": 0.14,
+        "penalty_reasons": "tier(challenger)\u00d70.65, scale(growth_challenger)\u00d70.85, subtype(hydration_supplement)\u00d70.25",
+        "trial_rate": 0.09
       }
     ],
     "headline": "Comparable data is thin or unreliable for this product. Pilot before scaling \u2014 predicted 17% trial is directional, not validated.",
     "most_receptive_segment": "",
-    "simulation_id": "v3_75f06e31",
+    "simulation_id": "v3_35cb856b",
     "top_drivers": [],
     "top_objections": [],
     "trial_rate": {
@@ -181,7 +181,7 @@
       {
         "id": "agent_07",
         "profile": "Compares unit price. Questions DTC premiums.",
-        "reason": "Comparable to Brooklinen Luxe Sheets, but I'd want a clearer differentiation story first.",
+        "reason": "Comparable to DripDrop Hydration, but I'd want a clearer differentiation story first.",
         "score": 0.45,
         "segment": "Cost-conscious skeptic",
         "stance": "neutral",
@@ -194,7 +194,7 @@
         "score": 0.48,
         "segment": "Subscription veteran",
         "stance": "neutral",
-        "top_objection": "Differentiation from Athletic Brewing NA Beer isn't yet clear to me."
+        "top_objection": "Differentiation from Health-Ade Kombucha isn't yet clear to me."
       },
       {
         "id": "agent_09",
@@ -217,7 +217,7 @@
       {
         "id": "agent_11",
         "profile": "Stacks 3+ daily supplements.",
-        "reason": "Decent fit with Brooklinen Luxe Sheets-style adoption, but I haven't seen enough of it yet.",
+        "reason": "Decent fit with DripDrop Hydration-style adoption, but I haven't seen enough of it yet.",
         "score": 0.48,
         "segment": "Wellness routine builder",
         "stance": "neutral",
@@ -257,12 +257,12 @@
         "score": 0.28,
         "segment": "Convenience prioritizer",
         "stance": "against",
-        "top_objection": "Brand story doesn't differentiate from Brooklinen Luxe Sheets."
+        "top_objection": "Brand story doesn't differentiate from DripDrop Hydration."
       },
       {
         "id": "agent_16",
         "profile": "Reads studies. Knows actives.",
-        "reason": "I already use Athletic Brewing NA Beer; switching cost is real and the upside isn't obvious.",
+        "reason": "I already use Health-Ade Kombucha; switching cost is real and the upside isn't obvious.",
         "score": 0.32,
         "segment": "Functional ingredient nerd",
         "stance": "against",
@@ -289,7 +289,7 @@
       {
         "id": "agent_19",
         "profile": "Cares how it looks on the shelf / counter.",
-        "reason": "Differentiation is too thin against incumbent Brooklinen Luxe Sheets-style brands.",
+        "reason": "Differentiation is too thin against incumbent DripDrop Hydration-style brands.",
         "score": 0.28,
         "segment": "Aesthetic-driven buyer",
         "stance": "against",
@@ -298,7 +298,7 @@
       {
         "id": "agent_20",
         "profile": "Buys small to test, large if it works.",
-        "reason": "Retail dominance of Athletic Brewing NA Beer makes a DTC-first launch hard for me to bother with.",
+        "reason": "Retail dominance of Health-Ade Kombucha makes a DTC-first launch hard for me to bother with.",
         "score": 0.32,
         "segment": "Trial-then-bulk buyer",
         "stance": "against",
@@ -358,6 +358,6 @@
     ],
     "winning_message": "Position against the strongest anchor (Liquid IV Hydration Multiplier) by leading with category-specific differentiation."
   },
-  "cached_at": "2026-04-28T08:43:52.370523+00:00",
+  "cached_at": "2026-04-28T10:04:28.961331+00:00",
   "version": "v3-lite-discussion-v1"
 }

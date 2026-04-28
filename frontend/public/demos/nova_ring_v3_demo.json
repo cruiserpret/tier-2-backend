@@ -53,7 +53,7 @@
     ],
     "confidence": "medium-high",
     "confidence_reasons": [
-      "neighbor trial rate variance 6.8pp (high needs \u22646pp)"
+      "neighbor trial rate variance 7.0pp (high needs \u22646pp)"
     ],
     "counterfactuals": [
       {
@@ -105,12 +105,12 @@
     ],
     "headline": "Moderate trial signal (8%). Run controlled pilots to validate before scaling spend.",
     "most_receptive_segment": "",
-    "simulation_id": "v3_caea52e0",
+    "simulation_id": "v3_40bface8",
     "top_drivers": [],
     "top_objections": [],
     "trial_rate": {
-      "high": 0.1072,
-      "low": 0.0428,
+      "high": 0.1082,
+      "low": 0.0418,
       "median": 0.075,
       "percentage": 7.5
     },
@@ -357,6 +357,6 @@
     ],
     "winning_message": "Position against the strongest anchor (Oura Ring Gen 3) by leading with category-specific differentiation."
   },
-  "cached_at": "2026-04-28T08:43:46.234819+00:00",
+  "cached_at": "2026-04-28T10:04:22.816485+00:00",
   "version": "v3-lite-discussion-v1"
 }

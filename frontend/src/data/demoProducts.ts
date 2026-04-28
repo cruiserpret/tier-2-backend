@@ -15,6 +15,7 @@ export const DEMOS: DemoProduct[] = [
       competitors: [{ name: "LMNT" }, { name: "Pedialyte" }],
       market_tier_override: "mass_market",
       distribution_hint: "mass_retail",
+      exclude_brand: "Liquid IV",
     },
   },
   {
