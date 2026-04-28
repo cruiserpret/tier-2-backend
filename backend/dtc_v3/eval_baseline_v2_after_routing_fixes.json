@@ -1,0 +1,1432 @@
+[
+  {
+    "id": "hydramax_electrolyte",
+    "bucket": "synthetic_parallel",
+    "archetype": "Liquid IV / LMNT / Pedialyte-style",
+    "ok": true,
+    "inferred_subtype": "hydration_supplement",
+    "forecast_pct": 20.5,
+    "low_pct": 15.5,
+    "high_pct": 25.5,
+    "confidence": "medium-high",
+    "coverage_tier": "strong",
+    "fallback_used": false,
+    "prior_source": "rag_weighted_median",
+    "eligible_count": 8,
+    "retrieved_count": 8,
+    "top_anchors": [
+      {
+        "brand": "Liquid IV Hydration Multiplier",
+        "trial_rate_pct": 20.5,
+        "similarity": 0.813,
+        "weight": 0.237,
+        "confidence_grade": "A"
+      },
+      {
+        "brand": "DripDrop Hydration",
+        "trial_rate_pct": 9.0,
+        "similarity": 0.75,
+        "weight": 0.119,
+        "confidence_grade": "C"
+      },
+      {
+        "brand": "LMNT Electrolytes",
+        "trial_rate_pct": 6.5,
+        "similarity": 0.807,
+        "weight": 0.054,
+        "confidence_grade": "C"
+      },
+      {
+        "brand": "Pedialyte",
+        "trial_rate_pct": 22.0,
+        "similarity": 0.762,
+        "weight": 0.052,
+        "confidence_grade": "C"
+      },
+      {
+        "brand": "Liquid Death Mountain Water",
+        "trial_rate_pct": 20.0,
+        "similarity": 0.534,
+        "weight": 0.036,
+        "confidence_grade": "B"
+      }
+    ],
+    "quality_warnings": [],
+    "elapsed_ms": 556
+  },
+  {
+    "id": "voltrush_energy",
+    "bucket": "synthetic_parallel",
+    "archetype": "Red Bull / Monster / Celsius-style",
+    "ok": true,
+    "inferred_subtype": "energy_drink",
+    "forecast_pct": 14.0,
+    "low_pct": 9.0,
+    "high_pct": 19.0,
+    "confidence": "high",
+    "coverage_tier": "strong",
+    "fallback_used": false,
+    "prior_source": "rag_weighted_median",
+    "eligible_count": 8,
+    "retrieved_count": 8,
+    "top_anchors": [
+      {
+        "brand": "C4 Energy",
+        "trial_rate_pct": 10.0,
+        "similarity": 0.714,
+        "weight": 0.076,
+        "confidence_grade": "C"
+      },
+      {
+        "brand": "Prime Energy",
+        "trial_rate_pct": 18.0,
+        "similarity": 0.714,
+        "weight": 0.076,
+        "confidence_grade": "C"
+      },
+      {
+        "brand": "Celsius",
+        "trial_rate_pct": 14.0,
+        "similarity": 0.713,
+        "weight": 0.076,
+        "confidence_grade": "C"
+      },
+      {
+        "brand": "Liquid Death Mountain Water",
+        "trial_rate_pct": 20.0,
+        "similarity": 0.62,
+        "weight": 0.055,
+        "confidence_grade": "B"
+      },
+      {
+        "brand": "Alani Nu Energy",
+        "trial_rate_pct": 10.0,
+        "similarity": 0.595,
+        "weight": 0.053,
+        "confidence_grade": "C"
+      }
+    ],
+    "quality_warnings": [],
+    "elapsed_ms": 166
+  },
+  {
+    "id": "pulsering_tracker",
+    "bucket": "synthetic_parallel",
+    "archetype": "Oura / Whoop-style premium niche",
+    "ok": true,
+    "inferred_subtype": "wearable_health",
+    "forecast_pct": 7.5,
+    "low_pct": 4.1,
+    "high_pct": 10.9,
+    "confidence": "medium-high",
+    "coverage_tier": "strong",
+    "fallback_used": false,
+    "prior_source": "rag_weighted_median",
+    "eligible_count": 5,
+    "retrieved_count": 8,
+    "top_anchors": [
+      {
+        "brand": "Oura Ring Gen 3",
+        "trial_rate_pct": 7.5,
+        "similarity": 0.887,
+        "weight": 0.281,
+        "confidence_grade": "B"
+      },
+      {
+        "brand": "Whoop 4.0",
+        "trial_rate_pct": 5.5,
+        "similarity": 0.865,
+        "weight": 0.072,
+        "confidence_grade": "C"
+      },
+      {
+        "brand": "Eight Sleep Pod",
+        "trial_rate_pct": 3.0,
+        "similarity": 0.676,
+        "weight": 0.025,
+        "confidence_grade": "C"
+      },
+      {
+        "brand": "Purple Original Mattress",
+        "trial_rate_pct": 3.0,
+        "similarity": 0.411,
+        "weight": 0.02,
+        "confidence_grade": "A"
+      },
+      {
+        "brand": "Allbirds Wool Runners",
+        "trial_rate_pct": 10.0,
+        "similarity": 0.406,
+        "weight": 0.016,
+        "confidence_grade": "A"
+      }
+    ],
+    "quality_warnings": [
+      "neighbor trial rate variance 6.9pp (high needs \u22646pp)"
+    ],
+    "elapsed_ms": 167
+  },
+  {
+    "id": "zerohop_ipa",
+    "bucket": "synthetic_parallel",
+    "archetype": "Athletic Brewing / Heineken 0.0-style",
+    "ok": true,
+    "inferred_subtype": "nonalcoholic_beer",
+    "forecast_pct": 8.0,
+    "low_pct": 3.0,
+    "high_pct": 13.0,
+    "confidence": "medium",
+    "coverage_tier": "strong",
+    "fallback_used": false,
+    "prior_source": "rag_weighted_median",
+    "eligible_count": 8,
+    "retrieved_count": 8,
+    "top_anchors": [
+      {
+        "brand": "Athletic Brewing NA Beer",
+        "trial_rate_pct": 5.0,
+        "similarity": 0.754,
+        "weight": 0.203,
+        "confidence_grade": "B"
+      },
+      {
+        "brand": "Poppi Prebiotic Soda",
+        "trial_rate_pct": 23.0,
+        "similarity": 0.549,
+        "weight": 0.072,
+        "confidence_grade": "A"
+      },
+      {
+        "brand": "Heineken 0.0",
+        "trial_rate_pct": 8.0,
+        "similarity": 0.843,
+        "weight": 0.045,
+        "confidence_grade": "C"
+      },
+      {
+        "brand": "Olipop Prebiotic Soda",
+        "trial_rate_pct": 27.0,
+        "similarity": 0.549,
+        "weight": 0.043,
+        "confidence_grade": "B"
+      },
+      {
+        "brand": "Liquid Death Mountain Water",
+        "trial_rate_pct": 20.0,
+        "similarity": 0.527,
+        "weight": 0.04,
+        "confidence_grade": "B"
+      }
+    ],
+    "quality_warnings": [
+      "exact-subtype weight share 57% (high needs \u226565%)",
+      "neighbor trial rate variance 8.8pp (high needs \u22646pp)",
+      "capped at medium: neighbor variance 8.8pp exceeds 8pp"
+    ],
+    "elapsed_ms": 289
+  },
+  {
+    "id": "adaptbrew_morning",
+    "bucket": "synthetic_parallel",
+    "archetype": "MUD\\WTR / Four Sigmatic-style",
+    "ok": true,
+    "inferred_subtype": "coffee_alternative",
+    "forecast_pct": 4.0,
+    "low_pct": 0.1,
+    "high_pct": 9.0,
+    "confidence": "medium-high",
+    "coverage_tier": "strong",
+    "fallback_used": false,
+    "prior_source": "rag_weighted_median",
+    "eligible_count": 8,
+    "retrieved_count": 8,
+    "top_anchors": [
+      {
+        "brand": "MUD\\WTR Coffee Alternative",
+        "trial_rate_pct": 4.0,
+        "similarity": 0.888,
+        "weight": 0.117,
+        "confidence_grade": "C"
+      },
+      {
+        "brand": "Four Sigmatic Mushroom Coffee",
+        "trial_rate_pct": 3.0,
+        "similarity": 0.869,
+        "weight": 0.112,
+        "confidence_grade": "C"
+      },
+      {
+        "brand": "Ryze Mushroom Coffee",
+        "trial_rate_pct": 5.5,
+        "similarity": 0.863,
+        "weight": 0.044,
+        "confidence_grade": "D"
+      },
+      {
+        "brand": "Athletic Brewing NA Beer",
+        "trial_rate_pct": 5.0,
+        "similarity": 0.603,
+        "weight": 0.041,
+        "confidence_grade": "B"
+      },
+      {
+        "brand": "Liquid Death Mountain Water",
+        "trial_rate_pct": 20.0,
+        "similarity": 0.57,
+        "weight": 0.037,
+        "confidence_grade": "B"
+      }
+    ],
+    "quality_warnings": [
+      "neighbor trial rate variance 6.5pp (high needs \u22646pp)"
+    ],
+    "elapsed_ms": 218
+  },
+  {
+    "id": "cloudfoam_mattress",
+    "bucket": "synthetic_parallel",
+    "archetype": "Casper / Nectar-style mattress in box",
+    "ok": true,
+    "inferred_subtype": "mattress",
+    "forecast_pct": 4.0,
+    "low_pct": 1.7,
+    "high_pct": 6.3,
+    "confidence": "high",
+    "coverage_tier": "strong",
+    "fallback_used": false,
+    "prior_source": "rag_weighted_median",
+    "eligible_count": 5,
+    "retrieved_count": 8,
+    "top_anchors": [
+      {
+        "brand": "Casper Original Mattress",
+        "trial_rate_pct": 4.0,
+        "similarity": 0.843,
+        "weight": 0.604,
+        "confidence_grade": "A"
+      },
+      {
+        "brand": "Purple Original Mattress",
+        "trial_rate_pct": 3.0,
+        "similarity": 0.824,
+        "weight": 0.49,
+        "confidence_grade": "A"
+      },
+      {
+        "brand": "Brooklinen Luxe Sheets",
+        "trial_rate_pct": 8.0,
+        "similarity": 0.537,
+        "weight": 0.067,
+        "confidence_grade": "B"
+      },
+      {
+        "brand": "YETI Rambler 20oz",
+        "trial_rate_pct": 16.0,
+        "similarity": 0.381,
+        "weight": 0.019,
+        "confidence_grade": "A"
+      },
+      {
+        "brand": "Parachute Home Percale Sheets",
+        "trial_rate_pct": 5.5,
+        "similarity": 0.534,
+        "weight": 0.018,
+        "confidence_grade": "C"
+      }
+    ],
+    "quality_warnings": [],
+    "elapsed_ms": 208
+  },
+  {
+    "id": "glowdrop_vitamin_c",
+    "bucket": "synthetic_new",
+    "archetype": "vitamin C serum, skincare active",
+    "ok": true,
+    "inferred_subtype": "skincare_active",
+    "forecast_pct": 14.0,
+    "low_pct": 7.5,
+    "high_pct": 20.5,
+    "confidence": "medium",
+    "coverage_tier": "medium",
+    "fallback_used": false,
+    "prior_source": "rag_weighted_median",
+    "eligible_count": 4,
+    "retrieved_count": 8,
+    "top_anchors": [
+      {
+        "brand": "The Ordinary Niacinamide",
+        "trial_rate_pct": 14.0,
+        "similarity": 0.625,
+        "weight": 0.077,
+        "confidence_grade": "B"
+      },
+      {
+        "brand": "Glossier Boy Brow",
+        "trial_rate_pct": 17.5,
+        "similarity": 0.529,
+        "weight": 0.057,
+        "confidence_grade": "B"
+      },
+      {
+        "brand": "Dollar Shave Club Starter Kit",
+        "trial_rate_pct": 16.5,
+        "similarity": 0.428,
+        "weight": 0.018,
+        "confidence_grade": "A"
+      },
+      {
+        "brand": "Liquid IV Hydration Multiplier",
+        "trial_rate_pct": 20.5,
+        "similarity": 0.419,
+        "weight": 0.016,
+        "confidence_grade": "A"
+      },
+      {
+        "brand": "Drunk Elephant Protini",
+        "trial_rate_pct": 5.5,
+        "similarity": 0.576,
+        "weight": 0.014,
+        "confidence_grade": "B"
+      }
+    ],
+    "quality_warnings": [
+      "comparable mix has variance or partial mismatch"
+    ],
+    "elapsed_ms": 340
+  },
+  {
+    "id": "clearskin_acne_patch",
+    "bucket": "synthetic_new",
+    "archetype": "hydrocolloid acne patch, skincare",
+    "ok": true,
+    "inferred_subtype": "skincare_active",
+    "forecast_pct": 14.0,
+    "low_pct": 7.5,
+    "high_pct": 20.5,
+    "confidence": "medium",
+    "coverage_tier": "medium",
+    "fallback_used": false,
+    "prior_source": "rag_weighted_median",
+    "eligible_count": 3,
+    "retrieved_count": 8,
+    "top_anchors": [
+      {
+        "brand": "The Ordinary Niacinamide",
+        "trial_rate_pct": 14.0,
+        "similarity": 0.565,
+        "weight": 0.106,
+        "confidence_grade": "B"
+      },
+      {
+        "brand": "Glossier Boy Brow",
+        "trial_rate_pct": 17.5,
+        "similarity": 0.522,
+        "weight": 0.033,
+        "confidence_grade": "B"
+      },
+      {
+        "brand": "Dollar Shave Club Starter Kit",
+        "trial_rate_pct": 16.5,
+        "similarity": 0.45,
+        "weight": 0.029,
+        "confidence_grade": "A"
+      },
+      {
+        "brand": "Purple Original Mattress",
+        "trial_rate_pct": 3.0,
+        "similarity": 0.379,
+        "weight": 0.021,
+        "confidence_grade": "A"
+      },
+      {
+        "brand": "Casper Original Mattress",
+        "trial_rate_pct": 4.0,
+        "similarity": 0.38,
+        "weight": 0.018,
+        "confidence_grade": "A"
+      }
+    ],
+    "quality_warnings": [
+      "exact-subtype weight share 45% (high needs \u226565%)",
+      "neighbor trial rate variance 6.7pp (high needs \u22646pp)",
+      "capped at medium: subtype weight share 45% below 50%"
+    ],
+    "elapsed_ms": 288
+  },
+  {
+    "id": "peakprotein_whey",
+    "bucket": "synthetic_new",
+    "archetype": "whey protein powder, supplement",
+    "ok": true,
+    "inferred_subtype": "default",
+    "forecast_pct": 10.0,
+    "low_pct": 0.1,
+    "high_pct": 20.0,
+    "confidence": "low",
+    "coverage_tier": "weak",
+    "fallback_used": true,
+    "prior_source": "fallback_market_tier_median",
+    "eligible_count": 6,
+    "retrieved_count": 8,
+    "top_anchors": [
+      {
+        "brand": "Liquid IV Hydration Multiplier",
+        "trial_rate_pct": 20.5,
+        "similarity": 0.499,
+        "weight": 0.036,
+        "confidence_grade": "A"
+      },
+      {
+        "brand": "DripDrop Hydration",
+        "trial_rate_pct": 9.0,
+        "similarity": 0.505,
+        "weight": 0.022,
+        "confidence_grade": "C"
+      },
+      {
+        "brand": "AG1 Athletic Greens",
+        "trial_rate_pct": 11.0,
+        "similarity": 0.535,
+        "weight": 0.017,
+        "confidence_grade": "B"
+      },
+      {
+        "brand": "Prime Energy",
+        "trial_rate_pct": 18.0,
+        "similarity": 0.428,
+        "weight": 0.01,
+        "confidence_grade": "C"
+      },
+      {
+        "brand": "C4 Energy",
+        "trial_rate_pct": 10.0,
+        "similarity": 0.427,
+        "weight": 0.01,
+        "confidence_grade": "C"
+      }
+    ],
+    "quality_warnings": [
+      "no strong same-subtype anchor \u2014 using fallback prior"
+    ],
+    "elapsed_ms": 177
+  },
+  {
+    "id": "greenfuel_greens",
+    "bucket": "synthetic_new",
+    "archetype": "greens powder, AG1-style",
+    "ok": true,
+    "inferred_subtype": "greens_powder",
+    "forecast_pct": 11.0,
+    "low_pct": 6.8,
+    "high_pct": 15.2,
+    "confidence": "medium-high",
+    "coverage_tier": "strong",
+    "fallback_used": false,
+    "prior_source": "rag_weighted_median",
+    "eligible_count": 8,
+    "retrieved_count": 8,
+    "top_anchors": [
+      {
+        "brand": "AG1 Athletic Greens",
+        "trial_rate_pct": 11.0,
+        "similarity": 0.846,
+        "weight": 0.237,
+        "confidence_grade": "B"
+      },
+      {
+        "brand": "MUD\\WTR Coffee Alternative",
+        "trial_rate_pct": 4.0,
+        "similarity": 0.505,
+        "weight": 0.035,
+        "confidence_grade": "C"
+      },
+      {
+        "brand": "LMNT Electrolytes",
+        "trial_rate_pct": 6.5,
+        "similarity": 0.605,
+        "weight": 0.031,
+        "confidence_grade": "C"
+      },
+      {
+        "brand": "Ritual Multivitamin",
+        "trial_rate_pct": 5.5,
+        "similarity": 0.595,
+        "weight": 0.02,
+        "confidence_grade": "C"
+      },
+      {
+        "brand": "Liquid IV Hydration Multiplier",
+        "trial_rate_pct": 20.5,
+        "similarity": 0.569,
+        "weight": 0.018,
+        "confidence_grade": "A"
+      }
+    ],
+    "quality_warnings": [
+      "exact-subtype weight share 64% (high needs \u226565%)"
+    ],
+    "elapsed_ms": 182
+  },
+  {
+    "id": "pupfuel_dog_supplement",
+    "bucket": "weird_sparse",
+    "archetype": "pet supplement, no DB coverage",
+    "ok": true,
+    "inferred_subtype": "default",
+    "forecast_pct": 10.0,
+    "low_pct": 0.1,
+    "high_pct": 20.0,
+    "confidence": "low",
+    "coverage_tier": "weak",
+    "fallback_used": true,
+    "prior_source": "fallback_market_tier_median",
+    "eligible_count": 0,
+    "retrieved_count": 8,
+    "top_anchors": [
+      {
+        "brand": "Liquid IV Hydration Multiplier",
+        "trial_rate_pct": 20.5,
+        "similarity": 0.362,
+        "weight": 0.012,
+        "confidence_grade": "A"
+      },
+      {
+        "brand": "DripDrop Hydration",
+        "trial_rate_pct": 9.0,
+        "similarity": 0.409,
+        "weight": 0.009,
+        "confidence_grade": "C"
+      },
+      {
+        "brand": "C4 Energy",
+        "trial_rate_pct": 10.0,
+        "similarity": 0.395,
+        "weight": 0.008,
+        "confidence_grade": "C"
+      },
+      {
+        "brand": "Health-Ade Kombucha",
+        "trial_rate_pct": 10.0,
+        "similarity": 0.368,
+        "weight": 0.008,
+        "confidence_grade": "B"
+      },
+      {
+        "brand": "Prime Energy",
+        "trial_rate_pct": 18.0,
+        "similarity": 0.362,
+        "weight": 0.007,
+        "confidence_grade": "C"
+      }
+    ],
+    "quality_warnings": [
+      "no strong same-subtype anchor \u2014 using fallback prior",
+      "zero eligible comparables \u2014 confidence forced to low"
+    ],
+    "elapsed_ms": 232
+  },
+  {
+    "id": "freshbite_dog_food",
+    "bucket": "weird_sparse",
+    "archetype": "premium dog food, no DB coverage",
+    "ok": true,
+    "inferred_subtype": "default",
+    "forecast_pct": 7.5,
+    "low_pct": 0.1,
+    "high_pct": 17.5,
+    "confidence": "low",
+    "coverage_tier": "weak",
+    "fallback_used": true,
+    "prior_source": "fallback_market_tier_median",
+    "eligible_count": 1,
+    "retrieved_count": 8,
+    "top_anchors": [
+      {
+        "brand": "AG1 Athletic Greens",
+        "trial_rate_pct": 11.0,
+        "similarity": 0.423,
+        "weight": 0.023,
+        "confidence_grade": "B"
+      },
+      {
+        "brand": "Poppi Prebiotic Soda",
+        "trial_rate_pct": 23.0,
+        "similarity": 0.436,
+        "weight": 0.017,
+        "confidence_grade": "A"
+      },
+      {
+        "brand": "Health-Ade Kombucha",
+        "trial_rate_pct": 10.0,
+        "similarity": 0.439,
+        "weight": 0.01,
+        "confidence_grade": "B"
+      },
+      {
+        "brand": "Olipop Prebiotic Soda",
+        "trial_rate_pct": 27.0,
+        "similarity": 0.429,
+        "weight": 0.01,
+        "confidence_grade": "B"
+      },
+      {
+        "brand": "Ritual Multivitamin",
+        "trial_rate_pct": 5.5,
+        "similarity": 0.41,
+        "weight": 0.009,
+        "confidence_grade": "C"
+      }
+    ],
+    "quality_warnings": [
+      "no strong same-subtype anchor \u2014 using fallback prior"
+    ],
+    "elapsed_ms": 178
+  },
+  {
+    "id": "cloudsocks_premium",
+    "bucket": "synthetic_new",
+    "archetype": "premium basics, sock subscription",
+    "ok": true,
+    "inferred_subtype": "premium_basics",
+    "forecast_pct": 9.5,
+    "low_pct": 7.4,
+    "high_pct": 11.6,
+    "confidence": "medium-high",
+    "coverage_tier": "strong",
+    "fallback_used": false,
+    "prior_source": "rag_weighted_median",
+    "eligible_count": 7,
+    "retrieved_count": 8,
+    "top_anchors": [
+      {
+        "brand": "Bombas Ankle Socks",
+        "trial_rate_pct": 7.5,
+        "similarity": 0.831,
+        "weight": 0.136,
+        "confidence_grade": "B"
+      },
+      {
+        "brand": "Allbirds Wool Runners",
+        "trial_rate_pct": 10.0,
+        "similarity": 0.692,
+        "weight": 0.097,
+        "confidence_grade": "A"
+      },
+      {
+        "brand": "Warby Parker Glasses",
+        "trial_rate_pct": 12.5,
+        "similarity": 0.49,
+        "weight": 0.057,
+        "confidence_grade": "A"
+      },
+      {
+        "brand": "Quince Cashmere Sweater",
+        "trial_rate_pct": 9.5,
+        "similarity": 0.632,
+        "weight": 0.05,
+        "confidence_grade": "C"
+      },
+      {
+        "brand": "Gymshark Sports Bra",
+        "trial_rate_pct": 7.5,
+        "similarity": 0.567,
+        "weight": 0.026,
+        "confidence_grade": "C"
+      }
+    ],
+    "quality_warnings": [
+      "exact-subtype weight share 51% (high needs \u226565%)"
+    ],
+    "elapsed_ms": 151
+  },
+  {
+    "id": "aerobasics_tee",
+    "bucket": "synthetic_new",
+    "archetype": "premium basics t-shirt",
+    "ok": true,
+    "inferred_subtype": "premium_basics",
+    "forecast_pct": 9.5,
+    "low_pct": 7.1,
+    "high_pct": 11.9,
+    "confidence": "medium-high",
+    "coverage_tier": "strong",
+    "fallback_used": false,
+    "prior_source": "rag_weighted_median",
+    "eligible_count": 6,
+    "retrieved_count": 8,
+    "top_anchors": [
+      {
+        "brand": "Bombas Ankle Socks",
+        "trial_rate_pct": 7.5,
+        "similarity": 0.58,
+        "weight": 0.078,
+        "confidence_grade": "B"
+      },
+      {
+        "brand": "Allbirds Wool Runners",
+        "trial_rate_pct": 10.0,
+        "similarity": 0.564,
+        "weight": 0.076,
+        "confidence_grade": "A"
+      },
+      {
+        "brand": "Quince Cashmere Sweater",
+        "trial_rate_pct": 9.5,
+        "similarity": 0.568,
+        "weight": 0.069,
+        "confidence_grade": "C"
+      },
+      {
+        "brand": "Warby Parker Glasses",
+        "trial_rate_pct": 12.5,
+        "similarity": 0.434,
+        "weight": 0.054,
+        "confidence_grade": "A"
+      },
+      {
+        "brand": "Everlane Cotton T-Shirt",
+        "trial_rate_pct": 10.0,
+        "similarity": 0.747,
+        "weight": 0.054,
+        "confidence_grade": "C"
+      }
+    ],
+    "quality_warnings": [
+      "exact-subtype weight share 51% (high needs \u226565%)"
+    ],
+    "elapsed_ms": 280
+  },
+  {
+    "id": "smoothshave_razor",
+    "bucket": "synthetic_new",
+    "archetype": "razor subscription",
+    "ok": true,
+    "inferred_subtype": "razor_subscription",
+    "forecast_pct": 16.5,
+    "low_pct": 13.7,
+    "high_pct": 19.3,
+    "confidence": "medium-high",
+    "coverage_tier": "strong",
+    "fallback_used": false,
+    "prior_source": "rag_weighted_median",
+    "eligible_count": 2,
+    "retrieved_count": 8,
+    "top_anchors": [
+      {
+        "brand": "Dollar Shave Club Starter Kit",
+        "trial_rate_pct": 16.5,
+        "similarity": 0.768,
+        "weight": 0.228,
+        "confidence_grade": "A"
+      },
+      {
+        "brand": "Glossier Boy Brow",
+        "trial_rate_pct": 17.5,
+        "similarity": 0.421,
+        "weight": 0.015,
+        "confidence_grade": "B"
+      },
+      {
+        "brand": "Liquid IV Hydration Multiplier",
+        "trial_rate_pct": 20.5,
+        "similarity": 0.385,
+        "weight": 0.013,
+        "confidence_grade": "A"
+      },
+      {
+        "brand": "AG1 Athletic Greens",
+        "trial_rate_pct": 11.0,
+        "similarity": 0.428,
+        "weight": 0.011,
+        "confidence_grade": "B"
+      },
+      {
+        "brand": "YETI Rambler 20oz",
+        "trial_rate_pct": 16.0,
+        "similarity": 0.375,
+        "weight": 0.009,
+        "confidence_grade": "A"
+      }
+    ],
+    "quality_warnings": [
+      "only 8% of neighbors match query's market tier"
+    ],
+    "elapsed_ms": 194
+  },
+  {
+    "id": "hydratekids_electrolyte",
+    "bucket": "synthetic_new",
+    "archetype": "kids electrolyte drink",
+    "ok": true,
+    "inferred_subtype": "hydration_supplement",
+    "forecast_pct": 20.0,
+    "low_pct": 15.0,
+    "high_pct": 25.0,
+    "confidence": "medium-high",
+    "coverage_tier": "strong",
+    "fallback_used": false,
+    "prior_source": "rag_weighted_median",
+    "eligible_count": 8,
+    "retrieved_count": 8,
+    "top_anchors": [
+      {
+        "brand": "Liquid IV Hydration Multiplier",
+        "trial_rate_pct": 20.5,
+        "similarity": 0.764,
+        "weight": 0.147,
+        "confidence_grade": "A"
+      },
+      {
+        "brand": "DripDrop Hydration",
+        "trial_rate_pct": 9.0,
+        "similarity": 0.797,
+        "weight": 0.094,
+        "confidence_grade": "C"
+      },
+      {
+        "brand": "LMNT Electrolytes",
+        "trial_rate_pct": 6.5,
+        "similarity": 0.772,
+        "weight": 0.049,
+        "confidence_grade": "C"
+      },
+      {
+        "brand": "Pedialyte",
+        "trial_rate_pct": 22.0,
+        "similarity": 0.831,
+        "weight": 0.043,
+        "confidence_grade": "C"
+      },
+      {
+        "brand": "Liquid Death Mountain Water",
+        "trial_rate_pct": 20.0,
+        "similarity": 0.563,
+        "weight": 0.028,
+        "confidence_grade": "B"
+      }
+    ],
+    "quality_warnings": [
+      "neighbor trial rate variance 6.1pp (high needs \u22646pp)"
+    ],
+    "elapsed_ms": 127
+  },
+  {
+    "id": "focusgum_caffeine",
+    "bucket": "weird_sparse",
+    "archetype": "caffeinated functional gum",
+    "ok": true,
+    "inferred_subtype": "default",
+    "forecast_pct": 11.0,
+    "low_pct": 1.0,
+    "high_pct": 21.0,
+    "confidence": "low",
+    "coverage_tier": "weak",
+    "fallback_used": true,
+    "prior_source": "fallback_category_median",
+    "eligible_count": 8,
+    "retrieved_count": 8,
+    "top_anchors": [
+      {
+        "brand": "Liquid IV Hydration Multiplier",
+        "trial_rate_pct": 20.5,
+        "similarity": 0.475,
+        "weight": 0.012,
+        "confidence_grade": "A"
+      },
+      {
+        "brand": "AG1 Athletic Greens",
+        "trial_rate_pct": 11.0,
+        "similarity": 0.543,
+        "weight": 0.01,
+        "confidence_grade": "B"
+      },
+      {
+        "brand": "DripDrop Hydration",
+        "trial_rate_pct": 9.0,
+        "similarity": 0.508,
+        "weight": 0.005,
+        "confidence_grade": "C"
+      },
+      {
+        "brand": "LMNT Electrolytes",
+        "trial_rate_pct": 6.5,
+        "similarity": 0.548,
+        "weight": 0.005,
+        "confidence_grade": "C"
+      },
+      {
+        "brand": "C4 Energy",
+        "trial_rate_pct": 10.0,
+        "similarity": 0.559,
+        "weight": 0.004,
+        "confidence_grade": "C"
+      }
+    ],
+    "quality_warnings": [
+      "no strong same-subtype anchor \u2014 using fallback prior",
+      "only 8% of neighbors match query's market tier"
+    ],
+    "elapsed_ms": 139
+  },
+  {
+    "id": "sleeppatch_melatonin",
+    "bucket": "weird_sparse",
+    "archetype": "transdermal sleep patch",
+    "ok": true,
+    "inferred_subtype": "default",
+    "forecast_pct": 11.0,
+    "low_pct": 1.0,
+    "high_pct": 21.0,
+    "confidence": "low",
+    "coverage_tier": "weak",
+    "fallback_used": true,
+    "prior_source": "fallback_category_median",
+    "eligible_count": 2,
+    "retrieved_count": 8,
+    "top_anchors": [
+      {
+        "brand": "Liquid IV Hydration Multiplier",
+        "trial_rate_pct": 20.5,
+        "similarity": 0.418,
+        "weight": 0.014,
+        "confidence_grade": "A"
+      },
+      {
+        "brand": "Casper Original Mattress",
+        "trial_rate_pct": 4.0,
+        "similarity": 0.428,
+        "weight": 0.01,
+        "confidence_grade": "A"
+      },
+      {
+        "brand": "Purple Original Mattress",
+        "trial_rate_pct": 3.0,
+        "similarity": 0.446,
+        "weight": 0.009,
+        "confidence_grade": "A"
+      },
+      {
+        "brand": "AG1 Athletic Greens",
+        "trial_rate_pct": 11.0,
+        "similarity": 0.439,
+        "weight": 0.006,
+        "confidence_grade": "B"
+      },
+      {
+        "brand": "DripDrop Hydration",
+        "trial_rate_pct": 9.0,
+        "similarity": 0.476,
+        "weight": 0.006,
+        "confidence_grade": "C"
+      }
+    ],
+    "quality_warnings": [
+      "no strong same-subtype anchor \u2014 using fallback prior",
+      "only 0% of neighbors match query's market tier"
+    ],
+    "elapsed_ms": 150
+  },
+  {
+    "id": "luxebottle_drinkware",
+    "bucket": "synthetic_new",
+    "archetype": "premium drinkware tumbler",
+    "ok": true,
+    "inferred_subtype": "premium_drinkware",
+    "forecast_pct": 16.0,
+    "low_pct": 11.0,
+    "high_pct": 21.0,
+    "confidence": "medium-high",
+    "coverage_tier": "strong",
+    "fallback_used": false,
+    "prior_source": "rag_weighted_median",
+    "eligible_count": 5,
+    "retrieved_count": 8,
+    "top_anchors": [
+      {
+        "brand": "YETI Rambler 20oz",
+        "trial_rate_pct": 16.0,
+        "similarity": 0.722,
+        "weight": 0.202,
+        "confidence_grade": "A"
+      },
+      {
+        "brand": "Purple Original Mattress",
+        "trial_rate_pct": 3.0,
+        "similarity": 0.463,
+        "weight": 0.051,
+        "confidence_grade": "A"
+      },
+      {
+        "brand": "Casper Original Mattress",
+        "trial_rate_pct": 4.0,
+        "similarity": 0.452,
+        "weight": 0.041,
+        "confidence_grade": "A"
+      },
+      {
+        "brand": "Brooklinen Luxe Sheets",
+        "trial_rate_pct": 8.0,
+        "similarity": 0.529,
+        "weight": 0.034,
+        "confidence_grade": "B"
+      },
+      {
+        "brand": "Liquid Death Mountain Water",
+        "trial_rate_pct": 20.0,
+        "similarity": 0.455,
+        "weight": 0.026,
+        "confidence_grade": "B"
+      }
+    ],
+    "quality_warnings": [
+      "exact-subtype weight share 51% (high needs \u226565%)",
+      "neighbor trial rate variance 6.8pp (high needs \u22646pp)"
+    ],
+    "elapsed_ms": 201
+  },
+  {
+    "id": "babyblend_organic",
+    "bucket": "weird_sparse",
+    "archetype": "organic baby food, no DB coverage",
+    "ok": true,
+    "inferred_subtype": "default",
+    "forecast_pct": 7.5,
+    "low_pct": 0.1,
+    "high_pct": 17.5,
+    "confidence": "low",
+    "coverage_tier": "weak",
+    "fallback_used": true,
+    "prior_source": "fallback_market_tier_median",
+    "eligible_count": 8,
+    "retrieved_count": 8,
+    "top_anchors": [
+      {
+        "brand": "Poppi Prebiotic Soda",
+        "trial_rate_pct": 23.0,
+        "similarity": 0.575,
+        "weight": 0.051,
+        "confidence_grade": "A"
+      },
+      {
+        "brand": "Liquid Death Mountain Water",
+        "trial_rate_pct": 20.0,
+        "similarity": 0.508,
+        "weight": 0.034,
+        "confidence_grade": "B"
+      },
+      {
+        "brand": "Olipop Prebiotic Soda",
+        "trial_rate_pct": 27.0,
+        "similarity": 0.557,
+        "weight": 0.029,
+        "confidence_grade": "B"
+      },
+      {
+        "brand": "Health-Ade Kombucha",
+        "trial_rate_pct": 10.0,
+        "similarity": 0.624,
+        "weight": 0.024,
+        "confidence_grade": "B"
+      },
+      {
+        "brand": "Prime Energy",
+        "trial_rate_pct": 18.0,
+        "similarity": 0.585,
+        "weight": 0.019,
+        "confidence_grade": "C"
+      }
+    ],
+    "quality_warnings": [
+      "no strong same-subtype anchor \u2014 using fallback prior",
+      "only 0% of neighbors match query's market tier"
+    ],
+    "elapsed_ms": 163
+  },
+  {
+    "id": "fitsnack_protein_chips",
+    "bucket": "weird_sparse",
+    "archetype": "protein chip snack",
+    "ok": true,
+    "inferred_subtype": "default",
+    "forecast_pct": 15.2,
+    "low_pct": 6.7,
+    "high_pct": 23.7,
+    "confidence": "medium-low",
+    "coverage_tier": "thin",
+    "fallback_used": true,
+    "prior_source": "blended_rag_and_market_tier_median",
+    "eligible_count": 8,
+    "retrieved_count": 8,
+    "top_anchors": [
+      {
+        "brand": "Poppi Prebiotic Soda",
+        "trial_rate_pct": 23.0,
+        "similarity": 0.569,
+        "weight": 0.077,
+        "confidence_grade": "A"
+      },
+      {
+        "brand": "Athletic Brewing NA Beer",
+        "trial_rate_pct": 5.0,
+        "similarity": 0.518,
+        "weight": 0.055,
+        "confidence_grade": "B"
+      },
+      {
+        "brand": "Olipop Prebiotic Soda",
+        "trial_rate_pct": 27.0,
+        "similarity": 0.549,
+        "weight": 0.043,
+        "confidence_grade": "B"
+      },
+      {
+        "brand": "C4 Energy",
+        "trial_rate_pct": 10.0,
+        "similarity": 0.582,
+        "weight": 0.029,
+        "confidence_grade": "C"
+      },
+      {
+        "brand": "Prime Energy",
+        "trial_rate_pct": 18.0,
+        "similarity": 0.58,
+        "weight": 0.029,
+        "confidence_grade": "C"
+      }
+    ],
+    "quality_warnings": [
+      "thin coverage \u2014 relying partly on fallback prior"
+    ],
+    "elapsed_ms": 219
+  },
+  {
+    "id": "calmtea_functional",
+    "bucket": "weird_sparse",
+    "archetype": "functional adaptogen tea",
+    "ok": true,
+    "inferred_subtype": "default",
+    "forecast_pct": 10.0,
+    "low_pct": 1.5,
+    "high_pct": 18.5,
+    "confidence": "medium-low",
+    "coverage_tier": "thin",
+    "fallback_used": true,
+    "prior_source": "blended_rag_and_market_tier_median",
+    "eligible_count": 8,
+    "retrieved_count": 8,
+    "top_anchors": [
+      {
+        "brand": "Poppi Prebiotic Soda",
+        "trial_rate_pct": 23.0,
+        "similarity": 0.524,
+        "weight": 0.065,
+        "confidence_grade": "A"
+      },
+      {
+        "brand": "Athletic Brewing NA Beer",
+        "trial_rate_pct": 5.0,
+        "similarity": 0.513,
+        "weight": 0.038,
+        "confidence_grade": "B"
+      },
+      {
+        "brand": "Health-Ade Kombucha",
+        "trial_rate_pct": 10.0,
+        "similarity": 0.618,
+        "weight": 0.036,
+        "confidence_grade": "B"
+      },
+      {
+        "brand": "Celsius",
+        "trial_rate_pct": 14.0,
+        "similarity": 0.569,
+        "weight": 0.019,
+        "confidence_grade": "C"
+      },
+      {
+        "brand": "Prime Energy",
+        "trial_rate_pct": 18.0,
+        "similarity": 0.544,
+        "weight": 0.018,
+        "confidence_grade": "C"
+      }
+    ],
+    "quality_warnings": [
+      "thin coverage \u2014 relying partly on fallback prior"
+    ],
+    "elapsed_ms": 2532
+  },
+  {
+    "id": "beardboost_serum",
+    "bucket": "weird_sparse",
+    "archetype": "beard care serum",
+    "ok": true,
+    "inferred_subtype": "skincare_active",
+    "forecast_pct": 15.2,
+    "low_pct": 7.0,
+    "high_pct": 23.5,
+    "confidence": "medium-low",
+    "coverage_tier": "thin",
+    "fallback_used": true,
+    "prior_source": "blended_rag_and_global_dtc_median",
+    "eligible_count": 2,
+    "retrieved_count": 8,
+    "top_anchors": [
+      {
+        "brand": "The Ordinary Niacinamide",
+        "trial_rate_pct": 14.0,
+        "similarity": 0.405,
+        "weight": 0.017,
+        "confidence_grade": "B"
+      },
+      {
+        "brand": "Glossier Boy Brow",
+        "trial_rate_pct": 17.5,
+        "similarity": 0.477,
+        "weight": 0.01,
+        "confidence_grade": "B"
+      },
+      {
+        "brand": "Dollar Shave Club Starter Kit",
+        "trial_rate_pct": 16.5,
+        "similarity": 0.463,
+        "weight": 0.007,
+        "confidence_grade": "A"
+      },
+      {
+        "brand": "Liquid IV Hydration Multiplier",
+        "trial_rate_pct": 20.5,
+        "similarity": 0.386,
+        "weight": 0.007,
+        "confidence_grade": "A"
+      },
+      {
+        "brand": "Drunk Elephant Protini",
+        "trial_rate_pct": 5.5,
+        "similarity": 0.428,
+        "weight": 0.005,
+        "confidence_grade": "B"
+      }
+    ],
+    "quality_warnings": [
+      "thin coverage \u2014 relying partly on fallback prior",
+      "only 0% of neighbors match query's market tier"
+    ],
+    "elapsed_ms": 428
+  },
+  {
+    "id": "homemist_air_freshener",
+    "bucket": "weird_sparse",
+    "archetype": "smart home air freshener",
+    "ok": true,
+    "inferred_subtype": "default",
+    "forecast_pct": 7.5,
+    "low_pct": 0.1,
+    "high_pct": 17.5,
+    "confidence": "low",
+    "coverage_tier": "weak",
+    "fallback_used": true,
+    "prior_source": "fallback_market_tier_median",
+    "eligible_count": 2,
+    "retrieved_count": 8,
+    "top_anchors": [
+      {
+        "brand": "YETI Rambler 20oz",
+        "trial_rate_pct": 16.0,
+        "similarity": 0.428,
+        "weight": 0.053,
+        "confidence_grade": "A"
+      },
+      {
+        "brand": "Purple Original Mattress",
+        "trial_rate_pct": 3.0,
+        "similarity": 0.521,
+        "weight": 0.036,
+        "confidence_grade": "A"
+      },
+      {
+        "brand": "Casper Original Mattress",
+        "trial_rate_pct": 4.0,
+        "similarity": 0.472,
+        "weight": 0.034,
+        "confidence_grade": "A"
+      },
+      {
+        "brand": "Brooklinen Luxe Sheets",
+        "trial_rate_pct": 8.0,
+        "similarity": 0.445,
+        "weight": 0.026,
+        "confidence_grade": "B"
+      },
+      {
+        "brand": "Parachute Home Percale Sheets",
+        "trial_rate_pct": 5.5,
+        "similarity": 0.435,
+        "weight": 0.016,
+        "confidence_grade": "C"
+      }
+    ],
+    "quality_warnings": [
+      "no strong same-subtype anchor \u2014 using fallback prior"
+    ],
+    "elapsed_ms": 158
+  },
+  {
+    "id": "qiblasmart_prayer_mat",
+    "bucket": "weird_sparse",
+    "archetype": "smart prayer mat, sparse-coverage trust test",
+    "ok": true,
+    "inferred_subtype": "default",
+    "forecast_pct": 14.0,
+    "low_pct": 4.0,
+    "high_pct": 24.0,
+    "confidence": "low",
+    "coverage_tier": "weak",
+    "fallback_used": true,
+    "prior_source": "fallback_category_median",
+    "eligible_count": 5,
+    "retrieved_count": 8,
+    "top_anchors": [
+      {
+        "brand": "Oura Ring Gen 3",
+        "trial_rate_pct": 7.5,
+        "similarity": 0.466,
+        "weight": 0.016,
+        "confidence_grade": "B"
+      },
+      {
+        "brand": "Purple Original Mattress",
+        "trial_rate_pct": 3.0,
+        "similarity": 0.401,
+        "weight": 0.007,
+        "confidence_grade": "A"
+      },
+      {
+        "brand": "Eight Sleep Pod",
+        "trial_rate_pct": 3.0,
+        "similarity": 0.569,
+        "weight": 0.007,
+        "confidence_grade": "C"
+      },
+      {
+        "brand": "Casper Original Mattress",
+        "trial_rate_pct": 4.0,
+        "similarity": 0.36,
+        "weight": 0.007,
+        "confidence_grade": "A"
+      },
+      {
+        "brand": "Apple Watch Series 9",
+        "trial_rate_pct": 24.0,
+        "similarity": 0.477,
+        "weight": 0.005,
+        "confidence_grade": "A"
+      }
+    ],
+    "quality_warnings": [
+      "no strong same-subtype anchor \u2014 using fallback prior",
+      "only 0% of neighbors match query's market tier"
+    ],
+    "elapsed_ms": 176
+  }
+]

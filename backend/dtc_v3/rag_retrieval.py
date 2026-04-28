@@ -296,10 +296,19 @@ def _infer_query_subtype(product: ProductBrief) -> str:
             return "eyewear"
         return "default"
     
-    # Beauty
-    if cat == "beauty_skincare":
-        if any(x in text for x in ["razor", "shave"]):
+    # Beauty / personal care
+    # personal_care is aliased to beauty_skincare since the DB has no
+    # separate personal_care category — razor/shave/skincare records
+    # are all stored under beauty_skincare.
+    if cat in ("beauty_skincare", "personal_care"):
+        if any(x in text for x in ["razor", "shave", "shaving", "razor subscription"]):
             return "razor_subscription"
+        if any(x in text for x in ["vitamin c serum", "vitamin c", "ascorbic acid"]):
+            return "skincare_active"
+        if any(x in text for x in ["acne patch", "hydrocolloid", "pimple patch"]):
+            return "skincare_active"
+        if any(x in text for x in ["beard", "facial hair", "beard serum", "beard oil"]):
+            return "skincare_active"
         if any(x in text for x in ["brow", "eyebrow"]):
             return "brow_makeup"
         if any(x in text for x in ["niacinamide", "retinol", "active"]):

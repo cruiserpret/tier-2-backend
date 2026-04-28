@@ -35,7 +35,7 @@ from backend.dtc_v3.rag_retrieval import (
 from backend.dtc_v3.coverage_gate import assess_coverage
 
 CASES_PATH = _HERE / "eval_cases_v1.json"
-OUTPUT_PATH = _HERE / "eval_baseline_v1.json"
+OUTPUT_PATH = _HERE / "eval_baseline_v2_after_routing_fixes.json"
 
 
 def build_brief(payload: dict) -> ProductBrief:
