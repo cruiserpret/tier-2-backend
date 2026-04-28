@@ -1,104 +1,367 @@
 {
-  "anchored_on": [
-    {
-      "brand": "Four Sigmatic Mushroom Coffee",
-      "confidence_grade": "C",
-      "match_reason": "scale(venture_challenger)\u00d70.85, price\u00d70.7",
-      "trial_rate": 0.03
-    },
-    {
-      "brand": "MUD\\WTR Coffee Alternative",
-      "confidence_grade": "C",
-      "match_reason": "scale(venture_challenger)\u00d70.85, price\u00d70.7",
-      "trial_rate": 0.04
-    },
-    {
-      "brand": "Ryze Mushroom Coffee",
-      "confidence_grade": "D",
-      "match_reason": "scale(venture_challenger)\u00d70.85, price\u00d70.7",
-      "trial_rate": 0.055
-    },
-    {
-      "brand": "Poppi Prebiotic Soda",
-      "confidence_grade": "A",
-      "match_reason": "tier(challenger)\u00d70.65, scale(growth_challenger)\u00d70.85, price\u00d70.7, dist\u00d70.85, subtype(functional_soda)\u00d70.4",
-      "trial_rate": 0.23
-    },
-    {
-      "brand": "Liquid Death Mountain Water",
-      "confidence_grade": "B",
-      "match_reason": "tier(challenger)\u00d70.65, scale(growth_challenger)\u00d70.85, dist\u00d70.85, subtype(branded_water)\u00d70.4",
-      "trial_rate": 0.2
-    }
-  ],
-  "confidence": "medium",
-  "confidence_reasons": [
-    "neighbor trial rate variance 9.6pp (high needs \u22646pp)",
-    "capped at medium: neighbor variance 9.6pp exceeds 8pp"
-  ],
-  "counterfactuals": [
-    {
-      "delta_logit": 0.15,
-      "description": "Reduce $40 to $34",
-      "direction": "improves",
-      "label": "Lower price 15%",
-      "new_prediction_pct": 4.6
-    },
-    {
-      "delta_logit": 0.2,
-      "description": "Money-back guarantee or 30-day free trial reduces trust friction",
-      "direction": "improves",
-      "label": "Add risk-reversal guarantee",
-      "new_prediction_pct": 4.8
-    },
-    {
-      "delta_logit": 0.3,
-      "description": "Expand from DTC-only to Target/Walmart/grocery presence",
-      "direction": "improves",
-      "label": "Add retail distribution",
-      "new_prediction_pct": 5.3
-    }
-  ],
-  "diagnostics": {
-    "adjustment_applied": 0.0,
-    "coverage_tier": "strong",
-    "rag_prior": 0.04
+  "product": {
+    "name": "Mushroom Morning",
+    "product_name": "Mushroom Morning",
+    "description": "Mushroom coffee alternative with adaptogens for energy, focus, and lower caffeine.",
+    "price": 40,
+    "category": "food_beverage",
+    "demographic": "Wellness-oriented coffee drinkers and productivity-focused adults",
+    "competitors": [
+      {
+        "name": "MUDWTR"
+      },
+      {
+        "name": "Four Sigmatic"
+      },
+      {
+        "name": "Ryze"
+      }
+    ],
+    "market_tier_override": "premium_niche",
+    "distribution_hint": "dtc_led",
+    "exclude_brand": "Mushroom Morning"
   },
-  "downweighted_brands": [
-    {
-      "brand": "Poppi Prebiotic Soda",
-      "combined_penalty": 0.13,
-      "penalty_reasons": "tier(challenger)\u00d70.65, scale(growth_challenger)\u00d70.85, price\u00d70.7, dist\u00d70.85, subtype(functional_soda)\u00d70.4",
-      "trial_rate": 0.23
+  "forecast": {
+    "anchored_on": [
+      {
+        "brand": "Four Sigmatic Mushroom Coffee",
+        "confidence_grade": "C",
+        "match_reason": "scale(venture_challenger)\u00d70.85, price\u00d70.7",
+        "trial_rate": 0.03
+      },
+      {
+        "brand": "MUD\\WTR Coffee Alternative",
+        "confidence_grade": "C",
+        "match_reason": "scale(venture_challenger)\u00d70.85, price\u00d70.7",
+        "trial_rate": 0.04
+      },
+      {
+        "brand": "Ryze Mushroom Coffee",
+        "confidence_grade": "D",
+        "match_reason": "scale(venture_challenger)\u00d70.85, price\u00d70.7",
+        "trial_rate": 0.055
+      },
+      {
+        "brand": "Poppi Prebiotic Soda",
+        "confidence_grade": "A",
+        "match_reason": "tier(challenger)\u00d70.65, scale(growth_challenger)\u00d70.85, price\u00d70.7, dist\u00d70.85, subtype(functional_soda)\u00d70.4",
+        "trial_rate": 0.23
+      },
+      {
+        "brand": "Liquid Death Mountain Water",
+        "confidence_grade": "B",
+        "match_reason": "tier(challenger)\u00d70.65, scale(growth_challenger)\u00d70.85, dist\u00d70.85, subtype(branded_water)\u00d70.4",
+        "trial_rate": 0.2
+      }
+    ],
+    "confidence": "medium",
+    "confidence_reasons": [
+      "neighbor trial rate variance 9.6pp (high needs \u22646pp)",
+      "capped at medium: neighbor variance 9.6pp exceeds 8pp"
+    ],
+    "counterfactuals": [
+      {
+        "delta_logit": 0.15,
+        "description": "Reduce $40 to $34",
+        "direction": "improves",
+        "label": "Lower price 15%",
+        "new_prediction_pct": 4.6
+      },
+      {
+        "delta_logit": 0.2,
+        "description": "Money-back guarantee or 30-day free trial reduces trust friction",
+        "direction": "improves",
+        "label": "Add risk-reversal guarantee",
+        "new_prediction_pct": 4.8
+      },
+      {
+        "delta_logit": 0.3,
+        "description": "Expand from DTC-only to Target/Walmart/grocery presence",
+        "direction": "improves",
+        "label": "Add retail distribution",
+        "new_prediction_pct": 5.3
+      }
+    ],
+    "diagnostics": {
+      "adjustment_applied": 0.0,
+      "coverage_tier": "strong",
+      "rag_prior": 0.04
     },
-    {
-      "brand": "Liquid Death Mountain Water",
-      "combined_penalty": 0.19,
-      "penalty_reasons": "tier(challenger)\u00d70.65, scale(growth_challenger)\u00d70.85, dist\u00d70.85, subtype(branded_water)\u00d70.4",
-      "trial_rate": 0.2
+    "downweighted_brands": [
+      {
+        "brand": "Poppi Prebiotic Soda",
+        "combined_penalty": 0.13,
+        "penalty_reasons": "tier(challenger)\u00d70.65, scale(growth_challenger)\u00d70.85, price\u00d70.7, dist\u00d70.85, subtype(functional_soda)\u00d70.4",
+        "trial_rate": 0.23
+      },
+      {
+        "brand": "Liquid Death Mountain Water",
+        "combined_penalty": 0.19,
+        "penalty_reasons": "tier(challenger)\u00d70.65, scale(growth_challenger)\u00d70.85, dist\u00d70.85, subtype(branded_water)\u00d70.4",
+        "trial_rate": 0.2
+      },
+      {
+        "brand": "Athletic Brewing NA Beer",
+        "combined_penalty": 0.19,
+        "penalty_reasons": "tier(challenger)\u00d70.65, scale(growth_challenger)\u00d70.85, dist\u00d70.85, subtype(nonalcoholic_beer)\u00d70.4",
+        "trial_rate": 0.05
+      }
+    ],
+    "headline": "Low trial signal (4.0%) and weak buyer enthusiasm. Reconsider product-market fit before launching.",
+    "most_receptive_segment": "",
+    "simulation_id": "v3_f6ebe8d7",
+    "top_drivers": [],
+    "top_objections": [],
+    "trial_rate": {
+      "high": 0.09,
+      "low": 0.001,
+      "median": 0.04,
+      "percentage": 4.0
     },
-    {
-      "brand": "Athletic Brewing NA Beer",
-      "combined_penalty": 0.19,
-      "penalty_reasons": "tier(challenger)\u00d70.65, scale(growth_challenger)\u00d70.85, dist\u00d70.85, subtype(nonalcoholic_beer)\u00d70.4",
-      "trial_rate": 0.05
-    }
-  ],
-  "headline": "Low trial signal (4.0%) and weak buyer enthusiasm. Reconsider product-market fit before launching.",
-  "most_receptive_segment": "",
-  "simulation_id": "v3_fed0cbbd",
-  "top_drivers": [],
-  "top_objections": [],
-  "trial_rate": {
-    "high": 0.09,
-    "low": 0.001,
-    "median": 0.04,
-    "percentage": 4.0
+    "verdict": "do_not_launch_yet",
+    "version": "v3-lite",
+    "why_might_be_wrong": [
+      "Trial rates among comparable brands vary widely \u2014 true outcome may shift based on distribution and positioning specifics.",
+      "Trial rates among comparable brands vary widely \u2014 true outcome may shift based on distribution and positioning specifics."
+    ]
   },
-  "verdict": "do_not_launch_yet",
-  "version": "v3-lite",
-  "why_might_be_wrong": [
-    "Trial rates among comparable brands vary widely \u2014 true outcome may shift based on distribution and positioning specifics.",
-    "Trial rates among comparable brands vary widely \u2014 true outcome may shift based on distribution and positioning specifics."
-  ]
+  "agent_panel": {
+    "agent_count": 20,
+    "agents": [
+      {
+        "id": "agent_01",
+        "profile": "Tries everything, sends back what doesn't fit.",
+        "reason": "Solid bet given the comparable-brand anchors. I'd put it in my next order.",
+        "score": 0.62,
+        "segment": "Returns-and-refunds savvy",
+        "stance": "for",
+        "top_objection": "Want a money-back guarantee for first order."
+      },
+      {
+        "id": "agent_02",
+        "profile": "Was premium, now shopping mid-tier.",
+        "reason": "The retail/DTC distribution lines up; that's usually what makes or breaks trial.",
+        "score": 0.67,
+        "segment": "Price-tier downgrader",
+        "stance": "for",
+        "top_objection": "Need to confirm it's compatible with my current routine."
+      },
+      {
+        "id": "agent_03",
+        "profile": "Tracks sleep, supplements, recovery. Reads labels.",
+        "reason": "Anchor brands like Ryze Mushroom Coffee prove the category has real pull at this price.",
+        "score": 0.72,
+        "segment": "Health optimizer",
+        "stance": "for",
+        "top_objection": "Want to see one trial cycle before fully committing."
+      },
+      {
+        "id": "agent_04",
+        "profile": "Compares unit price. Questions DTC premiums.",
+        "reason": "Distribution and category fit match what worked for Poppi Prebiotic Soda \u2014 feels grounded.",
+        "score": 0.77,
+        "segment": "Cost-conscious skeptic",
+        "stance": "for",
+        "top_objection": "Need confirmation it lasts longer than Poppi Prebiotic Soda promised."
+      },
+      {
+        "id": "agent_05",
+        "profile": "Has 4+ active DTC subs. Cancels often.",
+        "reason": "Price is in line with what I already pay for Four Sigmatic Mushroom Coffee or its peers.",
+        "score": 0.82,
+        "segment": "Subscription veteran",
+        "stance": "for",
+        "top_objection": "Would prefer single-purchase before subscription."
+      },
+      {
+        "id": "agent_06",
+        "profile": "Trusts what's on Costco / Target shelves.",
+        "reason": "Comparable-brand evidence is strong; this is the type of launch I'd back.",
+        "score": 0.62,
+        "segment": "Retail-first shopper",
+        "stance": "for",
+        "top_objection": "Hope shipping doesn't slip during peak season."
+      },
+      {
+        "id": "agent_07",
+        "profile": "Tries new launches within 60 days.",
+        "reason": "Not against it \u2014 just need a reason to switch from what already works.",
+        "score": 0.45,
+        "segment": "Early adopter",
+        "stance": "neutral",
+        "top_objection": "Price-to-value ratio is borderline \u2014 could go either way."
+      },
+      {
+        "id": "agent_08",
+        "profile": "Stacks 3+ daily supplements.",
+        "reason": "Decent fit with Poppi Prebiotic Soda-style adoption, but I haven't seen enough of it yet.",
+        "score": 0.48,
+        "segment": "Wellness routine builder",
+        "stance": "neutral",
+        "top_objection": "Would prefer to see it on a retail shelf before committing."
+      },
+      {
+        "id": "agent_09",
+        "profile": "Buys what creators they trust use.",
+        "reason": "Open to it, but I'd want a sample or money-back guarantee before committing.",
+        "score": 0.51,
+        "segment": "Influencer-led buyer",
+        "stance": "neutral",
+        "top_objection": "Need a clearer use-case for my specific situation."
+      },
+      {
+        "id": "agent_10",
+        "profile": "Has the problem, doubts the solution.",
+        "reason": "Comparable-brand anchors look reasonable. Real test is whether it sticks.",
+        "score": 0.45,
+        "segment": "Skeptic with a need",
+        "stance": "neutral",
+        "top_objection": "Brand authenticity is hard to judge this early."
+      },
+      {
+        "id": "agent_11",
+        "profile": "Currently uses a comparable brand.",
+        "reason": "I'd consider it if the brand showed up consistently in my feed for 3 months.",
+        "score": 0.48,
+        "segment": "Brand-loyal incumbent user",
+        "stance": "neutral",
+        "top_objection": "Want to see how customer service handles complaints."
+      },
+      {
+        "id": "agent_12",
+        "profile": "Pays for fast shipping, hates lock-in.",
+        "reason": "The category is crowded; I don't have shelf-space (mental or physical) for another.",
+        "score": 0.32,
+        "segment": "Convenience prioritizer",
+        "stance": "against",
+        "top_objection": "Brand story doesn't differentiate from Poppi Prebiotic Soda."
+      },
+      {
+        "id": "agent_13",
+        "profile": "Reads studies. Knows actives.",
+        "reason": "I already use Four Sigmatic Mushroom Coffee; switching cost is real and the upside isn't obvious.",
+        "score": 0.2,
+        "segment": "Functional ingredient nerd",
+        "stance": "against",
+        "top_objection": "Subscription fatigue / no clear reason to switch."
+      },
+      {
+        "id": "agent_14",
+        "profile": "Buys for spouse / family.",
+        "reason": "Price feels high for what looks like another MUD\\WTR Coffee Alternative variant.",
+        "score": 0.24,
+        "segment": "Gift / household buyer",
+        "stance": "against",
+        "top_objection": "Loyal to MUD\\WTR Coffee Alternative; switching cost outweighs benefit."
+      },
+      {
+        "id": "agent_15",
+        "profile": "Lurks niche subreddits before buying.",
+        "reason": "Subscription fatigue \u2014 I've cancelled enough of these to know my pattern.",
+        "score": 0.28,
+        "segment": "Reddit researcher",
+        "stance": "against",
+        "top_objection": "Price is too high for marginal differentiation."
+      },
+      {
+        "id": "agent_16",
+        "profile": "Cares how it looks on the shelf / counter.",
+        "reason": "Differentiation is too thin against incumbent Poppi Prebiotic Soda-style brands.",
+        "score": 0.32,
+        "segment": "Aesthetic-driven buyer",
+        "stance": "against",
+        "top_objection": "Crowded category \u2014 too many lookalikes already."
+      },
+      {
+        "id": "agent_17",
+        "profile": "Buys small to test, large if it works.",
+        "reason": "Retail dominance of Four Sigmatic Mushroom Coffee makes a DTC-first launch hard for me to bother with.",
+        "score": 0.2,
+        "segment": "Trial-then-bulk buyer",
+        "stance": "against",
+        "top_objection": "No retail presence yet \u2014 DTC-only is friction."
+      },
+      {
+        "id": "agent_18",
+        "profile": "Has a strong reference price in their head.",
+        "reason": "Marketing claim doesn't match what comparable brands actually deliver.",
+        "score": 0.24,
+        "segment": "Price-anchored",
+        "stance": "against",
+        "top_objection": "Marketing claims feel exaggerated vs. comparable brands."
+      },
+      {
+        "id": "agent_19",
+        "profile": "Buys for measurable outcomes.",
+        "reason": "I'd rather wait for Ryze Mushroom Coffee to release a similar product than try this one.",
+        "score": 0.28,
+        "segment": "Performance-focused athlete",
+        "stance": "against",
+        "top_objection": "I'd rather stick with what's proven over what's new."
+      },
+      {
+        "id": "agent_20",
+        "profile": "Buys what works fast, no learning curve.",
+        "reason": "Friction outweighs upside; one more thing to manage in my routine.",
+        "score": 0.32,
+        "segment": "Time-pressed parent",
+        "stance": "against",
+        "top_objection": "Doesn't solve a problem I have right now."
+      }
+    ],
+    "consensus": "Forecast of 4.0% trial is grounded in comparable-brand evidence. Panel recommends 'do not launch yet'. Treat agent reasoning as explanation, not validation.",
+    "coverage_warning": "",
+    "mode": "template",
+    "most_receptive_segment": "Cost-conscious skeptic",
+    "risk_factors": [
+      "Same-category retail dominance by incumbents",
+      "DTC subscription fatigue compresses repeat",
+      "Differentiation may not survive shelf comparison"
+    ],
+    "rounds": [
+      {
+        "against_count": 9,
+        "avg_score": 0.42,
+        "for_count": 6,
+        "neutral_count": 5,
+        "round": 1,
+        "summary": "Panel reacted to the 4.0% comparable-anchored trial estimate. Stance split: 6 for / 5 neutral / 9 against. Initial enthusiasm tempered by typical DTC friction.",
+        "title": "First Reaction"
+      },
+      {
+        "against_count": 9,
+        "avg_score": 0.45,
+        "for_count": 6,
+        "neutral_count": 5,
+        "round": 2,
+        "summary": "Panel weighed the product against 5 anchored comparables. Discussion centered on whether differentiation justifies switching cost from incumbents.",
+        "title": "Comparable Comparison"
+      },
+      {
+        "against_count": 9,
+        "avg_score": 0.47,
+        "for_count": 6,
+        "neutral_count": 5,
+        "round": 3,
+        "summary": "Panel converged: trial rate of 4.0% is consistent with comparable-brand adoption patterns. Verdict aligns with 'do not launch yet'.",
+        "title": "Consensus"
+      }
+    ],
+    "seed": "39a5a08839591d00d973a1f31d0ee514ebae4f921bf9626510fadee0088f4285",
+    "top_drivers": [
+      "Comparable-brand precedent",
+      "Reasonable price-to-value",
+      "Distribution match",
+      "Category timing"
+    ],
+    "top_objections": [
+      "Subscription fatigue",
+      "Switching cost from incumbent",
+      "Differentiation unclear",
+      "Category skepticism"
+    ],
+    "winning_message": "Position against the strongest anchor (Four Sigmatic Mushroom Coffee) by leading with category-specific differentiation."
+  },
+  "cached_at": "2026-04-28T08:43:49.615921+00:00",
+  "version": "v3-lite-discussion-v1"
 }

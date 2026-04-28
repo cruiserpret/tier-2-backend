@@ -1,100 +1,363 @@
 {
-  "anchored_on": [
-    {
-      "brand": "Casper Original Mattress",
-      "confidence_grade": "A",
-      "match_reason": "scale(large_public)\u00d70.85",
-      "trial_rate": 0.04
-    },
-    {
-      "brand": "Purple Original Mattress",
-      "confidence_grade": "A",
-      "match_reason": "scale(large_public)\u00d70.85, dist\u00d70.85",
-      "trial_rate": 0.03
-    },
-    {
-      "brand": "Brooklinen Luxe Sheets",
-      "confidence_grade": "B",
-      "match_reason": "scale(growth_challenger)\u00d70.85, price\u00d70.7, subtype(bedding_premium)\u00d70.65",
-      "trial_rate": 0.08
-    },
-    {
-      "brand": "YETI Rambler 20oz",
-      "confidence_grade": "A",
-      "match_reason": "tier(premium_niche)\u00d70.65, scale(large_public)\u00d70.85, price\u00d70.7, dist\u00d70.85, subtype(premium_drinkware)\u00d70.4",
-      "trial_rate": 0.16
-    },
-    {
-      "brand": "Parachute Home Percale Sheets",
-      "confidence_grade": "C",
-      "match_reason": "tier(premium_niche)\u00d70.65, scale(venture_challenger)\u00d70.85, price\u00d70.7, subtype(bedding_premium)\u00d70.65",
-      "trial_rate": 0.055
-    }
-  ],
-  "confidence": "high",
-  "confidence_reasons": [],
-  "counterfactuals": [
-    {
-      "delta_logit": 0.15,
-      "description": "Reduce $1295 to $1101",
-      "direction": "improves",
-      "label": "Lower price 15%",
-      "new_prediction_pct": 4.6
-    },
-    {
-      "delta_logit": 0.2,
-      "description": "Money-back guarantee or 30-day free trial reduces trust friction",
-      "direction": "improves",
-      "label": "Add risk-reversal guarantee",
-      "new_prediction_pct": 4.8
-    },
-    {
-      "delta_logit": 0.3,
-      "description": "Expand from DTC-only to Target/Walmart/grocery presence",
-      "direction": "improves",
-      "label": "Add retail distribution",
-      "new_prediction_pct": 5.3
-    }
-  ],
-  "diagnostics": {
-    "adjustment_applied": 0.0,
-    "coverage_tier": "strong",
-    "rag_prior": 0.04
+  "product": {
+    "name": "LuxeFoam Mattress",
+    "product_name": "LuxeFoam Mattress",
+    "description": "Memory foam mattress in a box, premium tier, DTC.",
+    "price": 1295,
+    "category": "home_lifestyle",
+    "demographic": "Adults 25-45 furnishing first apartment or upgrading",
+    "competitors": [
+      {
+        "name": "Casper"
+      },
+      {
+        "name": "Purple"
+      },
+      {
+        "name": "Tuft & Needle"
+      }
+    ],
+    "market_tier_override": "challenger",
+    "distribution_hint": "dtc_led",
+    "exclude_brand": "LuxeFoam Mattress"
   },
-  "downweighted_brands": [
-    {
-      "brand": "Brooklinen Luxe Sheets",
-      "combined_penalty": 0.39,
-      "penalty_reasons": "scale(growth_challenger)\u00d70.85, price\u00d70.7, subtype(bedding_premium)\u00d70.65",
-      "trial_rate": 0.08
+  "forecast": {
+    "anchored_on": [
+      {
+        "brand": "Casper Original Mattress",
+        "confidence_grade": "A",
+        "match_reason": "scale(large_public)\u00d70.85",
+        "trial_rate": 0.04
+      },
+      {
+        "brand": "Purple Original Mattress",
+        "confidence_grade": "A",
+        "match_reason": "scale(large_public)\u00d70.85, dist\u00d70.85",
+        "trial_rate": 0.03
+      },
+      {
+        "brand": "Brooklinen Luxe Sheets",
+        "confidence_grade": "B",
+        "match_reason": "scale(growth_challenger)\u00d70.85, price\u00d70.7, subtype(bedding_premium)\u00d70.65",
+        "trial_rate": 0.08
+      },
+      {
+        "brand": "YETI Rambler 20oz",
+        "confidence_grade": "A",
+        "match_reason": "tier(premium_niche)\u00d70.65, scale(large_public)\u00d70.85, price\u00d70.7, dist\u00d70.85, subtype(premium_drinkware)\u00d70.4",
+        "trial_rate": 0.16
+      },
+      {
+        "brand": "Parachute Home Percale Sheets",
+        "confidence_grade": "C",
+        "match_reason": "tier(premium_niche)\u00d70.65, scale(venture_challenger)\u00d70.85, price\u00d70.7, subtype(bedding_premium)\u00d70.65",
+        "trial_rate": 0.055
+      }
+    ],
+    "confidence": "high",
+    "confidence_reasons": [],
+    "counterfactuals": [
+      {
+        "delta_logit": 0.15,
+        "description": "Reduce $1295 to $1101",
+        "direction": "improves",
+        "label": "Lower price 15%",
+        "new_prediction_pct": 4.6
+      },
+      {
+        "delta_logit": 0.2,
+        "description": "Money-back guarantee or 30-day free trial reduces trust friction",
+        "direction": "improves",
+        "label": "Add risk-reversal guarantee",
+        "new_prediction_pct": 4.8
+      },
+      {
+        "delta_logit": 0.3,
+        "description": "Expand from DTC-only to Target/Walmart/grocery presence",
+        "direction": "improves",
+        "label": "Add retail distribution",
+        "new_prediction_pct": 5.3
+      }
+    ],
+    "diagnostics": {
+      "adjustment_applied": 0.0,
+      "coverage_tier": "strong",
+      "rag_prior": 0.04
     },
-    {
-      "brand": "YETI Rambler 20oz",
-      "combined_penalty": 0.13,
-      "penalty_reasons": "tier(premium_niche)\u00d70.65, scale(large_public)\u00d70.85, price\u00d70.7, dist\u00d70.85, subtype(premium_drinkware)\u00d70.4",
-      "trial_rate": 0.16
+    "downweighted_brands": [
+      {
+        "brand": "Brooklinen Luxe Sheets",
+        "combined_penalty": 0.39,
+        "penalty_reasons": "scale(growth_challenger)\u00d70.85, price\u00d70.7, subtype(bedding_premium)\u00d70.65",
+        "trial_rate": 0.08
+      },
+      {
+        "brand": "YETI Rambler 20oz",
+        "combined_penalty": 0.13,
+        "penalty_reasons": "tier(premium_niche)\u00d70.65, scale(large_public)\u00d70.85, price\u00d70.7, dist\u00d70.85, subtype(premium_drinkware)\u00d70.4",
+        "trial_rate": 0.16
+      },
+      {
+        "brand": "Parachute Home Percale Sheets",
+        "combined_penalty": 0.25,
+        "penalty_reasons": "tier(premium_niche)\u00d70.65, scale(venture_challenger)\u00d70.85, price\u00d70.7, subtype(bedding_premium)\u00d70.65",
+        "trial_rate": 0.055
+      }
+    ],
+    "headline": "Low trial signal (4.0%) and weak buyer enthusiasm. Reconsider product-market fit before launching.",
+    "most_receptive_segment": "",
+    "simulation_id": "v3_a1d3546d",
+    "top_drivers": [],
+    "top_objections": [],
+    "trial_rate": {
+      "high": 0.0647,
+      "low": 0.0153,
+      "median": 0.04,
+      "percentage": 4.0
     },
-    {
-      "brand": "Parachute Home Percale Sheets",
-      "combined_penalty": 0.25,
-      "penalty_reasons": "tier(premium_niche)\u00d70.65, scale(venture_challenger)\u00d70.85, price\u00d70.7, subtype(bedding_premium)\u00d70.65",
-      "trial_rate": 0.055
-    }
-  ],
-  "headline": "Low trial signal (4.0%) and weak buyer enthusiasm. Reconsider product-market fit before launching.",
-  "most_receptive_segment": "",
-  "simulation_id": "v3_56467eeb",
-  "top_drivers": [],
-  "top_objections": [],
-  "trial_rate": {
-    "high": 0.0647,
-    "low": 0.0153,
-    "median": 0.04,
-    "percentage": 4.0
+    "verdict": "do_not_launch_yet",
+    "version": "v3-lite",
+    "why_might_be_wrong": [
+      "Forecast is directional \u2014 actual launch outcome depends on execution, creative, channel mix, and seasonality."
+    ]
   },
-  "verdict": "do_not_launch_yet",
-  "version": "v3-lite",
-  "why_might_be_wrong": [
-    "Forecast is directional \u2014 actual launch outcome depends on execution, creative, channel mix, and seasonality."
-  ]
+  "agent_panel": {
+    "agent_count": 20,
+    "agents": [
+      {
+        "id": "agent_01",
+        "profile": "Lifestyle fit > price.",
+        "reason": "Anchor brands like Casper Original Mattress prove the category has real pull at this price.",
+        "score": 0.62,
+        "segment": "Urban professional",
+        "stance": "for",
+        "top_objection": "Want to see one trial cycle before fully committing."
+      },
+      {
+        "id": "agent_02",
+        "profile": "Buys family-size, retail-first.",
+        "reason": "Distribution and category fit match what worked for Purple Original Mattress \u2014 feels grounded.",
+        "score": 0.67,
+        "segment": "Suburban household",
+        "stance": "for",
+        "top_objection": "Need confirmation it lasts longer than Purple Original Mattress promised."
+      },
+      {
+        "id": "agent_03",
+        "profile": "Doesn't know category norms yet.",
+        "reason": "Price is in line with what I already pay for Brooklinen Luxe Sheets or its peers.",
+        "score": 0.72,
+        "segment": "Beginner / first-timer",
+        "stance": "for",
+        "top_objection": "Would prefer single-purchase before subscription."
+      },
+      {
+        "id": "agent_04",
+        "profile": "New life stage triggered the search.",
+        "reason": "Comparable-brand evidence is strong; this is the type of launch I'd back.",
+        "score": 0.77,
+        "segment": "Aging into category",
+        "stance": "for",
+        "top_objection": "Hope shipping doesn't slip during peak season."
+      },
+      {
+        "id": "agent_05",
+        "profile": "Replacing an old habit (alcohol, soda, coffee).",
+        "reason": "If Casper Original Mattress hits the trial rate it does, this product is in striking range.",
+        "score": 0.82,
+        "segment": "Quitting another category",
+        "stance": "for",
+        "top_objection": "Want at least 60 days of consistent supply."
+      },
+      {
+        "id": "agent_06",
+        "profile": "Tried 2+ alternatives, looking for next.",
+        "reason": "I'd try this once: the comparable-brand math is reasonable and the price isn't crazy.",
+        "score": 0.62,
+        "segment": "Performance plateau",
+        "stance": "for",
+        "top_objection": "Need to verify retail pricing matches DTC."
+      },
+      {
+        "id": "agent_07",
+        "profile": "Buying for a specific bounce-back.",
+        "reason": "Open to it, but I'd want a sample or money-back guarantee before committing.",
+        "score": 0.45,
+        "segment": "Recovering from injury / setback",
+        "stance": "neutral",
+        "top_objection": "Need a clearer use-case for my specific situation."
+      },
+      {
+        "id": "agent_08",
+        "profile": "Doesn't need it, but it fits the identity.",
+        "reason": "Comparable-brand anchors look reasonable. Real test is whether it sticks.",
+        "score": 0.48,
+        "segment": "Lifestyle adjacent",
+        "stance": "neutral",
+        "top_objection": "Brand authenticity is hard to judge this early."
+      },
+      {
+        "id": "agent_09",
+        "profile": "Only buys on promo.",
+        "reason": "I'd consider it if the brand showed up consistently in my feed for 3 months.",
+        "score": 0.51,
+        "segment": "Flash-sale watcher",
+        "stance": "neutral",
+        "top_objection": "Want to see how customer service handles complaints."
+      },
+      {
+        "id": "agent_10",
+        "profile": "Wants stacked discounts, never single-item.",
+        "reason": "On the fence \u2014 the category is right but the moment isn't urgent for me.",
+        "score": 0.45,
+        "segment": "Bundle hunter",
+        "stance": "neutral",
+        "top_objection": "Need more time to evaluate vs. existing alternatives."
+      },
+      {
+        "id": "agent_11",
+        "profile": "Cycles products every 30-60 days.",
+        "reason": "Interested but waiting on independent reviews before pulling the trigger.",
+        "score": 0.48,
+        "segment": "Routine experimenter",
+        "stance": "neutral",
+        "top_objection": "Not sure it's better than what I'm already using."
+      },
+      {
+        "id": "agent_12",
+        "profile": "Won't switch unless 2x value.",
+        "reason": "Price feels high for what looks like another YETI Rambler 20oz variant.",
+        "score": 0.32,
+        "segment": "Loyalist of incumbent",
+        "stance": "against",
+        "top_objection": "Loyal to YETI Rambler 20oz; switching cost outweighs benefit."
+      },
+      {
+        "id": "agent_13",
+        "profile": "Whatever's cheapest with decent reviews.",
+        "reason": "Subscription fatigue \u2014 I've cancelled enough of these to know my pattern.",
+        "score": 0.2,
+        "segment": "Brand-agnostic value buyer",
+        "stance": "against",
+        "top_objection": "Price is too high for marginal differentiation."
+      },
+      {
+        "id": "agent_14",
+        "profile": "Tracks everything; looking for marginal gain.",
+        "reason": "Differentiation is too thin against incumbent Purple Original Mattress-style brands.",
+        "score": 0.24,
+        "segment": "Hardcore optimizer",
+        "stance": "against",
+        "top_objection": "Crowded category \u2014 too many lookalikes already."
+      },
+      {
+        "id": "agent_15",
+        "profile": "Saw an ad, half-interested.",
+        "reason": "Retail dominance of Brooklinen Luxe Sheets makes a DTC-first launch hard for me to bother with.",
+        "score": 0.28,
+        "segment": "Casual curious",
+        "stance": "against",
+        "top_objection": "No retail presence yet \u2014 DTC-only is friction."
+      },
+      {
+        "id": "agent_16",
+        "profile": "Used something similar 2 yrs ago, dropped it.",
+        "reason": "Marketing claim doesn't match what comparable brands actually deliver.",
+        "score": 0.32,
+        "segment": "Lapsed user",
+        "stance": "against",
+        "top_objection": "Marketing claims feel exaggerated vs. comparable brands."
+      },
+      {
+        "id": "agent_17",
+        "profile": "Recently changed needs.",
+        "reason": "I'd rather wait for Casper Original Mattress to release a similar product than try this one.",
+        "score": 0.2,
+        "segment": "New parent / lifestage shift",
+        "stance": "against",
+        "top_objection": "I'd rather stick with what's proven over what's new."
+      },
+      {
+        "id": "agent_18",
+        "profile": "Was out, now back in.",
+        "reason": "Friction outweighs upside; one more thing to manage in my routine.",
+        "score": 0.24,
+        "segment": "Returning to category",
+        "stance": "against",
+        "top_objection": "Doesn't solve a problem I have right now."
+      },
+      {
+        "id": "agent_19",
+        "profile": "Wants the lifestyle the brand sells.",
+        "reason": "Existing alternatives serve me \u2014 I'd need a 2x reason, not a 1.1x reason.",
+        "score": 0.28,
+        "segment": "Aspirational buyer",
+        "stance": "against",
+        "top_objection": "Reviews aren't strong enough to justify a try."
+      },
+      {
+        "id": "agent_20",
+        "profile": "Knows they should, hasn't yet.",
+        "reason": "The category is crowded; I don't have shelf-space (mental or physical) for another.",
+        "score": 0.32,
+        "segment": "Guilt buyer",
+        "stance": "against",
+        "top_objection": "Brand story doesn't differentiate from YETI Rambler 20oz."
+      }
+    ],
+    "consensus": "Forecast of 4.0% trial is grounded in comparable-brand evidence. Panel recommends 'do not launch yet'. Treat agent reasoning as explanation, not validation.",
+    "coverage_warning": "",
+    "mode": "template",
+    "most_receptive_segment": "Aging into category",
+    "risk_factors": [
+      "Same-category retail dominance by incumbents",
+      "DTC subscription fatigue compresses repeat",
+      "Differentiation may not survive shelf comparison"
+    ],
+    "rounds": [
+      {
+        "against_count": 9,
+        "avg_score": 0.42,
+        "for_count": 6,
+        "neutral_count": 5,
+        "round": 1,
+        "summary": "Panel reacted to the 4.0% comparable-anchored trial estimate. Stance split: 6 for / 5 neutral / 9 against. Initial enthusiasm tempered by typical DTC friction.",
+        "title": "First Reaction"
+      },
+      {
+        "against_count": 9,
+        "avg_score": 0.45,
+        "for_count": 6,
+        "neutral_count": 5,
+        "round": 2,
+        "summary": "Panel weighed the product against 5 anchored comparables. Discussion centered on whether differentiation justifies switching cost from incumbents.",
+        "title": "Comparable Comparison"
+      },
+      {
+        "against_count": 9,
+        "avg_score": 0.47,
+        "for_count": 6,
+        "neutral_count": 5,
+        "round": 3,
+        "summary": "Panel converged: trial rate of 4.0% is consistent with comparable-brand adoption patterns. Verdict aligns with 'do not launch yet'.",
+        "title": "Consensus"
+      }
+    ],
+    "seed": "c58b7412bcbc4d19f8063a19b1e1bf944fc51443f6a9b51b1f72a9f86361d13a",
+    "top_drivers": [
+      "Comparable-brand precedent",
+      "Reasonable price-to-value",
+      "Distribution match",
+      "Category timing"
+    ],
+    "top_objections": [
+      "Subscription fatigue",
+      "Switching cost from incumbent",
+      "Differentiation unclear",
+      "Category skepticism"
+    ],
+    "winning_message": "Position against the strongest anchor (Casper Original Mattress) by leading with category-specific differentiation."
+  },
+  "cached_at": "2026-04-28T08:43:50.734433+00:00",
+  "version": "v3-lite-discussion-v1"
 }
