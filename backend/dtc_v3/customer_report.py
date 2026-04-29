@@ -64,6 +64,12 @@ class CustomerReport:
     adjustment_applied: float
     coverage_tier: str
 
+    # Phase 1 — Evidence Panel + Confidence Ledger
+    # New richer evidence system. Old anchored_on / confidence_reasons
+    # remain as backward-compatible projections.
+    evidence_buckets: dict | None = None
+    confidence_ledger: list[dict] | None = None
+
 
 # ═══════════════════════════════════════════════════════════════════════
 # VERDICT LOGIC
@@ -359,6 +365,7 @@ def build_customer_report(
     top_drivers: list[str] | None = None,
     top_objections: list[str] | None = None,
     most_receptive_segment: str = "",
+    record_by_brand: dict | None = None,
 ) -> CustomerReport:
     """
     Build full customer-facing report from forecast + product.
@@ -386,6 +393,28 @@ def build_customer_report(
     # 5. Counterfactuals
     cfs = generate_counterfactuals(forecast, forecast.persona_signals, product)
 
+    # 6. Phase 1 — Evidence buckets (Forecast Anchors / Candidate /
+    #    Exploratory). Display-only classification. No forecast math
+    #    changes. Requires record_by_brand lookup map (Option B per
+    #    Apr 29 friend ruling); if not provided, buckets stay None
+    #    and the old anchored_on field is the only display source.
+    evidence_buckets = None
+    confidence_ledger = None
+    if record_by_brand is not None:
+        from .evidence import classify_evidence_buckets
+        from .confidence_ledger import build_confidence_ledger
+        evidence_buckets = classify_evidence_buckets(
+            forecast=forecast,
+            product=product,
+            record_by_brand=record_by_brand,
+        )
+        confidence_ledger = build_confidence_ledger(
+            forecast=forecast,
+            product=product,
+            evidence_buckets=evidence_buckets,
+            record_by_brand=record_by_brand,
+        )
+
     return CustomerReport(
         verdict=verdict,
         headline=headline,
@@ -404,6 +433,8 @@ def build_customer_report(
         rag_prior=forecast.rag_prior,
         adjustment_applied=forecast.adjustment_applied,
         coverage_tier=coverage_tier,
+        evidence_buckets=evidence_buckets,
+        confidence_ledger=confidence_ledger,
     )
 
 
