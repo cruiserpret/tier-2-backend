@@ -2228,9 +2228,15 @@ footer.app-footer {
     print-color-adjust: exact;
   }
 
-  /* Hide everything that's NOT inside .print-report */
-  .top-nav,
+  /* Hide all top-level screen layout — per friend Apr 30 ruling,
+     only .print-report should print. Replaces previous opt-in allowlist
+     which left screen components like ResultCard, Counterfactuals,
+     EvidencePanel, ConfidenceLedger, EvidenceGapCard, report-rounds,
+     DeterminismProof leaking into the PDF. */
+  .masthead,
+  .report-sidebar,
   .app-footer,
+  .top-nav,
   .beta-banner,
   .btn,
   .verdict-filter-bar,
@@ -2238,12 +2244,18 @@ footer.app-footer {
   .show-objection-toggle,
   .show-more-toggle,
   .panel-show-all,
-  .panel-source-badge,
-  .report-sidebar {
+  .panel-source-badge {
+    display: none !important;
+  }
+  /* Hide every direct child of .report-main EXCEPT the print template.
+     This catches all screen components inside report-main without
+     needing to enumerate them individually. */
+  .report-main > *:not(.print-report) {
     display: none !important;
   }
 
-  /* Show the print-only template */
+  /* Show the print-only template (defensive — explicit display:block
+     so .print-report cannot be accidentally hidden by another rule) */
   .print-report {
     display: block !important;
     background: #ffffff !important;
