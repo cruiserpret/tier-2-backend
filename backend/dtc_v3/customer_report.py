@@ -366,6 +366,8 @@ def build_customer_report(
     top_objections: list[str] | None = None,
     most_receptive_segment: str = "",
     record_by_brand: dict | None = None,
+    candidate_neighbors: list | None = None,
+    inferred_subtype: str | None = None,
 ) -> CustomerReport:
     """
     Build full customer-facing report from forecast + product.
@@ -407,12 +409,15 @@ def build_customer_report(
             forecast=forecast,
             product=product,
             record_by_brand=record_by_brand,
+            candidate_neighbors=candidate_neighbors,
+            inferred_subtype=inferred_subtype,
         )
         confidence_ledger = build_confidence_ledger(
             forecast=forecast,
             product=product,
             evidence_buckets=evidence_buckets,
             record_by_brand=record_by_brand,
+            inferred_subtype=inferred_subtype,
         )
 
     return CustomerReport(
