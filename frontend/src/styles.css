@@ -2067,3 +2067,151 @@ footer.app-footer {
     justify-self: start;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════
+   PRINT EXPORT — friend's spec (Phase 3)
+   Parallel print-only template (.print-report) replaces the live UI.
+   No CSS vars, no dark theme, no animation, no opacity tricks.
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* Hide the print-only block on screen */
+@media screen {
+  .print-report {
+    display: none !important;
+  }
+}
+
+@media print {
+  @page {
+    size: letter;
+    margin: 0.5in;
+  }
+
+  html,
+  body {
+    background: #ffffff !important;
+    color: #111111 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* Hide everything that's NOT inside .print-report */
+  .top-nav,
+  .app-footer,
+  .beta-banner,
+  .btn,
+  .verdict-filter-bar,
+  .agent-show-more-btn,
+  .show-objection-toggle,
+  .show-more-toggle,
+  .panel-show-all,
+  .panel-source-badge,
+  .report-sidebar {
+    display: none !important;
+  }
+
+  /* Show the print-only template */
+  .print-report {
+    display: block !important;
+    background: #ffffff !important;
+    color: #111111 !important;
+    font-family: Arial, Helvetica, sans-serif !important;
+    font-size: 11pt !important;
+    line-height: 1.4 !important;
+  }
+
+  /* Friend's nuclear cascade: every descendant of .print-report
+     is forced to dark-on-white, fully visible, fully opaque */
+  .print-report,
+  .print-report * {
+    color: #111111 !important;
+    background: #ffffff !important;
+    background-color: #ffffff !important;
+    opacity: 1 !important;
+    visibility: visible !important;
+    text-shadow: none !important;
+    box-shadow: none !important;
+    filter: none !important;
+    mix-blend-mode: normal !important;
+    -webkit-text-fill-color: #111111 !important;
+  }
+
+  /* Section header */
+  .print-agent-panel {
+    break-before: page;
+    page-break-before: always;
+  }
+  .print-agent-panel h2 {
+    font-size: 18pt !important;
+    font-weight: 700 !important;
+    margin: 0 0 16px 0 !important;
+    padding-bottom: 8px !important;
+    border-bottom: 2px solid #222222 !important;
+  }
+
+  /* Agent card */
+  .print-agent-card {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+    border: 1px solid #cccccc !important;
+    border-radius: 6px !important;
+    padding: 12px 14px !important;
+    margin: 0 0 14px 0 !important;
+    background: #ffffff !important;
+  }
+  .print-agent-header h3 {
+    font-size: 13pt !important;
+    margin: 0 0 4px 0 !important;
+    font-weight: 700 !important;
+  }
+  .print-agent-header p {
+    margin: 2px 0 !important;
+    font-size: 10pt !important;
+    color: #333333 !important;
+  }
+  .print-agent-profile {
+    font-style: italic !important;
+    margin: 6px 0 8px 0 !important;
+    color: #444444 !important;
+    font-size: 10pt !important;
+  }
+
+  /* Round responses */
+  .print-agent-round {
+    margin-top: 8px !important;
+    padding-top: 6px !important;
+    border-top: 1px solid #dddddd !important;
+  }
+  .print-agent-round h4 {
+    font-size: 10pt !important;
+    margin: 0 0 3px 0 !important;
+    font-weight: 700 !important;
+    color: #111111 !important;
+  }
+  .print-agent-round p {
+    margin: 0 !important;
+    font-size: 10pt !important;
+    color: #222222 !important;
+  }
+
+  /* Extras */
+  .print-agent-extra {
+    margin: 6px 0 0 0 !important;
+    font-size: 10pt !important;
+    color: #333333 !important;
+  }
+
+  /* Page header/footer */
+  @page {
+    @top-left {
+      content: "Assembly Market Report";
+      font-size: 8pt;
+      color: #888;
+    }
+    @top-right {
+      content: counter(page) " / " counter(pages);
+      font-size: 8pt;
+      color: #888;
+    }
+  }
+}

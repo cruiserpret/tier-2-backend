@@ -4,6 +4,7 @@ import { getSim } from "../lib/simulationStore";
 import type { SimulationRecord } from "../types";
 import { ResultCard } from "../components/ResultCard";
 import { Counterfactuals } from "../components/Counterfactuals";
+import { PrintAgentPanel } from "../components/PrintAgentPanel";
 import { DeterminismProof } from "../components/DeterminismProof";
 
 export function ReportView() {
@@ -45,6 +46,9 @@ export function ReportView() {
         <div className="report-main">
           <ResultCard data={f} />
           <Counterfactuals cfs={f.counterfactuals} />
+          <div className="print-report">
+            <PrintAgentPanel agents={sim.agent_panel?.agents ?? []} />
+          </div>
           {sim.agent_panel?.rounds && sim.agent_panel.rounds.length > 0 && (
             <div className="report-rounds">
               <div className="report-card-eyebrow">Buyer Panel Discussion Rounds</div>
@@ -102,8 +106,15 @@ export function ReportView() {
             <button
               className="btn btn-ghost"
               style={{ width: "100%", justifyContent: "center", marginBottom: 8 }}
-              onClick={() => window.print()}
-            >↓ Print / Save PDF</button>
+              onClick={async () => {
+                // Friend's print timing guard: ensure DOM/fonts ready before
+                // browser captures the print preview.
+                await document.fonts.ready;
+                await new Promise((r) => requestAnimationFrame(r));
+                await new Promise((r) => requestAnimationFrame(r));
+                window.print();
+              }}
+            >↓ Save as PDF</button>
             <button
               className="btn btn-primary"
               style={{ width: "100%", justifyContent: "center" }}
