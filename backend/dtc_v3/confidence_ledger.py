@@ -190,7 +190,8 @@ def build_confidence_ledger(
             entries.append(_entry(
                 "negative",
                 "category_subtype_mismatch",
-                "Some forecast anchors are adjacent-category matches, not direct same-subtype matches.",
+                "Some forecast anchors are adjacent or weak category matches, "
+                "so this estimate should be treated as directional.",
             ))
 
         # VARIANCE
