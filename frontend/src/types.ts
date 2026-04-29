@@ -45,6 +45,49 @@ export interface ForecastResponse {
   top_objections: string[];
   most_receptive_segment: string;
   diagnostics: { rag_prior: number; adjustment_applied: number; coverage_tier: string };
+
+  // Phase 1 — Evidence Panel + Confidence Ledger (added Apr 30)
+  // Optional because cached demos pre-Phase-1 won't have these.
+  // Frontend falls back to anchored_on when absent (Call 5=A).
+  evidence_buckets?: EvidenceBuckets;
+  confidence_ledger?: LedgerEntry[];
+}
+
+// Phase 1 — Evidence types (added Apr 30 for P1.6)
+
+export type AnchorStrength = "direct" | "adjacent" | "weak";
+
+export type EvidenceBucketKind =
+  | "forecast_anchor"
+  | "candidate_comparable"
+  | "fallback_neighbor"
+  | "exploratory_comparable";
+
+export interface EvidenceItem {
+  brand: string;
+  similarity: number;
+  trial_rate: number;
+  bucket: EvidenceBucketKind;
+  same_category_match: boolean;
+  same_subtype_match: boolean;
+  anchor_strength: AnchorStrength | null;
+  used_in_forecast: boolean;
+  display_warning: string | null;
+}
+
+export interface EvidenceBuckets {
+  forecast_anchors: EvidenceItem[];
+  candidate_comparables: EvidenceItem[];
+  fallback_neighbors: EvidenceItem[];
+  exploratory_comparables: EvidenceItem[];
+}
+
+export type LedgerKind = "positive" | "negative" | "neutral";
+
+export interface LedgerEntry {
+  kind: LedgerKind;
+  signal: string;
+  text: string;
 }
 
 export interface ProductPayload {
