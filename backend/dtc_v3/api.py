@@ -19,6 +19,41 @@ from .rag_retrieval import (
     retrieve_neighbors, _infer_query_subtype, _infer_query_market_structure
 )
 from .coverage_gate import assess_coverage
+from .ground_truth_db import GROUND_TRUTH_DB
+from .evidence import _normalize_brand_for_lookup
+
+
+# ── Phase 1 helper: capture forecast core for /discuss mutation guard ──
+def _extract_forecast_core(forecast_obj: dict) -> dict:
+    """Extract the trust-critical forecast fields for mutation comparison.
+
+    Per friend Apr 30 ruling: /discuss must never mutate trial_rate,
+    confidence, verdict, fallback_used, or coverage_tier — neither in
+    the input forecast dict (in-place) nor in the response forecast.
+    """
+    if not isinstance(forecast_obj, dict):
+        return {}
+    diagnostics = forecast_obj.get("diagnostics", {}) or {}
+    nested_forecast = forecast_obj.get("forecast", {}) or {}
+    return {
+        "trial_rate": forecast_obj.get("trial_rate"),
+        "confidence": forecast_obj.get("confidence"),
+        "verdict": forecast_obj.get("verdict"),
+        "fallback_used": (
+            forecast_obj.get("fallback_used")
+            if forecast_obj.get("fallback_used") is not None
+            else (diagnostics.get("fallback_used")
+                  if diagnostics.get("fallback_used") is not None
+                  else nested_forecast.get("fallback_used"))
+        ),
+        "coverage_tier": (
+            forecast_obj.get("coverage_tier")
+            if forecast_obj.get("coverage_tier") is not None
+            else (diagnostics.get("coverage_tier")
+                  if diagnostics.get("coverage_tier") is not None
+                  else nested_forecast.get("coverage_tier"))
+        ),
+    }
 
 
 api_v3 = Blueprint("dtc_v3", __name__, url_prefix="/api/dtc_v3")
@@ -72,13 +107,37 @@ def create_forecast():
     except Exception as e:
         return jsonify({"error": f"Forecast failed: {e}"}), 500
 
-    # ── Get coverage tier for verdict ──
+    # ── Get coverage tier for verdict (k=6 unchanged — coverage_tier
+    #    flows into verdict, so this call is NOT display-only) ──
     neighbors = retrieve_neighbors(brief, k=6, exclude_brand=exclude_brand)
     subtype = _infer_query_subtype(brief)
     q_tier, _, _, _ = _infer_query_market_structure(brief)
     coverage = assess_coverage(neighbors, subtype, brief.category, q_tier)
 
-    # ── Build customer report ──
+    # ── Phase 1: separate display-only retrieval for Evidence Panel
+    #    candidate pool (per friend Apr 30 ruling — keep coverage path
+    #    untouched, do display retrieval as a separate call). ──
+    candidate_pool = retrieve_neighbors(brief, k=12, exclude_brand=exclude_brand)
+
+    # Build record_by_brand lookup map (Option B per friend Apr 29).
+    record_by_brand: dict = {}
+    for _r in GROUND_TRUTH_DB:
+        record_by_brand[_normalize_brand_for_lookup(_r.brand)] = _r
+        for _alias in (getattr(_r, "aliases", None) or []):
+            record_by_brand[_normalize_brand_for_lookup(_alias)] = _r
+
+    # candidate_neighbors: 0.30 <= sim < 0.45, NOT already used in forecast math.
+    used_brand_keys = {
+        _normalize_brand_for_lookup(n.brand) for n in f.neighbors
+    }
+    candidate_neighbors = [
+        n for n in candidate_pool
+        if 0.30 <= n.similarity < 0.45
+        and _normalize_brand_for_lookup(n.brand) not in used_brand_keys
+    ][:5]
+
+    # ── Build customer report (classifiers run ONCE inside the report
+    #    builder per friend's Apr 30 ruling — no double classification). ──
     report = build_customer_report(
         f, brief,
         coverage_tier=coverage["tier"],
@@ -86,6 +145,9 @@ def create_forecast():
         top_drivers=data.get("top_drivers", []),
         top_objections=data.get("top_objections", []),
         most_receptive_segment=data.get("most_receptive_segment", ""),
+        record_by_brand=record_by_brand,
+        candidate_neighbors=candidate_neighbors,
+        inferred_subtype=subtype,
     )
 
     # ── Generate ID + cache ──
@@ -126,6 +188,9 @@ def create_forecast():
         "top_drivers": report.top_drivers,
         "top_objections": report.top_objections,
         "most_receptive_segment": report.most_receptive_segment,
+        # Phase 1 — Evidence Panel + Confidence Ledger
+        "evidence_buckets": report.evidence_buckets,
+        "confidence_ledger": report.confidence_ledger,
         "diagnostics": {
             "rag_prior": round(report.rag_prior, 4),
             "adjustment_applied": round(report.adjustment_applied, 4),
@@ -226,11 +291,74 @@ def create_discussion():
             "got": mode,
         }), 400
 
+    # ── Phase 1: capture forecast core BEFORE generate_discussion ──
+    # Per friend Apr 30 ruling: guard at the API trust boundary against
+    # both in-place mutation of the input forecast dict AND mutation of
+    # result["forecast"]. Both must be checked.
+    captured_core = _extract_forecast_core(forecast)
+
     try:
         result = generate_discussion(product, forecast, agent_count, mode=mode)
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
     except Exception as e:
         return jsonify({"error": f"Discussion failed: {e}"}), 500
+
+    # ── Phase 1: verify forecast core was not mutated ──
+    observed_input_core = _extract_forecast_core(forecast)
+    observed_result_core = None
+    if isinstance(result, dict) and isinstance(result.get("forecast"), dict):
+        observed_result_core = _extract_forecast_core(result["forecast"])
+
+    mutation_detected = (observed_input_core != captured_core) or (
+        observed_result_core is not None
+        and observed_result_core != captured_core
+    )
+
+    if mutation_detected:
+        import logging
+        logging.critical(
+            "[/discuss] forecast mutation detected. captured=%s "
+            "observed_input=%s observed_result=%s",
+            captured_core, observed_input_core, observed_result_core,
+        )
+        # Restore captured fields in the input forecast dict (defensive).
+        for _k, _v in captured_core.items():
+            if _v is None:
+                continue
+            if _k == "fallback_used":
+                if "fallback_used" in forecast:
+                    forecast["fallback_used"] = _v
+                if isinstance(forecast.get("forecast"), dict):
+                    forecast["forecast"]["fallback_used"] = _v
+            elif _k == "coverage_tier":
+                if "coverage_tier" in forecast:
+                    forecast["coverage_tier"] = _v
+                if isinstance(forecast.get("diagnostics"), dict):
+                    forecast["diagnostics"]["coverage_tier"] = _v
+            else:
+                if _k in forecast:
+                    forecast[_k] = _v
+        # Restore captured fields in the result forecast (if present).
+        if isinstance(result, dict) and isinstance(result.get("forecast"), dict):
+            for _k, _v in captured_core.items():
+                if _v is None:
+                    continue
+                if _k == "fallback_used":
+                    if "fallback_used" in result["forecast"]:
+                        result["forecast"]["fallback_used"] = _v
+                    if isinstance(result["forecast"].get("forecast"), dict):
+                        result["forecast"]["forecast"]["fallback_used"] = _v
+                elif _k == "coverage_tier":
+                    if "coverage_tier" in result["forecast"]:
+                        result["forecast"]["coverage_tier"] = _v
+                    if isinstance(result["forecast"].get("diagnostics"), dict):
+                        result["forecast"]["diagnostics"]["coverage_tier"] = _v
+                else:
+                    if _k in result["forecast"]:
+                        result["forecast"][_k] = _v
+        # Surface the diagnostic flag.
+        if isinstance(result, dict):
+            result.setdefault("diagnostics", {})["forecast_mutation_blocked"] = True
 
     return jsonify(result)

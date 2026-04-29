@@ -2081,6 +2081,139 @@ footer.app-footer {
   }
 }
 
+/* ─────────────────────────────────────────────────────────────────
+   Phase 1 — Evidence Panel + Confidence Ledger + Evidence Gap Card
+   Added Apr 30 (P1.6). Token-based; reuses .sidebar-card, .fade-up,
+   .report-card-eyebrow.
+   ───────────────────────────────────────────────────────────────── */
+
+.evidence-panel,
+.confidence-ledger,
+.evidence-gap-card {
+  margin-top: 16px;
+}
+
+.evidence-section + .evidence-section {
+  margin-top: 18px;
+  padding-top: 18px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.evidence-section-sub,
+.evidence-gap-sub {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin: 4px 0 10px 0;
+  line-height: 1.5;
+}
+
+.evidence-section-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.evidence-empty {
+  font-size: 13px;
+  color: var(--text-muted);
+  font-style: italic;
+  padding: 8px 0;
+}
+
+.evidence-item {
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.02);
+  border-left: 2px solid rgba(255, 255, 255, 0.08);
+  border-radius: 2px;
+}
+
+.evidence-item-head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.evidence-item-brand {
+  font-family: var(--display);
+  font-size: 16px;
+  letter-spacing: 0.02em;
+  color: var(--text);
+}
+
+.evidence-item-rate {
+  font-size: 13px;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.evidence-item-sim {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+
+.evidence-item-strength {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-top: 4px;
+}
+
+.evidence-item-warning {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 6px;
+  line-height: 1.4;
+}
+
+.confidence-ledger .ledger-list,
+.evidence-gap-card .ledger-list {
+  list-style: none;
+  padding: 0;
+  margin: 8px 0 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ledger-entry {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text);
+}
+
+.ledger-marker {
+  font-family: var(--display);
+  font-size: 16px;
+  flex-shrink: 0;
+  width: 12px;
+  text-align: center;
+  line-height: 1;
+}
+
+.ledger-text {
+  flex: 1;
+}
+
+.ledger-entry-positive .ledger-text {
+  color: var(--text);
+}
+
+.ledger-entry-negative .ledger-text {
+  color: var(--text);
+}
+
+.ledger-entry-neutral .ledger-text,
+.ledger-entry-legacy .ledger-text {
+  color: var(--text-muted);
+}
+
 @media print {
   @page {
     size: letter;
@@ -2095,9 +2228,15 @@ footer.app-footer {
     print-color-adjust: exact;
   }
 
-  /* Hide everything that's NOT inside .print-report */
-  .top-nav,
+  /* Hide all top-level screen layout — per friend Apr 30 ruling,
+     only .print-report should print. Replaces previous opt-in allowlist
+     which left screen components like ResultCard, Counterfactuals,
+     EvidencePanel, ConfidenceLedger, EvidenceGapCard, report-rounds,
+     DeterminismProof leaking into the PDF. */
+  .masthead,
+  .report-sidebar,
   .app-footer,
+  .topnav,
   .beta-banner,
   .btn,
   .verdict-filter-bar,
@@ -2105,12 +2244,18 @@ footer.app-footer {
   .show-objection-toggle,
   .show-more-toggle,
   .panel-show-all,
-  .panel-source-badge,
-  .report-sidebar {
+  .panel-source-badge {
+    display: none !important;
+  }
+  /* Hide every direct child of .report-main EXCEPT the print template.
+     This catches all screen components inside report-main without
+     needing to enumerate them individually. */
+  .report-main > *:not(.print-report) {
     display: none !important;
   }
 
-  /* Show the print-only template */
+  /* Show the print-only template (defensive — explicit display:block
+     so .print-report cannot be accidentally hidden by another rule) */
   .print-report {
     display: block !important;
     background: #ffffff !important;
@@ -2199,6 +2344,65 @@ footer.app-footer {
     margin: 6px 0 0 0 !important;
     font-size: 10pt !important;
     color: #333333 !important;
+  }
+
+  /* ─ Phase 1 P1.6.5: print-only Evidence + Ledger + Gap Card ─ */
+  .print-evidence-panel {
+    margin: 0 0 16px 0 !important;
+    page-break-after: auto !important;
+  }
+  .print-evidence-panel h2 {
+    font-size: 14pt !important;
+    margin: 0 0 10px 0 !important;
+    color: #111111 !important;
+    border-bottom: 1pt solid #888 !important;
+    padding-bottom: 4pt !important;
+  }
+  .print-evidence-section {
+    margin: 0 0 12px 0 !important;
+    page-break-inside: avoid !important;
+  }
+  .print-evidence-section h3 {
+    font-size: 11pt !important;
+    margin: 0 0 4px 0 !important;
+    color: #111111 !important;
+  }
+  .print-evidence-section-sub {
+    font-size: 9pt !important;
+    margin: 0 0 6px 0 !important;
+    color: #666666 !important;
+    font-style: italic !important;
+  }
+  .print-evidence-item {
+    margin: 0 0 6px 0 !important;
+    padding: 4pt 0 !important;
+  }
+  .print-evidence-item-head {
+    margin: 0 !important;
+    font-size: 10pt !important;
+    color: #222222 !important;
+  }
+  .print-evidence-item-warning {
+    margin: 2pt 0 0 0 !important;
+    font-size: 9pt !important;
+    color: #666666 !important;
+  }
+  .print-ledger-list {
+    list-style: none !important;
+    padding: 0 !important;
+    margin: 4pt 0 0 0 !important;
+  }
+  .print-ledger-entry {
+    margin: 0 0 4pt 0 !important;
+    font-size: 10pt !important;
+    color: #222222 !important;
+    line-height: 1.4 !important;
+  }
+  .print-ledger-marker {
+    display: inline-block !important;
+    width: 12pt !important;
+    color: #555555 !important;
+    font-weight: 700 !important;
   }
 
   /* Page header/footer */

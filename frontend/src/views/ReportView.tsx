@@ -6,6 +6,10 @@ import { ResultCard } from "../components/ResultCard";
 import { Counterfactuals } from "../components/Counterfactuals";
 import { PrintAgentPanel } from "../components/PrintAgentPanel";
 import { DeterminismProof } from "../components/DeterminismProof";
+import { EvidencePanel } from "../components/EvidencePanel";
+import { ConfidenceLedger } from "../components/ConfidenceLedger";
+import { EvidenceGapCard } from "../components/EvidenceGapCard";
+import { PrintEvidence } from "../components/PrintEvidence";
 
 export function ReportView() {
   const { id } = useParams<{ id: string }>();
@@ -45,8 +49,28 @@ export function ReportView() {
       <div className="report-body">
         <div className="report-main">
           <ResultCard data={f} />
+
+          {/* Phase 1 — Evidence Panel + Confidence Ledger + Evidence Gaps.
+              Mounted directly under ResultCard per friend Apr 30 Call 2=B:
+              evidence is the trust grounding right under the forecast number. */}
+          <EvidencePanel
+            buckets={f.evidence_buckets}
+            legacyAnchors={f.evidence_buckets ? undefined : f.anchored_on}
+          />
+          <ConfidenceLedger
+            entries={f.confidence_ledger}
+            legacyReasons={f.confidence_ledger ? undefined : f.confidence_reasons}
+          />
+          <EvidenceGapCard entries={f.confidence_ledger} />
+
           <Counterfactuals cfs={f.counterfactuals} />
           <div className="print-report">
+            <PrintEvidence
+              buckets={f.evidence_buckets}
+              legacyAnchors={f.evidence_buckets ? undefined : f.anchored_on}
+              ledger={f.confidence_ledger}
+              legacyReasons={f.confidence_ledger ? undefined : f.confidence_reasons}
+            />
             <PrintAgentPanel agents={sim.agent_panel?.agents ?? []} />
           </div>
           {sim.agent_panel?.rounds && sim.agent_panel.rounds.length > 0 && (
