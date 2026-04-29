@@ -2334,6 +2334,65 @@ footer.app-footer {
     color: #333333 !important;
   }
 
+  /* ─ Phase 1 P1.6.5: print-only Evidence + Ledger + Gap Card ─ */
+  .print-evidence-panel {
+    margin: 0 0 16px 0 !important;
+    page-break-after: auto !important;
+  }
+  .print-evidence-panel h2 {
+    font-size: 14pt !important;
+    margin: 0 0 10px 0 !important;
+    color: #111111 !important;
+    border-bottom: 1pt solid #888 !important;
+    padding-bottom: 4pt !important;
+  }
+  .print-evidence-section {
+    margin: 0 0 12px 0 !important;
+    page-break-inside: avoid !important;
+  }
+  .print-evidence-section h3 {
+    font-size: 11pt !important;
+    margin: 0 0 4px 0 !important;
+    color: #111111 !important;
+  }
+  .print-evidence-section-sub {
+    font-size: 9pt !important;
+    margin: 0 0 6px 0 !important;
+    color: #666666 !important;
+    font-style: italic !important;
+  }
+  .print-evidence-item {
+    margin: 0 0 6px 0 !important;
+    padding: 4pt 0 !important;
+  }
+  .print-evidence-item-head {
+    margin: 0 !important;
+    font-size: 10pt !important;
+    color: #222222 !important;
+  }
+  .print-evidence-item-warning {
+    margin: 2pt 0 0 0 !important;
+    font-size: 9pt !important;
+    color: #666666 !important;
+  }
+  .print-ledger-list {
+    list-style: none !important;
+    padding: 0 !important;
+    margin: 4pt 0 0 0 !important;
+  }
+  .print-ledger-entry {
+    margin: 0 0 4pt 0 !important;
+    font-size: 10pt !important;
+    color: #222222 !important;
+    line-height: 1.4 !important;
+  }
+  .print-ledger-marker {
+    display: inline-block !important;
+    width: 12pt !important;
+    color: #555555 !important;
+    font-weight: 700 !important;
+  }
+
   /* Page header/footer */
   @page {
     @top-left {

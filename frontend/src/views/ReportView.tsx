@@ -9,6 +9,7 @@ import { DeterminismProof } from "../components/DeterminismProof";
 import { EvidencePanel } from "../components/EvidencePanel";
 import { ConfidenceLedger } from "../components/ConfidenceLedger";
 import { EvidenceGapCard } from "../components/EvidenceGapCard";
+import { PrintEvidence } from "../components/PrintEvidence";
 
 export function ReportView() {
   const { id } = useParams<{ id: string }>();
@@ -64,6 +65,12 @@ export function ReportView() {
 
           <Counterfactuals cfs={f.counterfactuals} />
           <div className="print-report">
+            <PrintEvidence
+              buckets={f.evidence_buckets}
+              legacyAnchors={f.evidence_buckets ? undefined : f.anchored_on}
+              ledger={f.confidence_ledger}
+              legacyReasons={f.confidence_ledger ? undefined : f.confidence_reasons}
+            />
             <PrintAgentPanel agents={sim.agent_panel?.agents ?? []} />
           </div>
           {sim.agent_panel?.rounds && sim.agent_panel.rounds.length > 0 && (
