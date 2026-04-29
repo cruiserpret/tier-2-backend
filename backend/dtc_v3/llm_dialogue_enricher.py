@@ -36,7 +36,7 @@ MAX_CONCURRENT_BATCHES = 4
 PER_BATCH_TIMEOUT_S = 55
 OVERALL_TIMEOUT_S = {20: 45, 50: 90}  # per agent_count
 DEFAULT_OVERALL_TIMEOUT_S = 45
-PROMPT_VERSION = "v2.0-batched"
+PROMPT_VERSION = "v2.1-no-causal-claims"
 
 
 # ════════════════════════════════════════════════════════════════════
@@ -312,7 +312,16 @@ def _build_system_prompt() -> str:
         "articulate what's holding them back. BUY agents say what convinced them.\n"
         "8. No causal guarantees. No 'this WILL win' or 'this is BEST'. Speak as buyers, not analysts.\n"
         "9. Each round response: 1-3 sentences. Conversational. Specific.\n"
-        "10. Return STRICT JSON. No prose outside JSON.\n"
+        "10. BANNED PHRASES — never use these in any response, in any context: "
+        "'guaranteed', 'causal proof', 'scientifically proven', 'real buyers', "
+        "'optimal price', 'Van Westendorp', 'Juster', 'r=0.895'. "
+        "Also avoid deterministic 'will buy' claims like 'customers will buy' or "
+        "'the market will buy' — Phase 1 personas express purchase intent, not market certainty.\n"
+        "11. PREFERRED LANGUAGE — when expressing preference or intent, use: "
+        "'could buy', 'buy signal', 'purchase intent signal', 'AI buyer personas', "
+        "'estimated trial rate', 'directional scenario', 'comparable-anchored forecast', "
+        "'coverage-aware confidence'. Speak in directional terms, not certainties.\n"
+        "12. Return STRICT JSON. No prose outside JSON.\n"
     )
 
 
@@ -395,6 +404,37 @@ def _build_user_prompt(batch_agents: list, product: dict, forecast: dict, full_p
 # VALIDATION
 # ════════════════════════════════════════════════════════════════════
 
+# Hard-banned phrases (Phase 1 trust safety, friend Apr 29-30 spec).
+# Any LLM output containing these triggers per-batch template fallback.
+HARD_BANNED_PHRASES = (
+    "guaranteed",
+    "causal proof",
+    "scientifically proven",
+    "real buyers",
+    "optimal price",
+    "van westendorp",
+    "juster",
+    "r=0.895",
+    # Deterministic "will buy" claims — exact phrases only.
+    # Generic "will" usage is fine (e.g., "I will compare it to LMNT").
+    "customers will buy",
+    "the market will buy",
+)
+
+
+def _contains_banned_phrase(text: Any) -> bool:
+    """Return True if `text` contains any HARD_BANNED_PHRASES (case-insensitive).
+
+    Non-string inputs return False. Used by _validate_batch_response to
+    reject LLM outputs that contain trust-violating language and trigger
+    per-batch template fallback.
+    """
+    if not isinstance(text, str) or not text:
+        return False
+    haystack = text.lower()
+    return any(phrase in haystack for phrase in HARD_BANNED_PHRASES)
+
+
 def _validate_batch_response(parsed: Any, batch_agents: list) -> dict | None:
     """Strict shape check. Returns None if anything wrong."""
     if not isinstance(parsed, dict):
@@ -414,6 +454,22 @@ def _validate_batch_response(parsed: Any, batch_agents: list) -> dict | None:
                   "key_quote", "round_responses"):
             if k not in llm_a:
                 return None
+        # Phase 1: hard-banned-phrase scan on per-agent narrative fields.
+        # Per friend Apr 30 ruling: any banned phrase rejects the batch
+        # to template fallback. Per-batch (not per-agent) is acceptable
+        # for Phase 1.
+        for narrative_key in (
+            "reason", "top_objection", "what_would_change_mind",
+            "key_moment", "key_quote", "shift_reason",
+        ):
+            if _contains_banned_phrase(llm_a.get(narrative_key)):
+                import logging
+                logging.warning(
+                    "[llm_validator] hard-banned phrase in agent %s field %r — "
+                    "rejecting batch to template fallback",
+                    llm_a.get("id"), narrative_key,
+                )
+                return None
         rrs = llm_a["round_responses"]
         if not isinstance(rrs, list) or len(rrs) != 3:
             return None
@@ -424,6 +480,25 @@ def _validate_batch_response(parsed: Any, batch_agents: list) -> dict | None:
                 return None
             if not isinstance(rr.get("response"), str) or len(rr["response"]) < 10:
                 return None
+            if _contains_banned_phrase(rr.get("response")):
+                import logging
+                logging.warning(
+                    "[llm_validator] hard-banned phrase in agent %s round %d response — "
+                    "rejecting batch to template fallback",
+                    llm_a.get("id"), j + 1,
+                )
+                return None
+
+    # Phase 1: top-level narrative fields also scanned.
+    for top_key in ("consensus", "winning_message", "actionable_insight"):
+        if _contains_banned_phrase(parsed.get(top_key)):
+            import logging
+            logging.warning(
+                "[llm_validator] hard-banned phrase in top-level field %r — "
+                "rejecting batch to template fallback",
+                top_key,
+            )
+            return None
 
     return parsed
 
