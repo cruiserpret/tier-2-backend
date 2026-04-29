@@ -224,3 +224,185 @@ def test_triton_drinks_anchored_on_energy_drinks():
     assert not f.fallback_used or len(overlap) == 0, (
         "If energy drink anchors found, prior_source should not be fallback"
     )
+
+
+# ─── Phase 1 invariants — added Apr 30 (P1.5) ────────────────────────
+
+def test_discussion_response_preserves_forecast_core_clean_run():
+    """Clean-run preservation: /discuss preserves trial_rate, confidence,
+    and verdict in the response forecast.
+
+    NOTE: This test does NOT verify in-place mutation of the input dict
+    — that is impossible to test through Flask's test_client because
+    the endpoint receives a deserialized copy of the JSON, not the
+    same Python object. In-place mutation is verified separately by
+    test_discuss_mutation_guard_catches_synthetic_mutation, which
+    patches generate_discussion at its source module.
+    """
+    from backend.main import app
+    c = app.test_client()
+
+    fr = c.post('/api/dtc_v3/forecast', json={
+        'product_name': 'Liquid IV Hydration Multiplier',
+        'description': 'Electrolyte hydration drink mix',
+        'price': 25,
+        'category': 'supplements_health',
+        'demographic': 'Active adults',
+        'competitors': [{'name': 'LMNT'}],
+        'exclude_brand': 'Liquid IV',
+    }).get_json()
+
+    captured_trial_rate = fr['trial_rate']
+    captured_confidence = fr['confidence']
+    captured_verdict = fr['verdict']
+
+    r = c.post('/api/dtc_v3/discuss?mode=template', json={
+        'product': {
+            'product_name': 'Liquid IV Hydration Multiplier',
+            'price': 25,
+            'category': 'supplements_health',
+            'demographic': 'Active adults',
+            'competitors': [{'name': 'LMNT'}],
+        },
+        'forecast': fr,
+        'agent_count': 20,
+    })
+    assert r.status_code == 200, f"discuss failed: {r.get_data()[:300]}"
+    j = r.get_json()
+
+    response_forecast = j.get('forecast') if isinstance(j, dict) else None
+    if isinstance(response_forecast, dict):
+        assert response_forecast.get('trial_rate') == captured_trial_rate, \
+            "response trial_rate differs from forecast call"
+        assert response_forecast.get('confidence') == captured_confidence, \
+            "response confidence differs from forecast call"
+        assert response_forecast.get('verdict') == captured_verdict, \
+            "response verdict differs from forecast call"
+
+    diag = (j.get('diagnostics') or {}) if isinstance(j, dict) else {}
+    assert diag.get('forecast_mutation_blocked') is not True, \
+        "clean run must NOT set forecast_mutation_blocked"
+
+
+def test_discuss_mutation_guard_catches_synthetic_mutation():
+    """Mutation guard (P1.3 api.py) catches malicious in-place + result
+    mutation, restores captured fields, and sets the diagnostic flag.
+
+    Patches backend.dtc_v3.discussion.generate_discussion (source module)
+    per friend Apr 30 ruling. api.py uses lazy import inside the route
+    (`from .discussion import generate_discussion` at line 259), so the
+    function reads the attribute from the source module at call time.
+    Patching the api module attribute would NOT intercept this.
+
+    mock_gen.called assertion below proves the malicious function ran
+    — without that, a wrong patch target would silently pass the test
+    for unrelated reasons (false confidence).
+    """
+    from unittest.mock import patch
+    from backend.main import app
+
+    c = app.test_client()
+    fr = c.post('/api/dtc_v3/forecast', json={
+        'product_name': 'Liquid IV Hydration Multiplier',
+        'description': 'Electrolyte hydration drink mix',
+        'price': 25,
+        'category': 'supplements_health',
+        'demographic': 'Active adults',
+        'competitors': [{'name': 'LMNT'}],
+        'exclude_brand': 'Liquid IV',
+    }).get_json()
+
+    original_trial_rate = fr['trial_rate']
+    original_confidence = fr['confidence']
+    original_verdict = fr['verdict']
+
+    def malicious_generate_discussion(product, forecast, agent_count, mode):
+        """Mutates request-local forecast in place AND returns mutated forecast."""
+        forecast['trial_rate'] = {
+            'percentage': 99.9, 'median': 0.999, 'low': 0.0, 'high': 1.0,
+        }
+        forecast['confidence'] = 'high'
+        forecast['verdict'] = 'launch_aggressively'
+        return {
+            'agent_panel': {'agents': []},
+            'forecast': dict(forecast),
+        }
+
+    with patch('backend.dtc_v3.discussion.generate_discussion',
+               side_effect=malicious_generate_discussion) as mock_gen:
+        r = c.post('/api/dtc_v3/discuss?mode=template', json={
+            'product': {
+                'product_name': 'Liquid IV Hydration Multiplier',
+                'price': 25,
+                'category': 'supplements_health',
+                'demographic': 'Active adults',
+                'competitors': [{'name': 'LMNT'}],
+            },
+            'forecast': fr,
+            'agent_count': 20,
+        })
+
+    assert mock_gen.called, "malicious generate_discussion mock was not used"
+    assert r.status_code == 200, f"got {r.status_code}: {r.get_data()[:300]}"
+    j = r.get_json()
+
+    diag = (j.get('diagnostics') or {}) if isinstance(j, dict) else {}
+    assert diag.get('forecast_mutation_blocked') is True, \
+        "mutation guard must set forecast_mutation_blocked=True"
+
+    restored = j.get('forecast') or {}
+    assert restored.get('trial_rate') == original_trial_rate, \
+        f"trial_rate must be restored, got {restored.get('trial_rate')}"
+    assert restored.get('confidence') == original_confidence, \
+        f"confidence must be restored, got {restored.get('confidence')}"
+    assert restored.get('verdict') == original_verdict, \
+        f"verdict must be restored, got {restored.get('verdict')}"
+
+
+def test_banned_phrase_validator_rejects_batch():
+    """LLM output validator (P1.4) rejects banned phrases anywhere in
+    narrative fields, round responses, or top-level fields.
+
+    This codifies the integration test passed during P1.4 verification.
+    """
+    from backend.dtc_v3.llm_dialogue_enricher import _validate_batch_response
+
+    base_clean_agent = {
+        'id': 'agent_01',
+        'reason': 'I would consider buying this if the price drops',
+        'top_objection': 'price seems high vs LMNT',
+        'what_would_change_mind': 'a discount or trial pack',
+        'key_quote': 'might try it',
+        'round_responses': [
+            {'round': 1, 'response': 'first impression — interesting product'},
+            {'round': 2, 'response': 'I will compare this to LMNT carefully'},
+            {'round': 3, 'response': 'final verdict — I would consider it'},
+        ],
+    }
+    batch = [{'id': 'agent_01'}]
+
+    bad_reason = {'agents': [{**base_clean_agent, 'reason': 'This is guaranteed to convert'}]}
+    assert _validate_batch_response(bad_reason, batch) is None, \
+        "banned phrase in reason must reject batch"
+
+    bad_agent = dict(base_clean_agent)
+    bad_agent['round_responses'] = [
+        {'round': 1, 'response': 'first impression text here'},
+        {'round': 2, 'response': 'These are real buyers reacting to LMNT'},
+        {'round': 3, 'response': 'final verdict text here'},
+    ]
+    bad_round = {'agents': [bad_agent]}
+    assert _validate_batch_response(bad_round, batch) is None, \
+        "banned phrase in round response must reject batch"
+
+    bad_top = {
+        'agents': [base_clean_agent],
+        'consensus': 'Customers will buy this product at scale',
+    }
+    assert _validate_batch_response(bad_top, batch) is None, \
+        "banned phrase in top-level consensus must reject batch"
+
+    clean = {'agents': [base_clean_agent]}
+    result = _validate_batch_response(clean, batch)
+    assert result is not None, "clean text must pass validator"
+
