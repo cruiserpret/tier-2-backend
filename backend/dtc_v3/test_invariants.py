@@ -1155,3 +1155,189 @@ def test_panel_label_anchored_mode_emits_no_context_note():
     }
     assert _panel_context_note(forecast, cc) == ""
 
+
+def test_persona_routing_matcha_gum_is_product_relevant():
+    from backend.dtc_v3.persona_generator import select_personas_for_product
+    product = {
+        "product_name": "Matcha Chewing Gum",
+        "name": "Matcha Chewing Gum",
+        "description": "matcha-flavored chewing gum, sugar-free, 12 pieces per pack",
+        "price": 0.25,
+        "category": "food_beverage",
+        "competitors": [{"name": "Trident"}, {"name": "Orbit"}],
+    }
+    personas, routing = select_personas_for_product(product, 8, "0" * 32)
+    assert routing.get("fallback_to_generic") is False
+    banks = set(routing.get("banks_used", []))
+    relevant_banks = {"SCHOOL_COLLEGE", "COFFEE_ALT_COFFEE_REDUCERS", "COFFEE_ALT_WELLNESS",
+                      "COFFEE_ALT_MUSHROOM_CURIOUS", "FOOD_BEVERAGE_GENERIC"}
+    assert banks & relevant_banks, (
+        f"matcha gum must use at least one relevant bank, got {banks!r}"
+    )
+    forbidden = {"ENERGY_DRINK_STUDENTS", "ENERGY_DRINK_FITNESS",
+                 "ENERGY_DRINK_NIGHT_SHIFT", "ENERGY_DRINK_GAMERS",
+                 "DRINKWARE_OUTDOOR", "DRINKWARE_OFFICE", "DRINKWARE_FITNESS",
+                 "HYDRATION_ATHLETES", "HYDRATION_WELLNESS_PROFESSIONALS",
+                 "HYDRATION_BUSY_PARENTS"}
+    leakage = banks & forbidden
+    assert not leakage, f"matcha gum must NOT use energy/drinkware/hydration banks, got {leakage!r}"
+
+
+def test_persona_routing_smart_water_bottle_not_generic():
+    from backend.dtc_v3.persona_generator import select_personas_for_product
+    product = {
+        "product_name": "Smart Hydration Tracking Bottle",
+        "name": "Smart Hydration Tracking Bottle",
+        "description": "BPA-free smart water bottle with hydration tracking app and reminders",
+        "price": 65.0,
+        "category": "drinkware_smart",
+        "competitors": [{"name": "HidrateSpark"}, {"name": "LARQ"}],
+    }
+    personas, routing = select_personas_for_product(product, 8, "0" * 32)
+    assert routing.get("fallback_to_generic") is False
+    assert routing.get("banks_used") != ["GENERIC"]
+    banks = set(routing.get("banks_used", []))
+    relevant_banks = {"DRINKWARE_OFFICE", "DRINKWARE_FITNESS",
+                      "HYDRATION_ATHLETES", "HYDRATION_WELLNESS_PROFESSIONALS",
+                      "TECH_WELLNESS_GENERIC"}
+    assert banks & relevant_banks, (
+        f"smart water bottle must use at least one drinkware/hydration/tech bank, got {banks!r}"
+    )
+
+
+def test_persona_routing_dog_supplement_excludes_cat_only_bank():
+    from backend.dtc_v3.persona_generator import select_personas_for_product
+    product = {
+        "product_name": "Joint Health Daily Chews for Dogs",
+        "name": "Joint Health Daily Chews for Dogs",
+        "description": "daily chewable supplement for dog joint health, glucosamine",
+        "price": 32.0,
+        "category": "pet_supplies",
+        "competitors": [{"name": "Zesty Paws"}, {"name": "Native Pet"}],
+    }
+    personas, routing = select_personas_for_product(product, 8, "0" * 32)
+    banks = set(routing.get("banks_used", []))
+    assert "PET_DOG_OWNERS" in banks, f"dog supplement must include PET_DOG_OWNERS, got {banks!r}"
+    assert "PET_PREMIUM" in banks, f"dog supplement must include PET_PREMIUM, got {banks!r}"
+    assert "PET_CAT_OWNERS" not in banks, (
+        f"dog product must NOT include PET_CAT_OWNERS, got {banks!r}"
+    )
+
+
+def test_persona_routing_unknown_product_falls_to_generic():
+    from backend.dtc_v3.persona_generator import select_personas_for_product
+    product = {
+        "product_name": "Quantum Moss Desk Pebble",
+        "name": "Quantum Moss Desk Pebble",
+        "description": "A decorative desk pebble made of imaginary quantum moss.",
+        "price": 49.0,
+        "category": "unknown_category",
+        "competitors": [],
+    }
+    personas, routing = select_personas_for_product(product, 8, "0" * 32)
+    assert routing.get("tier") == "generic", f"unknown product tier should be generic, got {routing.get('tier')!r}"
+    assert routing.get("fallback_to_generic") is True, (
+        f"unknown product fallback_to_generic must be True, got {routing.get('fallback_to_generic')!r}"
+    )
+    assert routing.get("banks_used") == ["GENERIC"], (
+        f"unknown product banks_used must be ['GENERIC'], got {routing.get('banks_used')!r}"
+    )
+
+
+def test_panel_context_note_mentions_generic_personas_when_appropriate():
+    from backend.dtc_v3.discussion import _panel_context_note
+    forecast = {
+        "trial_rate": {"median": 0.04, "percentage": 4.0},
+        "confidence": "low",
+        "diagnostics": {"prior_source": "fallback_global_median", "coverage_tier": "weak"},
+    }
+    cc = {
+        "comparison_mode": "generic_directional",
+        "fallback_used": True,
+        "confidence": "low",
+        "coverage_tier": "weak",
+        "allowed_comparison_brands": [],
+        "forbidden_brand_names": [],
+    }
+    persona_routing = {
+        "tier": "generic",
+        "banks_used": ["GENERIC"],
+        "fallback_to_generic": True,
+    }
+    note = _panel_context_note(forecast, cc, persona_routing=persona_routing)
+    assert note != ""
+    assert "personas" in note.lower(), f"context note should mention personas, got: {note!r}"
+    assert "generic" in note.lower(), f"context note should mention generic, got: {note!r}"
+
+    persona_routing_keyword = {
+        "tier": "keyword",
+        "banks_used": ["SCHOOL_COLLEGE", "FOOD_BEVERAGE_GENERIC"],
+        "fallback_to_generic": False,
+    }
+    note_no_generic = _panel_context_note(forecast, cc, persona_routing=persona_routing_keyword)
+    assert "Personas are also generic" not in note_no_generic, (
+        f"non-generic personas must NOT trigger generic-personas sentence, got: {note_no_generic!r}"
+    )
+
+
+def test_persona_routing_multi_pet_includes_dog_and_cat():
+    from backend.dtc_v3.persona_generator import select_personas_for_product
+    product = {
+        "product_name": "Multi-Pet Calming Treats for Dogs and Cats",
+        "name": "Multi-Pet Calming Treats for Dogs and Cats",
+        "description": "Calming supplement treats for dogs and cats.",
+        "price": 28.0,
+        "category": "pet_supplies",
+        "competitors": [],
+    }
+    personas, routing = select_personas_for_product(product, 8, "0" * 32)
+    banks = set(routing.get("banks_used", []))
+    assert "PET_DOG_OWNERS" in banks, (
+        f"multi-pet product must include PET_DOG_OWNERS, got {banks!r}"
+    )
+    assert "PET_CAT_OWNERS" in banks, (
+        f"multi-pet product must include PET_CAT_OWNERS (not exclude it via "
+        f"first-match dog routing), got {banks!r}"
+    )
+    assert "PET_PREMIUM" in banks, (
+        f"multi-pet product must include PET_PREMIUM, got {banks!r}"
+    )
+    assert routing.get("fallback_to_generic") is False
+
+
+def test_pet_keyword_matching_does_not_false_positive_on_substrings():
+    from backend.dtc_v3.persona_generator import select_personas_for_product
+
+    cases = [
+        ("hotdog snack",
+         {"product_name": "Hotdog Flavored Snack",
+          "name": "Hotdog Flavored Snack",
+          "description": "savory hotdog-flavored crunchy snack",
+          "price": 4.0,
+          "category": "food_beverage",
+          "competitors": []}),
+        ("catalog organizer",
+         {"product_name": "Catalog Organizer Binder",
+          "name": "Catalog Organizer Binder",
+          "description": "organize your seasonal catalog mailings in one binder",
+          "price": 22.0,
+          "category": "office_school_supplies",
+          "competitors": []}),
+        ("categorical notebook planner",
+         {"product_name": "Categorical Notebook Planner",
+          "name": "Categorical Notebook Planner",
+          "description": "structured planner with categorical sections for life domains",
+          "price": 28.0,
+          "category": "office_school_supplies",
+          "competitors": []}),
+    ]
+    for label, product in cases:
+        personas, routing = select_personas_for_product(product, 4, "0" * 32)
+        banks = set(routing.get("banks_used", []))
+        pet_banks = {"PET_DOG_OWNERS", "PET_CAT_OWNERS", "PET_PREMIUM"}
+        leakage = banks & pet_banks
+        assert not leakage, (
+            f"{label!r} must NOT route to pet banks (substring false positive), "
+            f"got {banks!r}"
+        )
+

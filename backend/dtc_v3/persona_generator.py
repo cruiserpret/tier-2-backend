@@ -15,6 +15,7 @@ Determinism preserved: same (product, n_agents, seed) → same agents.
 from __future__ import annotations
 
 import hashlib
+import re
 
 from backend.dtc_v3.persona_bank import (
     BANKS,
@@ -47,11 +48,28 @@ KEYWORD_OVERRIDES: list[tuple[list[str], list[str]]] = [
          "RELIGIOUS_LIFESTYLE_MUSLIM_FAMILIES",
          "RELIGIOUS_LIFESTYLE_SMART_HOME"],
     ),
-    # Pet products
+    # Smart water bottle / hydration tracker (P1.8.6)
     (
-        ["dog", "cat", "pet", "puppy", "kitten", "feline", "canine"],
-        ["PET_DOG_OWNERS", "PET_CAT_OWNERS", "PET_PREMIUM"],
+        ["smart water bottle", "smart bottle", "hydration tracker",
+         "hydration reminder", "smart hydration", "water tracking",
+         "drinkware smart", "tracking bottle",
+         "hidratespark", "larq"],
+        ["DRINKWARE_OFFICE", "DRINKWARE_FITNESS",
+         "HYDRATION_ATHLETES", "HYDRATION_WELLNESS_PROFESSIONALS",
+         "TECH_WELLNESS_GENERIC"],
     ),
+    # Matcha / chewing gum / breath gum (P1.8.6)
+    # Only specific gum phrases — never bare "gum" (would match "gummy")
+    (
+        ["chewing gum", "matcha gum", "green tea gum",
+         "caffeinated gum", "caffeine gum", "energy gum",
+         "breath gum", "sugar-free gum", "sugar free gum",
+         "trident", "orbit gum", "matchew", "extra gum", "mentos gum"],
+        ["SCHOOL_COLLEGE", "COFFEE_ALT_COFFEE_REDUCERS",
+         "COFFEE_ALT_WELLNESS", "COFFEE_ALT_MUSHROOM_CURIOUS",
+         "FOOD_BEVERAGE_GENERIC"],
+    ),
+
     # Baby / family
     (
         ["baby", "infant", "toddler", "newborn", "diaper", "stroller"],
@@ -148,6 +166,11 @@ CATEGORY_TO_BANKS: dict[str, list[str]] = {
     "drinkware": [
         "DRINKWARE_OUTDOOR", "DRINKWARE_OFFICE", "DRINKWARE_FITNESS",
     ],
+    "drinkware_smart": [
+        "DRINKWARE_OFFICE", "DRINKWARE_FITNESS",
+        "HYDRATION_ATHLETES", "HYDRATION_WELLNESS_PROFESSIONALS",
+        "TECH_WELLNESS_GENERIC",
+    ],
 }
 
 
@@ -160,12 +183,54 @@ def _normalize_text(s: str) -> str:
     return " ".join((s or "").lower().split())
 
 
+_DOG_KEYWORDS = ("dog", "dogs", "puppy", "puppies", "canine", "canines")
+_CAT_KEYWORDS = ("cat", "cats", "kitten", "kittens", "feline", "felines")
+_GENERIC_PET_KEYWORDS = ("pet", "pets")
+
+
+def _contains_word(text: str, terms: tuple[str, ...]) -> bool:
+    """P1.8.6: word-boundary match so `cat` doesn't match `categorical`,
+    `dog` doesn't match `hotdog`, `pet` doesn't match `competence`."""
+    return any(re.search(rf"\b{re.escape(term)}\b", text) for term in terms)
+
+
+def _match_pet_override(text: str) -> list[str] | None:
+    """P1.8.6: explicit dog/cat detection so dual-pet products don't get
+    routed dog-only just because dog keywords appear first in a flat
+    keyword table. Word-boundary matching prevents false positives on
+    hotdog / catalog / categorical / etc.
+
+    Rules:
+      dog only       -> PET_DOG_OWNERS + PET_PREMIUM
+      cat only       -> PET_CAT_OWNERS + PET_PREMIUM
+      dog AND cat    -> PET_DOG_OWNERS + PET_CAT_OWNERS + PET_PREMIUM
+      generic pet    -> PET_DOG_OWNERS + PET_CAT_OWNERS + PET_PREMIUM
+      no pet keyword -> None (fall through to other keyword table)
+    """
+    has_dog = _contains_word(text, _DOG_KEYWORDS)
+    has_cat = _contains_word(text, _CAT_KEYWORDS)
+    has_generic_pet = _contains_word(text, _GENERIC_PET_KEYWORDS)
+
+    if has_dog and has_cat:
+        return ["PET_DOG_OWNERS", "PET_CAT_OWNERS", "PET_PREMIUM"]
+    if has_dog:
+        return ["PET_DOG_OWNERS", "PET_PREMIUM"]
+    if has_cat:
+        return ["PET_CAT_OWNERS", "PET_PREMIUM"]
+    if has_generic_pet:
+        return ["PET_DOG_OWNERS", "PET_CAT_OWNERS", "PET_PREMIUM"]
+    return None
+
+
 def _match_keyword_override(product: dict) -> list[str] | None:
     """Tier 1: check for keyword overrides. Returns bank list or None."""
     text = _normalize_text(
         f"{product.get('product_name') or product.get('name') or ''} "
         f"{product.get('description') or ''}"
     )
+    pet_banks = _match_pet_override(text)
+    if pet_banks is not None:
+        return pet_banks
     for keywords, banks in KEYWORD_OVERRIDES:
         if any(kw in text for kw in keywords):
             return banks
@@ -323,12 +388,9 @@ def select_personas_for_product(
 
     persona_tuples = _round_robin_sample(banks, n_agents, seed_int)
 
-    # Detect whether we had to dip into GENERIC for any persona
-    requested_names = set()
-    for bank_name in banks:
-        for p in get_bank(bank_name):
-            requested_names.add(p[0])
-    fallback_to_generic = any(p[0] not in requested_names for p in persona_tuples)
+    # P1.8.6: fallback_to_generic captures both "only-bank-was-GENERIC" and
+    # "matched banks were short, dipped into GENERIC" cases.
+    fallback_to_generic = (tier == "generic") or ("GENERIC" in banks)
 
     persona_dicts = [persona_to_dict(p) for p in persona_tuples]
     routing_info = {

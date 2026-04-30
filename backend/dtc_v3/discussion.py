@@ -22,7 +22,7 @@ from backend.dtc_v3.bucket_allocator import allocate_buckets
 from backend.dtc_v3.persona_generator import select_personas_for_product
 from backend.dtc_v3.llm_dialogue_enricher import enrich_with_llm_dialogue
 
-DISCUSSION_VERSION = "discussion_v2"
+DISCUSSION_VERSION = "discussion_v3"
 ALLOWED_AGENT_COUNTS = tuple(range(20, 51))  # 20-50 inclusive
 DEFAULT_AGENT_COUNT = 20
 ALLOWED_MODES = ("template", "llm")
@@ -129,7 +129,9 @@ def generate_discussion(
     panel["mode"] = panel_source
     panel["coverage_warning"] = _coverage_warning(forecast)
     panel["panel_label"] = _panel_label(forecast, comparison_context)
-    panel["panel_context_note"] = _panel_context_note(forecast, comparison_context)
+    panel["panel_context_note"] = _panel_context_note(
+        forecast, comparison_context, persona_routing=panel.get("persona_routing")
+    )
 
     response = {"agent_panel": panel}
     _DISCUSSION_CACHE[seed] = response
@@ -192,25 +194,35 @@ def _panel_label(forecast: dict, comparison_context: dict) -> str:
     return "AI Buyer Panel"
 
 
-def _panel_context_note(forecast: dict, comparison_context: dict) -> str:
-    """P1.8.5A: short context note shown under panel title for non-anchored modes."""
+def _panel_context_note(forecast: dict, comparison_context: dict, persona_routing: dict | None = None) -> str:
+    """P1.8.5A: short context note shown under panel title for non-anchored modes.
+    P1.8.6: optionally appends generic-personas sentence when both fallback_used
+    and persona routing fell to generic."""
     cc = comparison_context or {}
     mode = cc.get("comparison_mode")
 
+    base_note = ""
     if mode == "user_competitor":
-        return (
+        base_note = (
             "Assembly did not find enough eligible forecast anchors, so this panel uses "
             "the product brief and user-stated competitors. Retrieved-but-unused brands "
             "are not treated as competitors."
         )
-
-    if mode == "generic_directional":
-        return (
+    elif mode == "generic_directional":
+        base_note = (
             "Assembly did not find eligible forecast anchors or user-stated competitors. "
             "This panel is directional and based on the product brief, use case, and buyer assumptions."
         )
 
-    return ""
+    pr = persona_routing or {}
+    if pr.get("fallback_to_generic") and base_note:
+        base_note = (
+            base_note
+            + " Personas are also generic — Assembly did not find category-specific "
+            "buyers for this product type."
+        )
+
+    return base_note
 
 
 # ────────────────────────────────────────────────────────────────────
@@ -1108,6 +1120,11 @@ def _template_panel(product: dict, forecast: dict, agent_count: int, seed: str, 
         "comparable_price_range":      comparable_price_range,
         "actionable_insight":          actionable_insight,
         "risk_factors_v3":             risk_factors,
+    }
+    panel["persona_routing"] = {
+        "tier": routing_info.get("tier"),
+        "banks_used": routing_info.get("banks_used", []),
+        "fallback_to_generic": bool(routing_info.get("fallback_to_generic", False)),
     }
 
     return panel
