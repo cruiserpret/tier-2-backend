@@ -143,20 +143,34 @@ def build_confidence_ledger(
     entries: list[dict] = []
     fallback = bool(getattr(forecast, "fallback_used", False))
 
-    # ── ANCHOR COUNT (always evaluated) ─────────────────────────────
-    eligible_count = getattr(forecast, "eligible_neighbor_count", 0) or 0
-    if eligible_count >= MIN_STRONG_ANCHOR_COUNT:
-        entries.append(_entry(
-            "positive",
-            "strong_anchor_count",
-            f"{eligible_count} forecast anchors were found for this product.",
-        ))
-    else:
+    # ── ANCHOR COUNT (sources from evidence_buckets — ground truth) ─
+    # P1.8.4: count brands ACTUALLY USED as anchors via
+    # evidence_buckets["forecast_anchors"], not forecast.eligible_neighbor_count
+    # (which counts retrieved-but-not-used brands and produces false claims
+    # under fallback). Plus fallback guard: under fallback no anchor was
+    # used, so strong_anchor_count never fires.
+    if fallback:
         entries.append(_entry(
             "negative",
             "low_anchor_count",
             f"Fewer than {MIN_STRONG_ANCHOR_COUNT} eligible forecast anchors were found.",
         ))
+    else:
+        forecast_anchor_count = len(
+            (evidence_buckets or {}).get("forecast_anchors", []) or []
+        )
+        if forecast_anchor_count >= MIN_STRONG_ANCHOR_COUNT:
+            entries.append(_entry(
+                "positive",
+                "strong_anchor_count",
+                f"{forecast_anchor_count} forecast anchors were found for this product.",
+            ))
+        else:
+            entries.append(_entry(
+                "negative",
+                "low_anchor_count",
+                f"Fewer than {MIN_STRONG_ANCHOR_COUNT} eligible forecast anchors were found.",
+            ))
 
     # ── FALLBACK FLAG (always emitted when triggered) ───────────────
     if fallback:

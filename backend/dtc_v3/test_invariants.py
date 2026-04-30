@@ -820,3 +820,86 @@ def test_missing_comparison_context_raises():
     with pytest.raises(ValueError):
         generate_discussion(product, forecast, agent_count=20, mode="template")
 
+
+def _ledger_test_inputs(fallback, eligible_count, anchors):
+    from types import SimpleNamespace
+    forecast = SimpleNamespace(
+        fallback_used=fallback,
+        eligible_neighbor_count=eligible_count,
+        confidence="medium",
+        prior_source="rag_weighted_median" if not fallback else "fallback_category_median",
+        rate_std=0.05,
+        exact_subtype_weight_share=0.6,
+        data_quality=SimpleNamespace(quality_warnings=[]),
+        neighbors=[],
+        downweighted_brands=[],
+        confidence_reasons=[],
+    )
+    product = SimpleNamespace(
+        product_name="Test Product",
+        name="Test Product",
+        price=10.0,
+        category="food_beverage",
+    )
+    evidence_buckets = {
+        "forecast_anchors": anchors,
+        "fallback_neighbors": [],
+        "candidate_comparables": [],
+        "exploratory_comparables": [],
+    }
+    return forecast, product, evidence_buckets
+
+
+def test_ledger_no_anchor_count_under_fallback():
+    from backend.dtc_v3.confidence_ledger import build_confidence_ledger
+    forecast, product, evidence_buckets = _ledger_test_inputs(
+        fallback=True,
+        eligible_count=8,
+        anchors=[],
+    )
+    entries = build_confidence_ledger(
+        forecast=forecast,
+        product=product,
+        evidence_buckets=evidence_buckets,
+        record_by_brand={},
+        inferred_subtype="energy_drinks",
+    )
+    signals = [e.get("signal") for e in entries]
+    texts = [e.get("text", "") for e in entries]
+    assert "low_anchor_count" in signals, "fallback must emit low_anchor_count"
+    assert "strong_anchor_count" not in signals, "fallback must NEVER emit strong_anchor_count"
+    for txt in texts:
+        assert "8 forecast anchors" not in txt, f"contaminated count leaked into ledger text: {txt!r}"
+
+
+def test_ledger_anchor_count_matches_evidence_buckets():
+    from backend.dtc_v3.confidence_ledger import build_confidence_ledger
+    fake_anchors = [
+        {"brand": "Pedialyte"},
+        {"brand": "DripDrop"},
+        {"brand": "LMNT"},
+    ]
+    forecast, product, evidence_buckets = _ledger_test_inputs(
+        fallback=False,
+        eligible_count=8,
+        anchors=fake_anchors,
+    )
+    entries = build_confidence_ledger(
+        forecast=forecast,
+        product=product,
+        evidence_buckets=evidence_buckets,
+        record_by_brand={},
+        inferred_subtype="hydration_supplement",
+    )
+    signals = [e.get("signal") for e in entries]
+    texts = [e.get("text", "") for e in entries]
+    assert "strong_anchor_count" in signals, "non-fallback with 3 anchors must emit strong_anchor_count"
+    assert "low_anchor_count" not in signals, "non-fallback with 3 anchors must NOT emit low_anchor_count"
+    found_3 = any("3 forecast anchors" in t for t in texts)
+    assert found_3, f"ledger must say 3 forecast anchors. Texts: {texts!r}"
+    for txt in texts:
+        assert "8 forecast anchors" not in txt, (
+            f"ledger leaked eligible_neighbor_count=8 into text: {txt!r}. "
+            f"This proves the old bug is dead."
+        )
+
