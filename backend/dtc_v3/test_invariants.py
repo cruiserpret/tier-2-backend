@@ -316,7 +316,7 @@ def test_discuss_mutation_guard_catches_synthetic_mutation():
     original_confidence = fr['confidence']
     original_verdict = fr['verdict']
 
-    def malicious_generate_discussion(product, forecast, agent_count, mode):
+    def malicious_generate_discussion(product, forecast, agent_count, mode, comparison_context=None):
         """Mutates request-local forecast in place AND returns mutated forecast."""
         forecast['trial_rate'] = {
             'percentage': 99.9, 'median': 0.999, 'low': 0.0, 'high': 1.0,
@@ -663,3 +663,160 @@ def test_comparison_context_user_competitor_overrides_fallback():
         "Brand named by user must NOT appear in forbidden, even with " \
         "different casing in fallback_neighbors"
     assert "Monster Energy" in ctx2["forbidden_brand_names"]
+
+
+def _ctx_p1_8_2(allowed=None, forbidden=None, mode="anchored", fallback=False):
+    return {
+        "forecast_used_brands": allowed or [],
+        "dialogue_safe_anchor_brands": allowed or [],
+        "user_competitors": [],
+        "allowed_comparison_brands": allowed or [],
+        "forbidden_brand_names": forbidden or [],
+        "fallback_used": fallback,
+        "confidence": "low" if fallback else "medium",
+        "coverage_tier": "weak" if fallback else "strong",
+        "comparison_mode": mode,
+        "_meta": {"context_version": "v1.0"},
+    }
+
+
+def _matcha_gum_synthetic_inputs():
+    from backend.dtc_v3.discussion import generate_discussion
+    product = {
+        "product_name": "Matcha Chewing Gum",
+        "name": "Matcha Chewing Gum",
+        "price": 0.25,
+        "category": "food_beverage",
+        "competitors": [{"name": "Trident"}, {"name": "Orbit"}, {"name": "Matchew"}],
+    }
+    forecast = {
+        "trial_rate": {"median": 0.04, "low": 0.02, "high": 0.06, "percentage": 4.0},
+        "confidence": "low",
+        "verdict": "test_before_launch",
+        "version": "v3-lite",
+        "diagnostics": {"prior_source": "fallback_category_median"},
+    }
+    return product, forecast
+
+
+def test_template_anchored_mode_uses_allowed_brands_only():
+    from backend.dtc_v3.discussion import generate_discussion, clear_cache
+    clear_cache()
+    product, forecast = _matcha_gum_synthetic_inputs()
+    ctx = _ctx_p1_8_2(
+        allowed=["Pedialyte", "DripDrop", "LMNT"],
+        forbidden=["Monster Energy", "Red Bull"],
+        mode="anchored",
+        fallback=False,
+    )
+    result = generate_discussion(product, forecast, agent_count=20, mode="template", comparison_context=ctx)
+    text = str(result)
+    assert "Monster Energy" not in text
+    assert "Red Bull" not in text
+
+
+def test_template_user_competitor_mode_no_anchored_phrases():
+    from backend.dtc_v3.discussion import generate_discussion, clear_cache
+    clear_cache()
+    product, forecast = _matcha_gum_synthetic_inputs()
+    ctx = _ctx_p1_8_2(
+        allowed=["Trident", "Orbit", "Matchew"],
+        forbidden=["Poppi Prebiotic Soda", "Liquid Death Mountain Water", "Monster Energy"],
+        mode="user_competitor",
+        fallback=True,
+    )
+    result = generate_discussion(product, forecast, agent_count=20, mode="template", comparison_context=ctx)
+    text = str(result)
+    assert "Poppi Prebiotic Soda" not in text
+    assert "Liquid Death" not in text
+    assert "Monster Energy" not in text
+
+
+def test_template_generic_directional_mode_no_brand_names():
+    from backend.dtc_v3.discussion import generate_discussion, clear_cache
+    clear_cache()
+    product, forecast = _matcha_gum_synthetic_inputs()
+    product["competitors"] = []
+    ctx = _ctx_p1_8_2(
+        allowed=[],
+        forbidden=["Poppi Prebiotic Soda", "Monster Energy", "Red Bull"],
+        mode="generic_directional",
+        fallback=True,
+    )
+    result = generate_discussion(product, forecast, agent_count=20, mode="template", comparison_context=ctx)
+    text = str(result)
+    assert "Poppi" not in text
+    assert "Monster" not in text
+    assert "Red Bull" not in text
+    for banned in [
+        "Compared with",
+        "Stacked against",
+        "the category leader",
+        "comparable-brand evidence is strong",
+        "comparable-brand math is reasonable",
+        "hits the trial rate",
+        "in striking range",
+        "competitor comparison",
+        "{anchor}",
+    ]:
+        assert banned not in text, f"{banned!r} must NEVER appear in generic_directional output"
+
+
+def test_template_safety_scan_replaces_forbidden_brand(monkeypatch):
+    from backend.dtc_v3 import discussion as disc_mod
+    from backend.dtc_v3.discussion import generate_discussion, clear_cache, GENERIC_FOR_REASON_VARIANTS
+    clear_cache()
+    poison = ["Monster Energy is the obvious benchmark for this product."] * 8
+    monkeypatch.setattr(disc_mod, "GENERIC_FOR_REASON_VARIANTS", poison)
+    product, forecast = _matcha_gum_synthetic_inputs()
+    product["competitors"] = []
+    ctx = _ctx_p1_8_2(
+        allowed=[],
+        forbidden=["Monster Energy"],
+        mode="generic_directional",
+        fallback=True,
+    )
+    result = generate_discussion(product, forecast, agent_count=20, mode="template", comparison_context=ctx)
+    text = str(result)
+    assert "Monster Energy" not in text, "sanitizer must REMOVE the injected forbidden brand"
+    assert "I would need to evaluate this against my current options." in text, \
+        "sanitizer must REPLACE with the safe fallback string"
+
+
+def test_template_matcha_gum_full_path():
+    from backend.dtc_v3.discussion import generate_discussion, clear_cache
+    clear_cache()
+    product, forecast = _matcha_gum_synthetic_inputs()
+    ctx = _ctx_p1_8_2(
+        allowed=["Trident", "Orbit", "Matchew"],
+        forbidden=[
+            "Poppi Prebiotic Soda", "Liquid Death Mountain Water",
+            "Health-Ade Kombucha", "Monster Energy", "Prime Energy",
+            "Red Bull", "C4 Energy", "Celsius",
+        ],
+        mode="user_competitor",
+        fallback=True,
+    )
+    result = generate_discussion(product, forecast, agent_count=20, mode="template", comparison_context=ctx)
+    text = str(result)
+    for forbidden in [
+        "Poppi", "Liquid Death", "Health-Ade",
+        "Monster Energy", "Prime Energy", "Red Bull",
+        "C4 Energy", "Celsius",
+    ]:
+        assert forbidden not in text, f"{forbidden!r} must NEVER appear in matcha gum dialogue"
+
+
+def test_missing_comparison_context_raises():
+    from backend.dtc_v3.discussion import generate_discussion
+    import pytest
+    product = {"product_name": "X", "name": "X", "price": 1.0}
+    forecast = {
+        "trial_rate": {"median": 0.05, "low": 0.03, "high": 0.07, "percentage": 5.0},
+        "confidence": "medium",
+        "verdict": "test_before_launch",
+        "version": "v3-lite",
+    }
+    with pytest.raises(ValueError):
+        generate_discussion(product, forecast, agent_count=20, mode="template")
+

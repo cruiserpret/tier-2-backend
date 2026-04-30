@@ -22,7 +22,7 @@ from backend.dtc_v3.bucket_allocator import allocate_buckets
 from backend.dtc_v3.persona_generator import select_personas_for_product
 from backend.dtc_v3.llm_dialogue_enricher import enrich_with_llm_dialogue
 
-DISCUSSION_VERSION = "discussion_v1"
+DISCUSSION_VERSION = "discussion_v2"
 ALLOWED_AGENT_COUNTS = tuple(range(20, 51))  # 20-50 inclusive
 DEFAULT_AGENT_COUNT = 20
 ALLOWED_MODES = ("template", "llm")
@@ -34,8 +34,24 @@ _DISCUSSION_CACHE: dict[str, dict] = {}
 # ────────────────────────────────────────────────────────────────────
 # Seed
 # ────────────────────────────────────────────────────────────────────
-def generate_seed(product: dict, forecast: dict, agent_count: int, mode: str = DEFAULT_MODE) -> str:
-    """Deterministic seed for caching + LLM reproducibility."""
+def generate_seed(
+    product: dict,
+    forecast: dict,
+    agent_count: int,
+    mode: str = DEFAULT_MODE,
+    comparison_context: dict | None = None,
+) -> str:
+    """Deterministic seed for caching + LLM reproducibility.
+
+    P1.8.2: comparison_context contributes to seed.
+    """
+    cc = comparison_context or {}
+    cc_canonical = {
+        "context_version": (cc.get("_meta") or {}).get("context_version"),
+        "comparison_mode": cc.get("comparison_mode"),
+        "allowed_comparison_brands": cc.get("allowed_comparison_brands", []) or [],
+        "forbidden_brand_names": cc.get("forbidden_brand_names", []) or [],
+    }
     canonical_payload = {
         "product": product,
         "forecast_core": {
@@ -48,6 +64,7 @@ def generate_seed(product: dict, forecast: dict, agent_count: int, mode: str = D
         "agent_count": agent_count,
         "mode": mode,
         "discussion_version": DISCUSSION_VERSION,
+        "comparison_context": cc_canonical,
     }
     canonical = json.dumps(canonical_payload, sort_keys=True, default=str)
     return hashlib.sha256(canonical.encode()).hexdigest()
@@ -61,6 +78,7 @@ def generate_discussion(
     forecast: dict,
     agent_count: int = DEFAULT_AGENT_COUNT,
     mode: str = DEFAULT_MODE,
+    comparison_context: dict | None = None,
 ) -> dict:
     """
     Returns {"agent_panel": {...}}.
@@ -68,7 +86,7 @@ def generate_discussion(
     mode="template" (default): deterministic, fast, diverse template path.
     mode="llm": one structured LLM call. Falls back to template on any failure.
 
-    Never raises (other than invalid input).
+    P1.8.2: comparison_context is REQUIRED.
     """
     if agent_count < 20 or agent_count > 50:
         raise ValueError(f"agent_count must be 20-50, got {agent_count}")
@@ -78,15 +96,21 @@ def generate_discussion(
         raise ValueError("product must be a non-empty dict")
     if not isinstance(forecast, dict) or not forecast:
         raise ValueError("forecast must be a non-empty dict")
+    if comparison_context is None or not isinstance(comparison_context, dict):
+        raise ValueError(
+            "comparison_context is required for discussion generation. "
+            "Per P1.8.2: template path may only use "
+            "comparison_context.allowed_comparison_brands."
+        )
 
-    seed = generate_seed(product, forecast, agent_count, mode)
+    seed = generate_seed(product, forecast, agent_count, mode, comparison_context)
 
     cached = _DISCUSSION_CACHE.get(seed)
     if cached is not None:
         return cached
 
     # Build template panel first — structural ground truth.
-    panel = _template_panel(product, forecast, agent_count, seed)
+    panel = _template_panel(product, forecast, agent_count, seed, comparison_context)
     panel_source = "template"
 
     # If mode=llm, overlay LLM-generated narrative onto the template panel.
@@ -588,34 +612,56 @@ def _deterministic_in_range(low: float, high: float, seed_int: int,
     return low + span * step
 
 
-def _what_would_change_mind(stance: str, anchor: str, seed_int: int,
-                             agent_idx: int) -> str:
+def _what_would_change_mind(stance: str, anchor, seed_int: int,
+                             agent_idx: int, comparison_mode: str = "anchored") -> str:
     """Stance-specific template (not cross-pool — each stance has its own list)."""
-    pool = {
-        "for":     WHAT_CHANGE_MIND_FOR,
-        "neutral": WHAT_CHANGE_MIND_NEUTRAL,
-        "against": WHAT_CHANGE_MIND_AGAINST,
-    }.get(stance, WHAT_CHANGE_MIND_NEUTRAL)
+    if comparison_mode == "generic_directional":
+        pool = GENERIC_CHANGE_MIND_VARIANTS
+    else:
+        pool = {
+            "for":     WHAT_CHANGE_MIND_FOR,
+            "neutral": WHAT_CHANGE_MIND_NEUTRAL,
+            "against": WHAT_CHANGE_MIND_AGAINST,
+        }.get(stance, WHAT_CHANGE_MIND_NEUTRAL)
     template = pool[(seed_int + agent_idx + 7) % len(pool)]
-    return template.replace("{anchor}", anchor)
+    return template.replace("{anchor}", anchor or "")
 
 
-def _round_response(stance: str, round_num: int, anchor: str, seed_int: int,
-                     agent_idx: int) -> dict:
-    pool = {
-        "for":     FOR_REASONS,
-        "neutral": NEUTRAL_REASONS,
-        "against": AGAINST_REASONS,
-    }[stance]
+def _round_response(stance: str, round_num: int, anchor, seed_int: int,
+                     agent_idx: int, comparison_mode: str = "anchored") -> dict:
+    if comparison_mode == "generic_directional":
+        pool = {
+            "for":     GENERIC_FOR_REASON_VARIANTS,
+            "neutral": GENERIC_NEUTRAL_REASON_VARIANTS,
+            "against": GENERIC_AGAINST_REASON_VARIANTS,
+        }[stance]
+    elif comparison_mode == "user_competitor":
+        pool = {
+            "for":     _USER_COMP_FOR_REASONS,
+            "neutral": _USER_COMP_NEUTRAL_REASONS,
+            "against": _USER_COMP_AGAINST_REASONS,
+        }[stance]
+    else:
+        pool = {
+            "for":     FOR_REASONS,
+            "neutral": NEUTRAL_REASONS,
+            "against": AGAINST_REASONS,
+        }[stance]
     raw = pool[(seed_int + agent_idx + round_num * 11) % len(pool)]
-    body = raw.replace("{anchor}", anchor)
-    frame = ROUND_FRAMES[round_num][stance]
-    response = frame.replace("{body}", body).replace("{anchor}", anchor)
+    safe_anchor = anchor or ""
+    body = raw.replace("{anchor}", safe_anchor)
+    if comparison_mode == "generic_directional" and round_num == 2:
+        frame = GENERIC_ROUND2_FRAMES[stance]
+    else:
+        frame = ROUND_FRAMES[round_num][stance]
+    response = frame.replace("{body}", body).replace("{anchor}", safe_anchor)
     title = {1: "First Impression", 2: "Competitor Comparison", 3: "Final Verdict"}[round_num]
+    if comparison_mode == "generic_directional" and round_num == 2:
+        title = "Use Case Check"
     return {"round": round_num, "title": title, "response": response}
 
 
-def _build_enriched_agents(*, personas, bucket, seed_int, anchor_for):
+def _build_enriched_agents(*, personas, bucket, seed_int, anchor_for, comparison_mode="anchored", forbidden_lookup=None, product=None):
     """Build enriched per-agent records. Bucket-ordered: BUY then CONS then WON\'T BUY."""
     agents = []
     n_buy = bucket.n_buy
@@ -660,26 +706,47 @@ def _build_enriched_agents(*, personas, bucket, seed_int, anchor_for):
         initial_stance = _verdict_to_stance(initial_verdict)
         shifted = (initial_verdict != final_verdict)
         is_hardcore = (arc_type == "hardcore")
-        key_moment = KEY_MOMENT_TEMPLATES[arc_type]
+        if comparison_mode == "generic_directional":
+            key_moment = GENERIC_KEY_MOMENT_TEMPLATES.get(arc_type, KEY_MOMENT_TEMPLATES[arc_type])
+        else:
+            key_moment = KEY_MOMENT_TEMPLATES[arc_type]
 
         anchor = anchor_for(i)
 
-        objection_pool = {
-            "for":     FOR_OBJECTIONS,
-            "neutral": NEUTRAL_OBJECTIONS,
-            "against": AGAINST_OBJECTIONS,
-        }[stance]
-        top_objection = _pick_variant(objection_pool, seed_int, i, anchor)
-
-        reason_pool = {
-            "for":     FOR_REASONS,
-            "neutral": NEUTRAL_REASONS,
-            "against": AGAINST_REASONS,
-        }[stance]
-        reason = _pick_variant(reason_pool, seed_int, i, anchor)
+        if comparison_mode == "generic_directional":
+            objection_pool = GENERIC_OBJECTION_VARIANTS
+            reason_pool = {
+                "for":     GENERIC_FOR_REASON_VARIANTS,
+                "neutral": GENERIC_NEUTRAL_REASON_VARIANTS,
+                "against": GENERIC_AGAINST_REASON_VARIANTS,
+            }[stance]
+        elif comparison_mode == "user_competitor":
+            objection_pool = {
+                "for":     _USER_COMP_FOR_OBJECTIONS,
+                "neutral": _USER_COMP_NEUTRAL_OBJECTIONS,
+                "against": _USER_COMP_AGAINST_OBJECTIONS,
+            }[stance]
+            reason_pool = {
+                "for":     _USER_COMP_FOR_REASONS,
+                "neutral": _USER_COMP_NEUTRAL_REASONS,
+                "against": _USER_COMP_AGAINST_REASONS,
+            }[stance]
+        else:
+            objection_pool = {
+                "for":     FOR_OBJECTIONS,
+                "neutral": NEUTRAL_OBJECTIONS,
+                "against": AGAINST_OBJECTIONS,
+            }[stance]
+            reason_pool = {
+                "for":     FOR_REASONS,
+                "neutral": NEUTRAL_REASONS,
+                "against": AGAINST_REASONS,
+            }[stance]
+        top_objection = _pick_variant(objection_pool, seed_int, i, anchor or "")
+        reason = _pick_variant(reason_pool, seed_int, i, anchor or "")
 
         round_responses = [
-            _round_response(stance, r, anchor, seed_int, i)
+            _round_response(stance, r, anchor, seed_int, i, comparison_mode=comparison_mode)
             for r in (1, 2, 3)
         ]
 
@@ -714,20 +781,29 @@ def _build_enriched_agents(*, personas, bucket, seed_int, anchor_for):
             "is_hardcore":      is_hardcore,
             "shifted":          shifted,
             "key_moment":       key_moment,
-            "what_would_change_mind": _what_would_change_mind(stance, anchor, seed_int, i),
+            "what_would_change_mind": _what_would_change_mind(stance, anchor, seed_int, i, comparison_mode=comparison_mode),
             "round_responses":  round_responses,
             "journey":          journey,
         })
 
+    if forbidden_lookup:
+        for a in agents:
+            _sanitize_agent_for_forbidden(a, forbidden_lookup)
+
     return agents
 
 
-def _template_panel(product: dict, forecast: dict, agent_count: int, seed: str) -> dict:
+def _template_panel(product: dict, forecast: dict, agent_count: int, seed: str, comparison_context: dict) -> dict:
     """Deterministic template panel with diverse reason/objection variants."""
     trial_rate_pct = forecast.get("trial_rate", {}).get("percentage", 10.0) or 10.0
     confidence = (forecast.get("confidence") or "medium").lower()
     verdict = forecast.get("verdict", "")
-    anchored = forecast.get("anchored_on", []) or []
+    cc_mode = comparison_context.get("comparison_mode", "anchored")
+    cc_allowed = comparison_context.get("allowed_comparison_brands", []) or []
+    cc_forbidden_lower = {
+        b.lower() for b in (comparison_context.get("forbidden_brand_names") or [])
+    }
+    anchored = [{"brand": b} for b in cc_allowed]
     forecast_drivers = forecast.get("top_drivers", []) or []
     forecast_objections = forecast.get("top_objections", []) or []
 
@@ -757,15 +833,15 @@ def _template_panel(product: dict, forecast: dict, agent_count: int, seed: str) 
         product, agent_count, seed
     )
 
-    # Anchor helpers reused by the agent enrichment.
-    top_anchor = anchored[0].get("brand") if anchored else "the category leader"
-    secondary_anchors = [a.get("brand") for a in anchored[1:4] if a.get("brand")]
-
-    def anchor_for(idx: int) -> str:
-        if not anchored:
-            return "the category leader"
-        pool = [top_anchor] + secondary_anchors
-        return pool[idx % len(pool)] if pool else top_anchor
+    if anchored:
+        top_anchor = anchored[0].get("brand")
+        secondary_anchors = [a.get("brand") for a in anchored[1:4] if a.get("brand")]
+        def anchor_for(idx):
+            pool_local = [top_anchor] + secondary_anchors
+            return pool_local[idx % len(pool_local)] if pool_local else top_anchor
+    else:
+        def anchor_for(idx):
+            return None
 
     # Build enriched agents (verdict + score arc + journey + round_responses).
     agents = _build_enriched_agents(
@@ -773,6 +849,9 @@ def _template_panel(product: dict, forecast: dict, agent_count: int, seed: str) 
         bucket=bucket,
         seed_int=seed_int,
         anchor_for=anchor_for,
+        comparison_mode=cc_mode,
+        forbidden_lookup=cc_forbidden_lower,
+        product=product,
     )
 
     avg_score = sum(a["score"] for a in agents) / len(agents)
@@ -978,3 +1057,155 @@ def _template_panel(product: dict, forecast: dict, agent_count: int, seed: str) 
     }
 
     return panel
+
+
+GENERIC_FOR_REASON_VARIANTS = [
+    "Buyers in this category are usually paying close to this price for similar products.",
+    "Distribution and category fit feel grounded for what this is.",
+    "Price is in line with what I already pay for similar products.",
+    "Open to it the value proposition matches my use case.",
+    "For a product like this, the price feels reasonable.",
+    "I would try this once: the price is not crazy and the use case fits.",
+    "Category timing works buyers are already paying for products like this.",
+    "Solid bet given how the category is moving. I would add it to my next order.",
+]
+
+GENERIC_NEUTRAL_REASON_VARIANTS = [
+    "Open to it, but I would want a sample or money-back guarantee before committing.",
+    "Comparable to options I already know, but I would want a clearer differentiation story first.",
+    "I would consider it if it showed up consistently in my feed for 3 months.",
+    "Decent fit with how this category usually adopts, but I have not seen enough yet.",
+    "On the fence the category is right but the moment is not urgent for me.",
+    "Anchors look reasonable. Real test is whether it sticks.",
+    "Interested but waiting on independent reviews before pulling the trigger.",
+    "Price is fine; the question is whether it earns its spot in my routine.",
+]
+
+GENERIC_AGAINST_REASON_VARIANTS = [
+    "I already have a routine in this category; switching cost is real and the upside is not obvious.",
+    "Price feels high for what looks like another version of what I already use.",
+    "Subscription fatigue I have cancelled enough of these to know my pattern.",
+    "Differentiation is too thin against the alternatives I already know.",
+    "The category is crowded; I do not have shelf-space (mental or physical) for another.",
+    "Marketing claim does not match what comparable products actually deliver.",
+    "I would rather wait for an established option to release something similar than try this one.",
+    "Existing alternatives serve me I would need a 2x reason, not a 1.1x reason.",
+]
+
+GENERIC_OBJECTION_VARIANTS = [
+    "Need confirmation it lasts longer than the alternatives I already use.",
+    "Hope shipping does not slip during peak season.",
+    "Would prefer single-purchase before subscription.",
+    "Differentiation from what I already use is not yet clear to me.",
+    "Price-to-value ratio is borderline could go either way.",
+    "Would prefer to see it on a retail shelf before committing.",
+    "Brand authenticity is hard to judge this early.",
+    "Want to see how customer service handles complaints.",
+    "Loyal to my current routine; switching cost outweighs benefit.",
+    "No retail presence yet DTC-only is friction.",
+    "Need a clearer use-case for my specific situation.",
+    "Reviews are not strong enough to justify a try.",
+    "Does not solve a problem I have right now.",
+    "Brand story does not differentiate from what I already buy.",
+    "Need more time to evaluate vs. existing alternatives.",
+]
+
+GENERIC_CHANGE_MIND_VARIANTS = [
+    "A clearer head-to-head with a brand I trust would help.",
+    "Removing the part that turns me off (price/format/claim).",
+    "Stronger differentiation story on a single dimension.",
+    "Editorial reviews from outlets I read.",
+    "A creator I follow doing a real (not paid) review.",
+    "More proof from real long-term users would tip me.",
+    "A genuine starter offer or trial pack would push me to buy.",
+    "Multiple buyers in my circle reporting it actually works.",
+    "Independent testing or peer-reviewed data.",
+    "Direct-comparison test against my current go-to that I can verify myself.",
+    "A trusted brand partnership or distribution deal.",
+    "Distribution into a channel I already shop.",
+    "If shipping or unboxing degrades, I would churn.",
+    "Marketing claims that do not match the actual product would do it.",
+    "If a creator I trust calls it out, I would reconsider.",
+]
+
+GENERIC_ROUND2_FRAMES = {
+    "for":     "Round 2: the use case became clearer for me. {body}",
+    "neutral": "Round 2: still weighing the trade-offs. {body}",
+    "against": "Round 2: the value proposition did not land. {body}",
+}
+
+GENERIC_KEY_MOMENT_TEMPLATES = {
+    "steady_buy":         "Round 1: the use case fit my existing buying habits.",
+    "considering_to_buy": "Round 2: the use case became clearer.",
+    "steady_considering": "Round 3: still wanted stronger proof before trying.",
+    "drifted_into_considering_from_buy":  "Round 2: price or trust concerns reduced initial enthusiasm.",
+    "drifted_into_considering_from_wont": "Round 3: softened slightly after seeing a clearer use case.",
+    "considering_to_wont": "Round 2: trust concerns became stronger.",
+    "steady_wont":         "Round 1: did not see enough reason to change current habits.",
+}
+
+
+def _scan_forbidden_brands(text_value, forbidden_lookup):
+    if not text_value or not forbidden_lookup:
+        return False
+    haystack = text_value.lower()
+    return any(brand in haystack for brand in forbidden_lookup)
+
+
+_USER_COMP_BANNED_SUBSTRS = (
+    "comparable-brand evidence is strong",
+    "comparable-brand math is reasonable",
+    "hits the trial rate",
+    "{anchor}-style",
+    "the comparable-brand math",
+    "Anchor brands",
+    "comparable-brand anchors",
+)
+
+
+def _filter_user_comp_safe(pool):
+    bans = tuple(s.lower() for s in _USER_COMP_BANNED_SUBSTRS)
+    return [v for v in pool if not any(b in v.lower() for b in bans)] or list(pool)
+
+
+_USER_COMP_FOR_REASONS = _filter_user_comp_safe(FOR_REASONS)
+_USER_COMP_NEUTRAL_REASONS = _filter_user_comp_safe(NEUTRAL_REASONS)
+_USER_COMP_AGAINST_REASONS = _filter_user_comp_safe(AGAINST_REASONS)
+_USER_COMP_FOR_OBJECTIONS = _filter_user_comp_safe(FOR_OBJECTIONS)
+_USER_COMP_NEUTRAL_OBJECTIONS = _filter_user_comp_safe(NEUTRAL_OBJECTIONS)
+_USER_COMP_AGAINST_OBJECTIONS = _filter_user_comp_safe(AGAINST_OBJECTIONS)
+
+
+SAFE_REPLACEMENTS_P1_8_2 = {
+    "reason": "I would need to evaluate this against my current options.",
+    "top_objection": "Need more information about how this fits my needs.",
+    "what_would_change_mind": "Stronger evidence would tip me toward trying it.",
+    "key_moment": "Round 2: weighed the trade-offs against my current routine.",
+    "key_quote": "Reviewing how this fits my needs.",
+    "shift_reason": "Adjusted view after considering the alternatives.",
+}
+
+
+def _sanitize_agent_for_forbidden(agent, forbidden_lookup):
+    if not forbidden_lookup:
+        return agent
+    for field, safe_text in SAFE_REPLACEMENTS_P1_8_2.items():
+        val = agent.get(field)
+        if isinstance(val, str) and _scan_forbidden_brands(val, forbidden_lookup):
+            agent[field] = safe_text
+    rrs = agent.get("round_responses")
+    if isinstance(rrs, list):
+        for rr in rrs:
+            resp = rr.get("response") if isinstance(rr, dict) else None
+            if isinstance(resp, str) and _scan_forbidden_brands(resp, forbidden_lookup):
+                rr["response"] = (
+                    f"Round {rr.get('round', 1)}: weighing how this fits my routine and budget."
+                )
+    journey = agent.get("journey")
+    if isinstance(journey, dict):
+        for jk in ("shift_reason", "key_moment", "key_quote"):
+            jv = journey.get(jk)
+            if isinstance(jv, str) and _scan_forbidden_brands(jv, forbidden_lookup):
+                journey[jk] = SAFE_REPLACEMENTS_P1_8_2.get(jk, "Adjusted view after considering the alternatives.")
+    return agent
+

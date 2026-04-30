@@ -191,6 +191,7 @@ def create_forecast():
         # Phase 1 — Evidence Panel + Confidence Ledger
         "evidence_buckets": report.evidence_buckets,
         "confidence_ledger": report.confidence_ledger,
+        "comparison_context": report.comparison_context,
         "diagnostics": {
             "rag_prior": round(report.rag_prior, 4),
             "adjustment_applied": round(report.adjustment_applied, 4),
@@ -297,8 +298,13 @@ def create_discussion():
     # result["forecast"]. Both must be checked.
     captured_core = _extract_forecast_core(forecast)
 
+    comparison_context = forecast.get("comparison_context") if isinstance(forecast, dict) else None
+
     try:
-        result = generate_discussion(product, forecast, agent_count, mode=mode)
+        result = generate_discussion(
+            product, forecast, agent_count, mode=mode,
+            comparison_context=comparison_context,
+        )
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
     except Exception as e:

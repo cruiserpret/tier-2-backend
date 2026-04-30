@@ -71,6 +71,22 @@ def low_confidence_forecast(liquid_iv_forecast):
     return f
 
 
+@pytest.fixture
+def comparison_context():
+    return {
+        "forecast_used_brands": ["Pedialyte", "DripDrop", "LMNT"],
+        "dialogue_safe_anchor_brands": ["Pedialyte", "DripDrop", "LMNT"],
+        "user_competitors": ["Pedialyte", "LMNT"],
+        "allowed_comparison_brands": ["Pedialyte", "DripDrop", "LMNT"],
+        "forbidden_brand_names": [],
+        "fallback_used": False,
+        "confidence": "medium-high",
+        "coverage_tier": "strong",
+        "comparison_mode": "anchored",
+        "_meta": {"context_version": "v1.0"},
+    }
+
+
 @pytest.fixture(autouse=True)
 def reset_cache():
     clear_cache()
@@ -78,8 +94,8 @@ def reset_cache():
     clear_cache()
 
 
-def test_discussion_returns_agent_panel(liquid_iv_product, liquid_iv_forecast):
-    result = generate_discussion(liquid_iv_product, liquid_iv_forecast, agent_count=20)
+def test_discussion_returns_agent_panel(liquid_iv_product, liquid_iv_forecast, comparison_context):
+    result = generate_discussion(liquid_iv_product, liquid_iv_forecast, agent_count=20, comparison_context=comparison_context)
     assert "agent_panel" in result
     panel = result["agent_panel"]
     for key in ("agent_count", "seed", "rounds", "agents", "top_drivers",
@@ -88,8 +104,8 @@ def test_discussion_returns_agent_panel(liquid_iv_product, liquid_iv_forecast):
         assert key in panel, f"missing field: {key}"
 
 
-def test_discussion_agent_count_20(liquid_iv_product, liquid_iv_forecast):
-    result = generate_discussion(liquid_iv_product, liquid_iv_forecast, agent_count=20)
+def test_discussion_agent_count_20(liquid_iv_product, liquid_iv_forecast, comparison_context):
+    result = generate_discussion(liquid_iv_product, liquid_iv_forecast, agent_count=20, comparison_context=comparison_context)
     panel = result["agent_panel"]
     assert panel["agent_count"] == 20
     assert len(panel["agents"]) == 20
@@ -99,26 +115,26 @@ def test_discussion_agent_count_20(liquid_iv_product, liquid_iv_forecast):
         assert agent["id"].startswith("agent_")
 
 
-def test_discussion_agent_count_50(liquid_iv_product, liquid_iv_forecast):
-    result = generate_discussion(liquid_iv_product, liquid_iv_forecast, agent_count=50)
+def test_discussion_agent_count_50(liquid_iv_product, liquid_iv_forecast, comparison_context):
+    result = generate_discussion(liquid_iv_product, liquid_iv_forecast, agent_count=50, comparison_context=comparison_context)
     panel = result["agent_panel"]
     assert panel["agent_count"] == 50
     assert len(panel["agents"]) == 50
 
 
-def test_discussion_invalid_agent_count_raises(liquid_iv_product, liquid_iv_forecast):
+def test_discussion_invalid_agent_count_raises(liquid_iv_product, liquid_iv_forecast, comparison_context):
     with pytest.raises(ValueError):
-        generate_discussion(liquid_iv_product, liquid_iv_forecast, agent_count=10)
+        generate_discussion(liquid_iv_product, liquid_iv_forecast, agent_count=10, comparison_context=comparison_context)
     with pytest.raises(ValueError):
-        generate_discussion(liquid_iv_product, liquid_iv_forecast, agent_count=0)
+        generate_discussion(liquid_iv_product, liquid_iv_forecast, agent_count=0, comparison_context=comparison_context)
 
 
-def test_discussion_does_not_change_forecast(liquid_iv_product, liquid_iv_forecast):
+def test_discussion_does_not_change_forecast(liquid_iv_product, liquid_iv_forecast, comparison_context):
     """CRITICAL INVARIANT: discussion must not mutate the forecast number."""
     forecast_snapshot = copy.deepcopy(liquid_iv_forecast)
     rate_before = liquid_iv_forecast["trial_rate"]["median"]
 
-    result = generate_discussion(liquid_iv_product, liquid_iv_forecast, agent_count=20)
+    result = generate_discussion(liquid_iv_product, liquid_iv_forecast, agent_count=20, comparison_context=comparison_context)
 
     rate_after = liquid_iv_forecast["trial_rate"]["median"]
     assert rate_before == rate_after, "discussion mutated forecast.trial_rate.median"
@@ -129,23 +145,23 @@ def test_discussion_does_not_change_forecast(liquid_iv_product, liquid_iv_foreca
     assert "trial_rate_median" not in panel
 
 
-def test_discussion_low_confidence_includes_coverage_warning(liquid_iv_product, low_confidence_forecast):
-    result = generate_discussion(liquid_iv_product, low_confidence_forecast, agent_count=20)
+def test_discussion_low_confidence_includes_coverage_warning(liquid_iv_product, low_confidence_forecast, comparison_context):
+    result = generate_discussion(liquid_iv_product, low_confidence_forecast, agent_count=20, comparison_context=comparison_context)
     panel = result["agent_panel"]
     assert panel["coverage_warning"], "low-confidence forecast must include coverage_warning"
     assert "directional" in panel["coverage_warning"].lower()
 
 
-def test_discussion_high_confidence_no_coverage_warning(liquid_iv_product, liquid_iv_forecast):
-    result = generate_discussion(liquid_iv_product, liquid_iv_forecast, agent_count=20)
+def test_discussion_high_confidence_no_coverage_warning(liquid_iv_product, liquid_iv_forecast, comparison_context):
+    result = generate_discussion(liquid_iv_product, liquid_iv_forecast, agent_count=20, comparison_context=comparison_context)
     panel = result["agent_panel"]
     assert panel["coverage_warning"] == ""
 
 
-def test_discussion_same_seed_cached(liquid_iv_product, liquid_iv_forecast):
+def test_discussion_same_seed_cached(liquid_iv_product, liquid_iv_forecast, comparison_context):
     """Same input must return the same output (deterministic)."""
-    result_a = generate_discussion(liquid_iv_product, liquid_iv_forecast, agent_count=20)
-    result_b = generate_discussion(liquid_iv_product, liquid_iv_forecast, agent_count=20)
+    result_a = generate_discussion(liquid_iv_product, liquid_iv_forecast, agent_count=20, comparison_context=comparison_context)
+    result_b = generate_discussion(liquid_iv_product, liquid_iv_forecast, agent_count=20, comparison_context=comparison_context)
     assert result_a == result_b
     assert result_a["agent_panel"]["seed"] == result_b["agent_panel"]["seed"]
 
@@ -166,9 +182,9 @@ def test_seed_stable_for_simulation_id_change(liquid_iv_product, liquid_iv_forec
     assert seed_a == seed_b, "seed must not include simulation_id (random per run)"
 
 
-def test_template_reasons_are_diverse(liquid_iv_product, liquid_iv_forecast):
+def test_template_reasons_are_diverse(liquid_iv_product, liquid_iv_forecast, comparison_context):
     """At least 5 unique reason strings across 20 agents."""
-    result = generate_discussion(liquid_iv_product, liquid_iv_forecast, agent_count=20, mode="template")
+    result = generate_discussion(liquid_iv_product, liquid_iv_forecast, agent_count=20, mode="template", comparison_context=comparison_context)
     panel = result["agent_panel"]
     reasons = [a["reason"] for a in panel["agents"]]
     unique_reasons = set(reasons)
@@ -178,9 +194,9 @@ def test_template_reasons_are_diverse(liquid_iv_product, liquid_iv_forecast):
     )
 
 
-def test_template_objections_are_diverse(liquid_iv_product, liquid_iv_forecast):
+def test_template_objections_are_diverse(liquid_iv_product, liquid_iv_forecast, comparison_context):
     """At least 5 unique objection strings across 20 agents."""
-    result = generate_discussion(liquid_iv_product, liquid_iv_forecast, agent_count=20, mode="template")
+    result = generate_discussion(liquid_iv_product, liquid_iv_forecast, agent_count=20, mode="template", comparison_context=comparison_context)
     panel = result["agent_panel"]
     objections = [a["top_objection"] for a in panel["agents"]]
     unique_objections = set(objections)
@@ -190,19 +206,19 @@ def test_template_objections_are_diverse(liquid_iv_product, liquid_iv_forecast):
     )
 
 
-def test_mode_field_in_panel(liquid_iv_product, liquid_iv_forecast):
+def test_mode_field_in_panel(liquid_iv_product, liquid_iv_forecast, comparison_context):
     """Panel must report which mode actually fired (template vs llm)."""
-    result = generate_discussion(liquid_iv_product, liquid_iv_forecast, agent_count=20, mode="template")
+    result = generate_discussion(liquid_iv_product, liquid_iv_forecast, agent_count=20, mode="template", comparison_context=comparison_context)
     panel = result["agent_panel"]
     assert "mode" in panel
     assert panel["mode"] == "template"
 
 
-def test_invalid_mode_raises(liquid_iv_product, liquid_iv_forecast):
+def test_invalid_mode_raises(liquid_iv_product, liquid_iv_forecast, comparison_context):
     with pytest.raises(ValueError):
-        generate_discussion(liquid_iv_product, liquid_iv_forecast, agent_count=20, mode="random")
+        generate_discussion(liquid_iv_product, liquid_iv_forecast, agent_count=20, mode="random", comparison_context=comparison_context)
     with pytest.raises(ValueError):
-        generate_discussion(liquid_iv_product, liquid_iv_forecast, agent_count=20, mode="")
+        generate_discussion(liquid_iv_product, liquid_iv_forecast, agent_count=20, mode="", comparison_context=comparison_context)
 
 
 def test_mode_affects_seed(liquid_iv_product, liquid_iv_forecast):
