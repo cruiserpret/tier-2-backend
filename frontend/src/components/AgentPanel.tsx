@@ -62,7 +62,7 @@ export function AgentPanel({ panel, source, error }: Props) {
   return (
     <div className="report-card fade-up">
       <div className="report-card-eyebrow">
-        AI Buyer Panel — {panel.agent_count} synthetic personas
+        {panel.panel_label || "AI Buyer Panel"} — {panel.agent_count} synthetic personas
         {source === "cached_fallback" && (
           <span className="panel-source-badge cached" title="Live discussion unavailable, showing cached panel">
             cached fallback
@@ -72,6 +72,11 @@ export function AgentPanel({ panel, source, error }: Props) {
           <span className="panel-source-badge live">live</span>
         )}
       </div>
+      {panel.panel_context_note && (
+        <div className="panel-context-note" style={{ fontSize: "0.85rem", opacity: 0.75, marginTop: "0.5rem", marginBottom: "0.75rem" }}>
+          {panel.panel_context_note}
+        </div>
+      )}
 
       {panel.coverage_warning && (
         <div className="confidence-hint" style={{ marginBottom: 18 }}>

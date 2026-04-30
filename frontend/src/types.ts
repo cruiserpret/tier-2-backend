@@ -243,6 +243,10 @@ export interface AgentPanel {
   consensus: string;
   coverage_warning: string;
 
+  // P1.8.5B additive panel labeling (backend P1.8.5A)
+  panel_label?: string;
+  panel_context_note?: string;
+
   // 3c additive top-level fields
   intent_distribution?: IntentDistribution;
   buyer_journeys?: BuyerJourneySummary[];

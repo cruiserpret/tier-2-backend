@@ -6,14 +6,23 @@ import type { Agent } from "../types";
 
 interface Props {
   agents: Agent[];
+  panelLabel?: string;
+  panelContextNote?: string;
 }
 
-export function PrintAgentPanel({ agents }: Props) {
+export function PrintAgentPanel({ agents, panelLabel, panelContextNote }: Props) {
   if (!agents || agents.length === 0) return null;
+
+  const titleLabel = panelLabel || "AI Buyer Panel";
 
   return (
     <section className="print-agent-panel">
-      <h2>AI Buyer Panel — Full Discussion</h2>
+      <h2>{titleLabel} — Full Discussion</h2>
+      {panelContextNote && (
+        <p className="print-panel-context-note" style={{ fontSize: "10pt", fontStyle: "italic", marginTop: "4pt", marginBottom: "8pt" }}>
+          {panelContextNote}
+        </p>
+      )}
 
       {agents.map((agent, index) => (
         <article className="print-agent-card" key={agent.id ?? index}>

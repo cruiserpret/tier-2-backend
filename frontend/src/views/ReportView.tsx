@@ -71,7 +71,7 @@ export function ReportView() {
               ledger={f.confidence_ledger}
               legacyReasons={f.confidence_ledger ? undefined : f.confidence_reasons}
             />
-            <PrintAgentPanel agents={sim.agent_panel?.agents ?? []} />
+            <PrintAgentPanel agents={sim.agent_panel?.agents ?? []} panelLabel={sim.agent_panel?.panel_label} panelContextNote={sim.agent_panel?.panel_context_note} />
           </div>
           {sim.agent_panel?.rounds && sim.agent_panel.rounds.length > 0 && (
             <div className="report-rounds">
