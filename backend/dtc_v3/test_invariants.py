@@ -1060,3 +1060,98 @@ def test_llm_cache_key_changes_with_comparison_context():
     key1_again = _build_cache_key(product, forecast, panel, seed, cc1)
     assert key1 == key1_again, "cache key must be deterministic for identical comparison_context"
 
+
+def test_panel_label_anchored_strong_evidence():
+    from backend.dtc_v3.discussion import _panel_label, _panel_context_note
+    forecast = {
+        "trial_rate": {"median": 0.18, "percentage": 18.0},
+        "confidence": "medium-high",
+        "diagnostics": {"prior_source": "rag_weighted_median", "coverage_tier": "strong"},
+    }
+    cc = {
+        "comparison_mode": "anchored",
+        "fallback_used": False,
+        "confidence": "medium-high",
+        "coverage_tier": "strong",
+        "allowed_comparison_brands": ["Pedialyte", "DripDrop", "LMNT"],
+        "forbidden_brand_names": [],
+    }
+    assert _panel_label(forecast, cc) == "AI Buyer Panel"
+    assert _panel_context_note(forecast, cc) == ""
+
+
+def test_panel_label_user_competitor_directional():
+    from backend.dtc_v3.discussion import _panel_label, _panel_context_note
+    forecast = {
+        "trial_rate": {"median": 0.04, "percentage": 4.0},
+        "confidence": "low",
+        "diagnostics": {"prior_source": "fallback_category_median", "coverage_tier": "weak"},
+    }
+    cc = {
+        "comparison_mode": "user_competitor",
+        "fallback_used": True,
+        "confidence": "low",
+        "coverage_tier": "weak",
+        "allowed_comparison_brands": ["Trident", "Orbit", "Matchew"],
+        "forbidden_brand_names": ["Poppi", "Monster Energy"],
+    }
+    assert _panel_label(forecast, cc) == "AI Buyer Panel — Directional, User-Competitor Based"
+    note = _panel_context_note(forecast, cc)
+    assert note != ""
+    assert "user-stated competitors" in note.lower() or "user-competitor" in note.lower()
+
+
+def test_panel_label_generic_directional():
+    from backend.dtc_v3.discussion import _panel_label, _panel_context_note
+    forecast = {
+        "trial_rate": {"median": 0.04, "percentage": 4.0},
+        "confidence": "low",
+        "diagnostics": {"prior_source": "fallback_global_median", "coverage_tier": "weak"},
+    }
+    cc = {
+        "comparison_mode": "generic_directional",
+        "fallback_used": True,
+        "confidence": "low",
+        "coverage_tier": "weak",
+        "allowed_comparison_brands": [],
+        "forbidden_brand_names": ["Poppi", "Monster Energy", "Red Bull"],
+    }
+    assert _panel_label(forecast, cc) == "AI Buyer Panel — Directional, Low Evidence"
+    note = _panel_context_note(forecast, cc)
+    assert note != ""
+    assert "directional" in note.lower()
+
+
+def test_panel_label_directional_when_fallback_but_anchored_mode():
+    from backend.dtc_v3.discussion import _panel_label
+    forecast = {
+        "trial_rate": {"median": 0.05, "percentage": 5.0},
+        "confidence": "low",
+        "diagnostics": {"prior_source": "fallback_category_median", "coverage_tier": "weak"},
+    }
+    cc = {
+        "comparison_mode": "anchored",
+        "fallback_used": True,
+        "confidence": "low",
+        "coverage_tier": "weak",
+        "allowed_comparison_brands": ["Pedialyte"],
+        "forbidden_brand_names": [],
+    }
+    assert _panel_label(forecast, cc) == "AI Buyer Panel — Directional"
+
+
+def test_panel_label_anchored_mode_emits_no_context_note():
+    from backend.dtc_v3.discussion import _panel_context_note
+    forecast = {
+        "trial_rate": {"median": 0.18, "percentage": 18.0},
+        "confidence": "medium-high",
+        "diagnostics": {"prior_source": "rag_weighted_median", "coverage_tier": "strong"},
+    }
+    cc = {
+        "comparison_mode": "anchored",
+        "fallback_used": False,
+        "allowed_comparison_brands": ["Pedialyte", "DripDrop"],
+        "forbidden_brand_names": [],
+    }
+    assert _panel_context_note(forecast, cc) == ""
+

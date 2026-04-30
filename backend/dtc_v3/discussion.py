@@ -128,6 +128,8 @@ def generate_discussion(
     panel["agent_count"] = agent_count
     panel["mode"] = panel_source
     panel["coverage_warning"] = _coverage_warning(forecast)
+    panel["panel_label"] = _panel_label(forecast, comparison_context)
+    panel["panel_context_note"] = _panel_context_note(forecast, comparison_context)
 
     response = {"agent_panel": panel}
     _DISCUSSION_CACHE[seed] = response
@@ -157,6 +159,57 @@ def _coverage_warning(forecast: dict) -> str:
             "Comparable coverage is weak for this product subtype, so this buyer-panel "
             "discussion is directional — it explains the forecast's logic, not validated buyer behavior."
         )
+    return ""
+
+
+def _panel_label(forecast: dict, comparison_context: dict) -> str:
+    """P1.8.5A: user-visible panel title. Reflects trust state."""
+    cc = comparison_context or {}
+    diagnostics = forecast.get("diagnostics", {}) or {}
+    mode = cc.get("comparison_mode")
+    confidence = (forecast.get("confidence") or "").lower()
+    coverage_tier = (
+        forecast.get("coverage_tier")
+        or diagnostics.get("coverage_tier")
+        or ""
+    ).lower()
+    fallback_used = bool(
+        cc.get("fallback_used")
+        or forecast.get("fallback_used")
+        or diagnostics.get("fallback_used")
+    )
+    prior_source = (diagnostics.get("prior_source") or "").lower()
+
+    if mode == "generic_directional":
+        return "AI Buyer Panel — Directional, Low Evidence"
+
+    if mode == "user_competitor":
+        return "AI Buyer Panel — Directional, User-Competitor Based"
+
+    if fallback_used or confidence == "low" or coverage_tier == "weak" or prior_source.startswith("fallback"):
+        return "AI Buyer Panel — Directional"
+
+    return "AI Buyer Panel"
+
+
+def _panel_context_note(forecast: dict, comparison_context: dict) -> str:
+    """P1.8.5A: short context note shown under panel title for non-anchored modes."""
+    cc = comparison_context or {}
+    mode = cc.get("comparison_mode")
+
+    if mode == "user_competitor":
+        return (
+            "Assembly did not find enough eligible forecast anchors, so this panel uses "
+            "the product brief and user-stated competitors. Retrieved-but-unused brands "
+            "are not treated as competitors."
+        )
+
+    if mode == "generic_directional":
+        return (
+            "Assembly did not find eligible forecast anchors or user-stated competitors. "
+            "This panel is directional and based on the product brief, use case, and buyer assumptions."
+        )
+
     return ""
 
 
