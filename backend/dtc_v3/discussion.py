@@ -118,6 +118,7 @@ def generate_discussion(
     if mode == "llm":
         enriched = enrich_with_llm_dialogue(
             panel=panel, product=product, forecast=forecast, seed=seed,
+            comparison_context=comparison_context,
         )
         if enriched is not None:
             panel = enriched

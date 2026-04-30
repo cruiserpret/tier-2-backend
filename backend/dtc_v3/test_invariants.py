@@ -903,3 +903,160 @@ def test_ledger_anchor_count_matches_evidence_buckets():
             f"This proves the old bug is dead."
         )
 
+
+def test_llm_prompt_uses_allowed_brands_only():
+    from backend.dtc_v3.llm_dialogue_enricher import _build_user_prompt
+    product = {
+        "product_name": "Matcha Chewing Gum",
+        "name": "Matcha Chewing Gum",
+        "price": 0.25,
+        "category": "food_beverage",
+        "competitors": [{"name": "Trident"}, {"name": "Orbit"}, {"name": "Matchew"}],
+        "description": "matcha-flavored gum",
+    }
+    forecast = {
+        "trial_rate": {"median": 0.04, "percentage": 4.0},
+        "confidence": "low",
+        "anchored_on": [
+            {"brand": "Poppi Prebiotic Soda", "trial_rate": 0.10},
+            {"brand": "Liquid Death Mountain Water", "trial_rate": 0.06},
+            {"brand": "Monster Energy", "trial_rate": 0.18},
+        ],
+    }
+    panel = {"agents": [
+        {"id": f"agent_0{i+1}", "name": f"Buyer {i+1}", "age": 30, "profession": "x",
+         "segment": "s", "profile": "p", "verdict": "BUY",
+         "current_score_10": 7.0, "is_hardcore": False}
+        for i in range(2)
+    ]}
+    cc = {
+        "comparison_mode": "user_competitor",
+        "allowed_comparison_brands": ["Trident", "Orbit", "Matchew"],
+        "forbidden_brand_names": ["Poppi Prebiotic Soda", "Liquid Death Mountain Water", "Monster Energy"],
+        "_meta": {"context_version": "v1.0"},
+    }
+    prompt = _build_user_prompt(panel["agents"], product, forecast, panel, cc)
+    assert "Trident" in prompt
+    assert "Orbit" in prompt or "Matchew" in prompt
+    assert "user_competitor" in prompt or "comparison_mode" in prompt
+    assert "anchored_comparable_brands" not in prompt, "old contaminated field must be gone"
+    forbidden_section = prompt.split("forbidden_brand_names")[-1] if "forbidden_brand_names" in prompt else ""
+    allowed_section_idx = prompt.find("allowed_comparison_brands")
+    forbidden_section_idx = prompt.find("forbidden_brand_names")
+    if allowed_section_idx >= 0 and forbidden_section_idx > allowed_section_idx:
+        allowed_block = prompt[allowed_section_idx:forbidden_section_idx]
+        for forbidden_brand in ["Poppi", "Liquid Death", "Monster"]:
+            assert forbidden_brand not in allowed_block, (
+                f"forbidden brand {forbidden_brand!r} must NOT appear in "
+                f"allowed_comparison_brands section"
+            )
+    assert "forbidden_brand_names" in prompt, "deny list must be communicated to LLM"
+
+
+def test_llm_validator_rejects_forbidden_brand_in_agent_field():
+    from backend.dtc_v3.llm_dialogue_enricher import _validate_batch_response
+    batch_agents = [
+        {"id": "agent_01", "name": "Buyer 1"},
+        {"id": "agent_02", "name": "Buyer 2"},
+    ]
+    parsed = {
+        "agents": [
+            {
+                "id": "agent_01",
+                "reason": "Compared with Monster Energy, this gum competes well.",
+                "top_objection": "Price too high.",
+                "what_would_change_mind": "Lower price.",
+                "key_quote": "Reasonable.",
+                "round_responses": [
+                    {"round": 1, "response": "First impression strong."},
+                    {"round": 2, "response": "Considering it."},
+                    {"round": 3, "response": "Likely buy."},
+                ],
+            },
+            {
+                "id": "agent_02",
+                "reason": "Solid product overall.",
+                "top_objection": "No retail.",
+                "what_would_change_mind": "More reviews.",
+                "key_quote": "Decent.",
+                "round_responses": [
+                    {"round": 1, "response": "Lukewarm reaction here."},
+                    {"round": 2, "response": "Still on the fence."},
+                    {"round": 3, "response": "Pass for now."},
+                ],
+            },
+        ],
+        "consensus": "Mixed.",
+        "winning_message": "Try it.",
+        "actionable_insight": "Test more.",
+    }
+    forbidden_lookup = {"monster energy"}
+    result = _validate_batch_response(parsed, batch_agents, forbidden_lookup=forbidden_lookup)
+    assert result is None, "validator must reject batch with forbidden brand in agent field"
+
+
+def test_llm_validator_rejects_forbidden_brand_in_top_level_fields():
+    from backend.dtc_v3.llm_dialogue_enricher import _validate_batch_response
+    batch_agents = [
+        {"id": "agent_01", "name": "Buyer 1"},
+    ]
+    parsed = {
+        "agents": [
+            {
+                "id": "agent_01",
+                "reason": "Solid product overall.",
+                "top_objection": "Price.",
+                "what_would_change_mind": "Reviews.",
+                "key_quote": "Reasonable.",
+                "round_responses": [
+                    {"round": 1, "response": "First reaction is fine."},
+                    {"round": 2, "response": "Considering carefully."},
+                    {"round": 3, "response": "Probably buy."},
+                ],
+            },
+        ],
+        "consensus": "Panel converged on positive sentiment.",
+        "winning_message": "Position against Monster Energy in this category.",
+        "actionable_insight": "Run a small validation test.",
+    }
+    forbidden_lookup = {"monster energy"}
+    result = _validate_batch_response(parsed, batch_agents, forbidden_lookup=forbidden_lookup)
+    assert result is None, "validator must reject batch with forbidden brand in top-level field"
+
+
+def test_llm_cache_key_changes_with_comparison_context():
+    from backend.dtc_v3.llm_dialogue_enricher import _build_cache_key
+    product = {
+        "product_name": "Matcha Chewing Gum",
+        "name": "Matcha Chewing Gum",
+        "price": 0.25,
+        "category": "food_beverage",
+        "competitors": [{"name": "Trident"}],
+        "description": "matcha gum",
+    }
+    forecast = {
+        "trial_rate": {"median": 0.04},
+        "confidence": "low",
+        "anchored_on": [{"brand": "Poppi Prebiotic Soda"}],
+    }
+    panel = {
+        "agents": [{"id": "agent_01", "name": "x", "verdict": "BUY"}],
+        "agent_count": 20,
+    }
+    seed = "0" * 32
+    cc1 = {
+        "comparison_mode": "user_competitor",
+        "allowed_comparison_brands": ["Trident", "Orbit"],
+        "forbidden_brand_names": ["Poppi"],
+    }
+    cc2 = {
+        "comparison_mode": "generic_directional",
+        "allowed_comparison_brands": [],
+        "forbidden_brand_names": ["Poppi", "Monster Energy"],
+    }
+    key1 = _build_cache_key(product, forecast, panel, seed, cc1)
+    key2 = _build_cache_key(product, forecast, panel, seed, cc2)
+    assert key1 != key2, "cache key must change with comparison_context (mode/allowed/forbidden)"
+    key1_again = _build_cache_key(product, forecast, panel, seed, cc1)
+    assert key1 == key1_again, "cache key must be deterministic for identical comparison_context"
+

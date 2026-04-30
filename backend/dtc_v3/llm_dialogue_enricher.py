@@ -36,7 +36,7 @@ MAX_CONCURRENT_BATCHES = 4
 PER_BATCH_TIMEOUT_S = 55
 OVERALL_TIMEOUT_S = {20: 45, 50: 90}  # per agent_count
 DEFAULT_OVERALL_TIMEOUT_S = 45
-PROMPT_VERSION = "v2.1-no-causal-claims"
+PROMPT_VERSION = "v2.2-comparison-context"
 
 
 # ════════════════════════════════════════════════════════════════════
@@ -48,6 +48,7 @@ def enrich_with_llm_dialogue(
     product: dict,
     forecast: dict,
     seed: str,
+    comparison_context: dict | None = None,
 ) -> dict | None:
     """
     Synchronous entrypoint — wraps the async batch flow.
@@ -61,7 +62,7 @@ def enrich_with_llm_dialogue(
         return None
 
     # 1. Whole-panel cache lookup
-    cache_key = _build_cache_key(product, forecast, panel, seed)
+    cache_key = _build_cache_key(product, forecast, panel, seed, comparison_context)
     cached = _load_cache(cache_key)
     if cached is not None:
         merged = _merge_llm_into_panel(panel, cached)
@@ -93,6 +94,7 @@ def enrich_with_llm_dialogue(
                 seed=seed,
                 api_key=api_key,
                 overall_timeout=overall_timeout,
+                comparison_context=comparison_context,
             )
         )
     except Exception:
@@ -128,6 +130,7 @@ async def _run_batched_enrichment(
     seed: str,
     api_key: str,
     overall_timeout: float,
+    comparison_context: dict | None = None,
 ) -> dict | None:
     """Returns merged LLM JSON dict, or None on total failure."""
     from openai import AsyncOpenAI
@@ -145,7 +148,7 @@ async def _run_batched_enrichment(
         """Returns (batch_idx, agent_dialogue_list_or_None)."""
         async with sem:
             try:
-                user_prompt = _build_user_prompt(batch_agents, product, forecast, panel)
+                user_prompt = _build_user_prompt(batch_agents, product, forecast, panel, comparison_context)
                 system_prompt = _build_system_prompt()
                 response = await asyncio.wait_for(
                     client.chat.completions.create(
@@ -164,7 +167,12 @@ async def _run_batched_enrichment(
                 if not raw:
                     return batch_idx, None
                 parsed = json.loads(raw)
-                validated = _validate_batch_response(parsed, batch_agents)
+                cc_forbidden = set()
+                if comparison_context:
+                    cc_forbidden = {
+                        b.lower() for b in (comparison_context.get("forbidden_brand_names") or [])
+                    }
+                validated = _validate_batch_response(parsed, batch_agents, forbidden_lookup=cc_forbidden)
                 return batch_idx, validated
             except Exception:
                 return batch_idx, None
@@ -233,7 +241,7 @@ async def _run_batched_enrichment(
 # CACHE
 # ════════════════════════════════════════════════════════════════════
 
-def _build_cache_key(product: dict, forecast: dict, panel: dict, seed: str) -> str:
+def _build_cache_key(product: dict, forecast: dict, panel: dict, seed: str, comparison_context: dict | None = None) -> str:
     persona_signature = "|".join(
         f"{a.get('id')}:{a.get('name','?')}:{a.get('verdict','?')}"
         for a in panel.get("agents", [])
@@ -246,7 +254,9 @@ def _build_cache_key(product: dict, forecast: dict, panel: dict, seed: str) -> s
         "competitors": [c.get("name") for c in product.get("competitors", [])[:5]],
         "trial_rate_median": forecast.get("trial_rate", {}).get("median"),
         "confidence": forecast.get("confidence"),
-        "anchored_brands": [a.get("brand") for a in forecast.get("anchored_on", [])][:5],
+        "comparison_mode": (comparison_context or {}).get("comparison_mode"),
+        "allowed_comparison_brands": (comparison_context or {}).get("allowed_comparison_brands", []) or [],
+        "forbidden_brand_names": (comparison_context or {}).get("forbidden_brand_names", []) or [],
         "agent_count": panel.get("agent_count"),
         "persona_signature": persona_signature,
         "prompt_version": PROMPT_VERSION,
@@ -325,7 +335,7 @@ def _build_system_prompt() -> str:
     )
 
 
-def _build_user_prompt(batch_agents: list, product: dict, forecast: dict, full_panel: dict) -> str:
+def _build_user_prompt(batch_agents: list, product: dict, forecast: dict, full_panel: dict, comparison_context: dict | None = None) -> str:
     product_section = {
         "name": product.get("product_name") or product.get("name"),
         "description": product.get("description"),
@@ -335,15 +345,23 @@ def _build_user_prompt(batch_agents: list, product: dict, forecast: dict, full_p
         "competitors": [c.get("name") for c in product.get("competitors", [])],
     }
 
-    anchored = forecast.get("anchored_on", [])[:5]
+    cc = comparison_context or {}
+    cc_mode = cc.get("comparison_mode", "anchored")
+    cc_allowed = cc.get("allowed_comparison_brands", []) or []
+    cc_forbidden = cc.get("forbidden_brand_names", []) or []
+    forecast_anchors = forecast.get("anchored_on", [])
+    anchor_brand_to_rate = {a.get("brand"): a.get("trial_rate") for a in forecast_anchors if a.get("brand")}
+    allowed_with_rate = [
+        {"brand": b,
+         "trial_rate_pct": round((anchor_brand_to_rate.get(b) or 0) * 100, 1) if anchor_brand_to_rate.get(b) is not None else None}
+        for b in cc_allowed[:5]
+    ]
     forecast_section = {
         "predicted_trial_rate_pct": forecast.get("trial_rate", {}).get("percentage"),
         "confidence": forecast.get("confidence"),
-        "anchored_comparable_brands": [
-            {"brand": a.get("brand"),
-             "trial_rate_pct": round((a.get("trial_rate") or 0) * 100, 1)}
-            for a in anchored
-        ],
+        "comparison_mode": cc_mode,
+        "allowed_comparison_brands": allowed_with_rate,
+        "forbidden_brand_names": cc_forbidden,
     }
 
     agents_section = []
@@ -435,8 +453,19 @@ def _contains_banned_phrase(text: Any) -> bool:
     return any(phrase in haystack for phrase in HARD_BANNED_PHRASES)
 
 
-def _validate_batch_response(parsed: Any, batch_agents: list) -> dict | None:
-    """Strict shape check. Returns None if anything wrong."""
+def _contains_forbidden_brand(text, forbidden_lookup):
+    if not isinstance(text, str) or not text or not forbidden_lookup:
+        return False
+    haystack = text.lower()
+    return any(brand in haystack for brand in forbidden_lookup)
+
+
+def _validate_batch_response(parsed: Any, batch_agents: list, forbidden_lookup=None) -> dict | None:
+    """Strict shape check. Returns None if anything wrong.
+
+    P1.8.3: also rejects batch if any agent narrative or top-level
+    field contains a forbidden brand name (per comparison_context).
+    """
     if not isinstance(parsed, dict):
         return None
     if "agents" not in parsed or not isinstance(parsed["agents"], list):
@@ -470,6 +499,14 @@ def _validate_batch_response(parsed: Any, batch_agents: list) -> dict | None:
                     llm_a.get("id"), narrative_key,
                 )
                 return None
+            if _contains_forbidden_brand(llm_a.get(narrative_key), forbidden_lookup):
+                import logging
+                logging.warning(
+                    "[llm_validator] forbidden brand in agent %s field %r — "
+                    "rejecting batch to template fallback",
+                    llm_a.get("id"), narrative_key,
+                )
+                return None
         rrs = llm_a["round_responses"]
         if not isinstance(rrs, list) or len(rrs) != 3:
             return None
@@ -488,13 +525,30 @@ def _validate_batch_response(parsed: Any, batch_agents: list) -> dict | None:
                     llm_a.get("id"), j + 1,
                 )
                 return None
+            if _contains_forbidden_brand(rr.get("response"), forbidden_lookup):
+                import logging
+                logging.warning(
+                    "[llm_validator] forbidden brand in agent %s round %d response — "
+                    "rejecting batch to template fallback",
+                    llm_a.get("id"), j + 1,
+                )
+                return None
 
     # Phase 1: top-level narrative fields also scanned.
+    # P1.8.3: also scans for forbidden brands per friend Apr 30 ruling.
     for top_key in ("consensus", "winning_message", "actionable_insight"):
         if _contains_banned_phrase(parsed.get(top_key)):
             import logging
             logging.warning(
                 "[llm_validator] hard-banned phrase in top-level field %r — "
+                "rejecting batch to template fallback",
+                top_key,
+            )
+            return None
+        if _contains_forbidden_brand(parsed.get(top_key), forbidden_lookup):
+            import logging
+            logging.warning(
+                "[llm_validator] forbidden brand in top-level field %r — "
                 "rejecting batch to template fallback",
                 top_key,
             )
