@@ -406,3 +406,260 @@ def test_banned_phrase_validator_rejects_batch():
     result = _validate_batch_response(clean, batch)
     assert result is not None, "clean text must pass validator"
 
+
+
+# ════════════════════════════════════════════════════════════════════
+# Phase 1.8.1 — comparison_context tests
+#
+# Per friend Apr 30 ruling: synthetic evidence_buckets fixtures only.
+# Do NOT depend on DB retrieval state. These tests verify the pure
+# build_comparison_context() classifier in isolation.
+#
+# The hard invariant under test:
+#   If a brand is not in allowed_comparison_brands, agents must not
+#   mention it as a competitor or proof point.
+# ════════════════════════════════════════════════════════════════════
+
+from types import SimpleNamespace
+from backend.dtc_v3.comparison_context import build_comparison_context
+
+
+def _stub_forecast(fallback_used=False, confidence="medium"):
+    """Minimal Forecast-shaped object for comparison_context tests."""
+    return SimpleNamespace(
+        fallback_used=fallback_used,
+        confidence=confidence,
+    )
+
+
+def test_comparison_context_anchored_mode():
+    """Direct + adjacent anchors → mode='anchored', allowed = safe + user."""
+    forecast = _stub_forecast(fallback_used=False, confidence="medium-high")
+    product = {"competitors": [{"name": "Pedialyte"}]}
+    evidence_buckets = {
+        "forecast_anchors": [
+            {"brand": "Pedialyte", "anchor_strength": "direct"},
+            {"brand": "DripDrop", "anchor_strength": "direct"},
+            {"brand": "AG1", "anchor_strength": "adjacent"},
+        ],
+        "fallback_neighbors": [],
+        "candidate_comparables": [],
+        "exploratory_comparables": [],
+    }
+
+    ctx = build_comparison_context(
+        forecast=forecast,
+        product=product,
+        evidence_buckets=evidence_buckets,
+        coverage_tier="strong",
+    )
+
+    assert ctx["comparison_mode"] == "anchored"
+    assert "Pedialyte" in ctx["dialogue_safe_anchor_brands"]
+    assert "DripDrop" in ctx["dialogue_safe_anchor_brands"]
+    assert "AG1" in ctx["dialogue_safe_anchor_brands"]
+    # User competitor (Pedialyte) is also dialogue-safe — should appear
+    # exactly once in allowed (case-insensitive dedup).
+    allowed_lower = [b.lower() for b in ctx["allowed_comparison_brands"]]
+    assert allowed_lower.count("pedialyte") == 1, \
+        "Pedialyte must dedup across safe-anchor and user-competitor lists"
+    assert ctx["forbidden_brand_names"] == []
+    assert ctx["fallback_used"] is False
+
+
+def test_comparison_context_weak_anchor_exclusion():
+    """Weak forecast anchors visible in evidence panel must NOT be
+    dialogue-safe and MUST appear in forbidden list."""
+    forecast = _stub_forecast(fallback_used=False, confidence="medium")
+    product = {"competitors": []}
+    evidence_buckets = {
+        "forecast_anchors": [
+            {"brand": "Pedialyte", "anchor_strength": "direct"},
+            {"brand": "Monster Energy", "anchor_strength": "weak"},
+            {"brand": "Red Bull", "anchor_strength": "weak"},
+        ],
+        "fallback_neighbors": [],
+        "candidate_comparables": [],
+        "exploratory_comparables": [],
+    }
+
+    ctx = build_comparison_context(
+        forecast=forecast,
+        product=product,
+        evidence_buckets=evidence_buckets,
+        coverage_tier="strong",
+    )
+
+    # Weak anchors appear in forecast_used_brands (math used them)
+    assert "Monster Energy" in ctx["forecast_used_brands"]
+    assert "Red Bull" in ctx["forecast_used_brands"]
+    # But NOT in dialogue_safe (weak excluded)
+    assert "Monster Energy" not in ctx["dialogue_safe_anchor_brands"]
+    assert "Red Bull" not in ctx["dialogue_safe_anchor_brands"]
+    # And NOT in allowed (because not safe and not user-competitor)
+    assert "Monster Energy" not in ctx["allowed_comparison_brands"]
+    assert "Red Bull" not in ctx["allowed_comparison_brands"]
+    # AND in forbidden
+    assert "Monster Energy" in ctx["forbidden_brand_names"]
+    assert "Red Bull" in ctx["forbidden_brand_names"]
+    # Direct anchor remains allowed
+    assert "Pedialyte" in ctx["allowed_comparison_brands"]
+
+
+def test_comparison_context_user_competitor_mode():
+    """The matcha gum case. Fallback fired, no eligible anchors,
+    user-stated competitors (Trident, Orbit, Matchew). Retrieved-but-
+    not-used brands (Poppi, Monster, etc.) must be forbidden."""
+    forecast = _stub_forecast(fallback_used=True, confidence="low")
+    product = {
+        "competitors": [
+            {"name": "Trident"},
+            {"name": "Orbit"},
+            {"name": "Matchew"},
+        ]
+    }
+    evidence_buckets = {
+        # Under fallback, forecast_anchors is empty by definition
+        # (per evidence.py:172-174). All retrieved candidates land
+        # in fallback_neighbors.
+        "forecast_anchors": [],
+        "fallback_neighbors": [
+            {"brand": "Poppi Prebiotic Soda"},
+            {"brand": "Liquid Death Mountain Water"},
+            {"brand": "Health-Ade Kombucha"},
+            {"brand": "Monster Energy"},
+            {"brand": "Prime Energy"},
+            {"brand": "Red Bull"},
+            {"brand": "C4 Energy"},
+            {"brand": "Celsius"},
+        ],
+        "candidate_comparables": [],
+        "exploratory_comparables": [],
+    }
+
+    ctx = build_comparison_context(
+        forecast=forecast,
+        product=product,
+        evidence_buckets=evidence_buckets,
+        coverage_tier="weak",
+    )
+
+    assert ctx["comparison_mode"] == "user_competitor"
+    assert ctx["allowed_comparison_brands"] == ["Trident", "Orbit", "Matchew"]
+    assert ctx["forecast_used_brands"] == []
+    assert ctx["dialogue_safe_anchor_brands"] == []
+    # All 8 retrieved brands must be forbidden
+    for forbidden in [
+        "Poppi Prebiotic Soda", "Liquid Death Mountain Water",
+        "Health-Ade Kombucha", "Monster Energy", "Prime Energy",
+        "Red Bull", "C4 Energy", "Celsius",
+    ]:
+        assert forbidden in ctx["forbidden_brand_names"], \
+            f"{forbidden!r} must be in forbidden_brand_names under fallback"
+    # User competitors must NOT be forbidden
+    for allowed in ["Trident", "Orbit", "Matchew"]:
+        assert allowed not in ctx["forbidden_brand_names"]
+    assert ctx["fallback_used"] is True
+
+
+def test_comparison_context_generic_directional_mode():
+    """Fallback + no user competitors → mode='generic_directional',
+    allowed=[], all retrieved brands forbidden. Agents must speak
+    without brand names."""
+    forecast = _stub_forecast(fallback_used=True, confidence="low")
+    product = {"competitors": []}
+    evidence_buckets = {
+        "forecast_anchors": [],
+        "fallback_neighbors": [
+            {"brand": "Some Random Brand A"},
+            {"brand": "Some Random Brand B"},
+        ],
+        "candidate_comparables": [],
+        "exploratory_comparables": [],
+    }
+
+    ctx = build_comparison_context(
+        forecast=forecast,
+        product=product,
+        evidence_buckets=evidence_buckets,
+        coverage_tier="weak",
+    )
+
+    assert ctx["comparison_mode"] == "generic_directional"
+    assert ctx["allowed_comparison_brands"] == []
+    assert ctx["user_competitors"] == []
+    assert ctx["dialogue_safe_anchor_brands"] == []
+    # All fallback brands forbidden
+    assert "Some Random Brand A" in ctx["forbidden_brand_names"]
+    assert "Some Random Brand B" in ctx["forbidden_brand_names"]
+
+
+def test_comparison_context_user_competitor_overrides_fallback():
+    """If a user-stated competitor name ALSO appears in fallback_neighbors,
+    user competitor wins — appears in allowed, NOT in forbidden.
+
+    This protects against false-forbidding a brand the user explicitly
+    named (case-insensitive)."""
+    forecast = _stub_forecast(fallback_used=True, confidence="low")
+    product = {
+        "competitors": [
+            {"name": "Liquid Death"},          # user named it
+            {"name": "Trident"},
+        ]
+    }
+    evidence_buckets = {
+        "forecast_anchors": [],
+        "fallback_neighbors": [
+            # Same brand also in fallback list (slight casing variation)
+            {"brand": "liquid death mountain water"},
+            {"brand": "Monster Energy"},
+        ],
+        "candidate_comparables": [],
+        "exploratory_comparables": [],
+    }
+
+    ctx = build_comparison_context(
+        forecast=forecast,
+        product=product,
+        evidence_buckets=evidence_buckets,
+        coverage_tier="weak",
+    )
+
+    # User competitors win
+    assert "Liquid Death" in ctx["allowed_comparison_brands"]
+    assert "Trident" in ctx["allowed_comparison_brands"]
+    # And the fallback variant must NOT be in forbidden — friend's
+    # subtraction rule: forbidden_pool MINUS allowed_comparison_brands,
+    # case-insensitive. "liquid death mountain water" lowercase contains
+    # "liquid death" but is a DIFFERENT brand string. The exact match is
+    # what matters: "liquid death" lowercase != "liquid death mountain water"
+    # lowercase. So fallback variant SHOULD remain forbidden because it's
+    # a different brand name. The protection is for EXACT case-insensitive
+    # matches only.
+    #
+    # However if user typed "Liquid Death Mountain Water", the fallback
+    # match would be filtered out. Test that path explicitly:
+    forecast2 = _stub_forecast(fallback_used=True, confidence="low")
+    product2 = {"competitors": [{"name": "Liquid Death Mountain Water"}]}
+    ctx2 = build_comparison_context(
+        forecast=forecast2,
+        product=product2,
+        evidence_buckets={
+            "forecast_anchors": [],
+            "fallback_neighbors": [
+                {"brand": "LIQUID DEATH MOUNTAIN WATER"},  # uppercase variant
+                {"brand": "Monster Energy"},
+            ],
+            "candidate_comparables": [],
+            "exploratory_comparables": [],
+        },
+        coverage_tier="weak",
+    )
+    # Case-insensitive dedup: user's exact-but-cased "Liquid Death Mountain
+    # Water" wins. The uppercase fallback variant is removed from forbidden.
+    assert "Liquid Death Mountain Water" in ctx2["allowed_comparison_brands"]
+    forbidden_lower = [b.lower() for b in ctx2["forbidden_brand_names"]]
+    assert "liquid death mountain water" not in forbidden_lower, \
+        "Brand named by user must NOT appear in forbidden, even with " \
+        "different casing in fallback_neighbors"
+    assert "Monster Energy" in ctx2["forbidden_brand_names"]

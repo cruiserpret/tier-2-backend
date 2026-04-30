@@ -69,6 +69,11 @@ class CustomerReport:
     # remain as backward-compatible projections.
     evidence_buckets: dict | None = None
     confidence_ledger: list[dict] | None = None
+    # Phase 1.8.1 — Comparison Context (foundation only, no consumers
+    # migrated yet). Canonical source of truth for which brands agents
+    # may mention. Built in build_customer_report() after
+    # evidence_buckets. See backend/dtc_v3/comparison_context.py.
+    comparison_context: dict | None = None
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -402,15 +407,26 @@ def build_customer_report(
     #    and the old anchored_on field is the only display source.
     evidence_buckets = None
     confidence_ledger = None
+    comparison_context = None
     if record_by_brand is not None:
         from .evidence import classify_evidence_buckets
         from .confidence_ledger import build_confidence_ledger
+        from .comparison_context import build_comparison_context
         evidence_buckets = classify_evidence_buckets(
             forecast=forecast,
             product=product,
             record_by_brand=record_by_brand,
             candidate_neighbors=candidate_neighbors,
             inferred_subtype=inferred_subtype,
+        )
+        # Phase 1.8.1 — build comparison_context BEFORE the ledger
+        # so future migrations (P1.8.4) can pass it into the ledger
+        # if needed. Foundation only here — no consumer reads it yet.
+        comparison_context = build_comparison_context(
+            forecast=forecast,
+            product=product,
+            evidence_buckets=evidence_buckets,
+            coverage_tier=coverage_tier,
         )
         confidence_ledger = build_confidence_ledger(
             forecast=forecast,
@@ -440,6 +456,7 @@ def build_customer_report(
         coverage_tier=coverage_tier,
         evidence_buckets=evidence_buckets,
         confidence_ledger=confidence_ledger,
+        comparison_context=comparison_context,
     )
 
 
